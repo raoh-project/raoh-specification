@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/raoh-project/raoh-specification/compare"
-	"github.com/raoh-project/raoh-specification/jsontext"
-	"github.com/raoh-project/raoh-specification/suite"
+	"github.com/raoh-project/raoh-specification/internal/compare"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/suite"
 )
 
 // The outcomes of a case.

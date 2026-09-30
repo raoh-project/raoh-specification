@@ -3,7 +3,7 @@ package value
 import (
 	"math/big"
 
-	"github.com/raoh-project/raoh-specification/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
 )
 
 // State says which case of a Presence, Optional or Nullable a value is.

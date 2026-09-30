@@ -5,17 +5,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/raoh-project/raoh-specification/catalog"
-	"github.com/raoh-project/raoh-specification/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/catalog"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
 )
 
 func checker(t *testing.T) *Checker {
 	t.Helper()
-	cat, err := catalog.Load("..")
+	cat, err := catalog.Load("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg, err := Load("..")
+	reg, err := Load("../..")
 	if err != nil {
 		t.Fatal(err)
 	}

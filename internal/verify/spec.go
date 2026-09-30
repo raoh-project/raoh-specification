@@ -11,11 +11,11 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/raoh-project/raoh-specification/catalog"
-	"github.com/raoh-project/raoh-specification/dsl"
-	"github.com/raoh-project/raoh-specification/jsontext"
-	"github.com/raoh-project/raoh-specification/manifest"
-	"github.com/raoh-project/raoh-specification/suite"
+	"github.com/raoh-project/raoh-specification/internal/catalog"
+	"github.com/raoh-project/raoh-specification/internal/dsl"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/manifest"
+	"github.com/raoh-project/raoh-specification/internal/suite"
 )
 
 // Profiles are every profile, in the order reports list them.

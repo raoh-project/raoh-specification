@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/raoh-project/raoh-specification/jsontext"
-	"github.com/raoh-project/raoh-specification/value"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
 // Locales are the locales the specification has message catalogues for.

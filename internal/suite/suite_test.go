@@ -6,17 +6,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/raoh-project/raoh-specification/catalog"
-	"github.com/raoh-project/raoh-specification/dsl"
+	"github.com/raoh-project/raoh-specification/internal/catalog"
+	"github.com/raoh-project/raoh-specification/internal/dsl"
 )
 
 func checker(t *testing.T) *dsl.Checker {
 	t.Helper()
-	cat, err := catalog.Load("..")
+	cat, err := catalog.Load("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg, err := dsl.Load("..")
+	reg, err := dsl.Load("../..")
 	if err != nil {
 		t.Fatal(err)
 	}

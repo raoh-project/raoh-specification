@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raoh-project/raoh-specification/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
 )
 
 // Observe reads the observation n of a value of type t. See spec/observation.md.

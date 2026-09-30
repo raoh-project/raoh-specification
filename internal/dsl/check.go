@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/raoh-project/raoh-specification/catalog"
-	"github.com/raoh-project/raoh-specification/jsontext"
-	"github.com/raoh-project/raoh-specification/value"
+	"github.com/raoh-project/raoh-specification/internal/catalog"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
 // Possible is an issue a decoder can give.

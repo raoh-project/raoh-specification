@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/raoh-project/raoh-specification/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
 )
 
 func obs(t *testing.T, typ, text string) Value {

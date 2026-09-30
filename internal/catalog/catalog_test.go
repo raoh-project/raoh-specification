@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/raoh-project/raoh-specification/value"
+	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
 func TestTheCataloguesAgree(t *testing.T) {
-	c, err := Load("..")
+	c, err := Load("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func TestTheCataloguesAgree(t *testing.T) {
 }
 
 func TestInstantiateBindsNestedParameters(t *testing.T) {
-	c, err := Load("..")
+	c, err := Load("../..")
 	if err != nil {
 		t.Fatal(err)
 	}

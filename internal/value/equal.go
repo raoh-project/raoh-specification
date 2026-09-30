@@ -4,7 +4,7 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/raoh-project/raoh-specification/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
 )
 
 // Equal reports whether two values of the same type are the same value. See spec/value-model.md.

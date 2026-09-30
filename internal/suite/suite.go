@@ -10,10 +10,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/raoh-project/raoh-specification/catalog"
-	"github.com/raoh-project/raoh-specification/dsl"
-	"github.com/raoh-project/raoh-specification/jsontext"
-	"github.com/raoh-project/raoh-specification/value"
+	"github.com/raoh-project/raoh-specification/internal/catalog"
+	"github.com/raoh-project/raoh-specification/internal/dsl"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
 // Profiles whose cases are in suite/<profile>/.

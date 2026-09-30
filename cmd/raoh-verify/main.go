@@ -21,8 +21,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/raoh-project/raoh-specification/manifest"
-	"github.com/raoh-project/raoh-specification/verify"
+	"github.com/raoh-project/raoh-specification/internal/manifest"
+	"github.com/raoh-project/raoh-specification/internal/verify"
 )
 
 // version is set at release with -ldflags "-X main.version=...".

@@ -72,7 +72,8 @@ A runner result (`schema/runner-result.schema.json`) records:
   template.
 
 The manifest digest ties a result to the exact suite it was produced from. It is the SHA-256 of
-every file under `spec/`, `catalog/`, `schema/` and `suite/`, and of `specification.json`, taken
+every `.md`, `.json` and `.properties` file under `spec/`, `catalog/`, `schema/` and `suite/` whose
+name does not start with a dot, and of `specification.json`, taken
 in the order of their paths (relative, `/`-separated, compared byte by byte). Each file contributes
 
 ```text

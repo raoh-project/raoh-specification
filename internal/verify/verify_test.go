@@ -28,8 +28,8 @@ const miniEncode = `[
 func miniSpec(t *testing.T) *Spec {
 	t.Helper()
 	root := t.TempDir()
-	copyTree(t, "..", root, "catalog")
-	copyTree(t, "..", root, "schema")
+	copyTree(t, "../..", root, "catalog")
+	copyTree(t, "../..", root, "schema")
 	for name, text := range map[string]string{
 		"specification.json":     `{"version": "9.9.9-test"}`,
 		"suite/core/mini.json":   miniCore,

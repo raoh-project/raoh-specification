@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/raoh-project/raoh-specification/jsontext"
-	"github.com/raoh-project/raoh-specification/suite"
-	"github.com/raoh-project/raoh-specification/value"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/suite"
+	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
 // Expected reports whether an observed outcome is the one the case expects, and if not, how it

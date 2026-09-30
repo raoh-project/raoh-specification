@@ -10,12 +10,19 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // Dirs are the directories whose files the digest covers, besides specification.json.
 var Dirs = []string{"spec", "catalog", "schema", "suite"}
+
+// Extensions are the kinds of file the digest covers. Anything else under Dirs (an editor's
+// backup, a .DS_Store) is not part of the specification, so that the same revision gives the same
+// digest on every machine.
+var Extensions = []string{".md", ".json", ".properties"}
 
 // Files lists the files the digest covers, as relative /-separated paths in byte order.
 func Files(root string) ([]string, error) {
@@ -26,6 +33,9 @@ func Files(root string) ([]string, error) {
 				return err
 			}
 			if d.IsDir() {
+				return nil
+			}
+			if strings.HasPrefix(d.Name(), ".") || !slices.Contains(Extensions, filepath.Ext(d.Name())) {
 				return nil
 			}
 			if !d.Type().IsRegular() {

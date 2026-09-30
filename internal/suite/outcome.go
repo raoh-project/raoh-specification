@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/raoh-project/raoh-specification/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
 )
 
 // Issue is an issue as a case or a runner writes it.

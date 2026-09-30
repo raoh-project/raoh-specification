@@ -9,8 +9,8 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/raoh-project/raoh-specification/jsontext"
-	"github.com/raoh-project/raoh-specification/value"
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
 // Arg is one argument of a constructor, field, operation, encoder or property.
