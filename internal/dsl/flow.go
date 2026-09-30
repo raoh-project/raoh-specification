@@ -3,7 +3,6 @@ package dsl
 import (
 	"strings"
 
-	"github.com/raoh-project/raoh-specification/internal/jsontext"
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
@@ -20,8 +19,10 @@ type Site struct {
 	// leave out.
 	Meta     map[string]value.Type
 	Optional []string
-	// Fixed are metadata values the form always gives.
-	Fixed map[string]*jsontext.Node
+	// Values are the metadata values the form decides, and MemberMeta the entries whose value is
+	// the name of the member the issue is at. Every other entry is known only when a decoder runs.
+	Values     map[string]value.Value
+	MemberMeta []string
 	// Message is the message the issue is given, by a message argument or by the fixture that
 	// creates it; empty when the message is derived from the catalogue.
 	Message string

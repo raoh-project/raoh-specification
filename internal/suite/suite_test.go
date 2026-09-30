@@ -1,13 +1,13 @@
 package suite
 
 import (
-	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"strings"
 	"testing"
 
 	"github.com/raoh-project/raoh-specification/internal/artifacts/artifactstest"
 	"github.com/raoh-project/raoh-specification/internal/catalog"
 	"github.com/raoh-project/raoh-specification/internal/dsl"
+	"github.com/raoh-project/raoh-specification/internal/schemas"
 )
 
 func checker(t *testing.T) *dsl.Checker {
@@ -215,4 +215,21 @@ func TestIDsAreKept(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "is retired") {
 		t.Errorf("a reused ID: %v", err)
 	}
+}
+
+// Metadata the form decides has to be what the form decides; metadata known only when a decoder
+// runs is typed and not recomputed.
+func TestMetaTheFormDecides(t *testing.T) {
+	issue := func(decoder, input, key, code, meta string) string {
+		return `[{"id": "R000001", "title": "t", "decoder": ` + decoder + `, "input": ` + input + `,
+			"issues": [{"path": "", "code": "` + code + `", "message_key": "` + key + `", "meta": ` + meta + `}]}]`
+	}
+	rejected(t, "core", issue(`["int", ["min", 1]]`, `0`, "out_of_range.minimum", "out_of_range", `{"min": 5, "actual": 0}`), "gives out_of_range.minimum the min 1")
+	accepted(t, "core", issue(`["int", ["min", 1]]`, `0`, "out_of_range.minimum", "out_of_range", `{"min": 1, "actual": 7}`))
+	rejected(t, "core", issue(`["string", ["oneOf", ["b", "a"]]]`, `"c"`, "not_allowed", "not_allowed", `{"allowed": ["b", "a"], "actual": "c"}`), "the allowed [a, b]")
+	rejected(t, "core", issue(`["enum", ["RED", "GREEN"], ["string"]]`, `"x"`, "invalid_format.enum", "invalid_format", `{"allowed": ["red", "green"]}`), "the allowed [green, red]")
+	rejected(t, "core", issue(`["long", ["positive"]]`, `0`, "out_of_range.positive", "out_of_range", `{"min": 0, "actual": 0}`), "the min 1")
+	rejected(t, "core", issue(`["double", ["positive"]]`, `0`, "out_of_range.positive", "out_of_range", `{"min": 1, "actual": 0}`), "the min 0.0")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["strictObject", [["field", "a", ["int"]]]], "input": {"a": 1, "b": 2},
+		"issues": [{"path": "/b", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "a"}}]}]`, "member's name")
 }

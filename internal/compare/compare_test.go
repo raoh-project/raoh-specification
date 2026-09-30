@@ -1,13 +1,13 @@
 package compare
 
 import (
-	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"strings"
 	"testing"
 
 	"github.com/raoh-project/raoh-specification/internal/catalog"
 	"github.com/raoh-project/raoh-specification/internal/dsl"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"github.com/raoh-project/raoh-specification/internal/suite"
 )
 

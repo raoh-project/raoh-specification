@@ -1,10 +1,10 @@
 package catalog
 
 import (
-	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"strings"
 	"testing"
 
+	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
 

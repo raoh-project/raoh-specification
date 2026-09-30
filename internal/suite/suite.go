@@ -331,10 +331,16 @@ func instance(is Issue, site dsl.Located, path []string, cat *catalog.Catalog) (
 		}
 		e.Meta[m.Name] = v
 	}
-	for name, want := range site.Fixed {
-		got, ok := is.Meta.Get(name)
-		if !ok || !value.EqualJSON(want, got) {
-			return e, fmt.Errorf("%s from this form always has %s %s", site.Key, name, want.Raw)
+	for name, want := range site.Values {
+		got, ok := e.Meta[name]
+		if !ok || !value.Equal(want, got) {
+			return e, fmt.Errorf("the form gives %s the %s %s", site.Key, name, describeValue(want))
+		}
+	}
+	for _, name := range site.MemberMeta {
+		got, ok := e.Meta[name]
+		if !ok || len(path) == 0 || got.Str != path[len(path)-1] {
+			return e, fmt.Errorf("%s at %q has the member's name as %s", site.Key, is.Path, name)
 		}
 	}
 	for name := range site.Meta {
@@ -455,4 +461,12 @@ func CheckIDs(base, head *Suite) error {
 		return fmt.Errorf("case IDs are not kept:\n  %s", strings.Join(problems, "\n  "))
 	}
 	return nil
+}
+
+// describeValue writes a value for a message, as its message form when it has one.
+func describeValue(v value.Value) string {
+	if s, err := value.FormatForMessage(v); err == nil {
+		return s
+	}
+	return v.Type.String()
 }

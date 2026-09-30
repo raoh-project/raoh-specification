@@ -107,6 +107,8 @@ type checkedArgs struct {
 	fields  []Flow
 	product []value.Type
 	message string
+	// keys are the variant names of a variants argument, by argument name.
+	keys map[string][]string
 }
 
 func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
@@ -176,7 +178,7 @@ func (s *state) formFlow(owner string, f *Form, bound map[string]value.Type, ca 
 	}
 	var members []Flow
 	for _, ref := range f.Issues {
-		site, err := s.site(ref, bound)
+		site, err := s.site(ref, bound, ca)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", owner, err)
 		}
@@ -353,7 +355,7 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 // known when values are read and fixtures are matched, and then the conditions the form
 // requires of them.
 func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[string]value.Type) (checkedArgs, error) {
-	ca := checkedArgs{values: map[string]value.Value{}, flows: map[string][]Flow{}}
+	ca := checkedArgs{values: map[string]value.Value{}, flows: map[string][]Flow{}, keys: map[string][]string{}}
 	decoder := func(a Arg, n *jsontext.Node) error {
 		t, flow, err := s.decoder(n)
 		if err != nil {
@@ -385,6 +387,7 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 				}
 				for j := 0; err == nil && j < len(v.Members); j++ {
 					err = decoder(a, v.Members[j].Value)
+					ca.keys[a.Name] = append(ca.keys[a.Name], v.Members[j].Name)
 				}
 			case pass == 0 && a.Kind == "fields":
 				if v.Kind != jsontext.Array || len(v.Elems) == 0 {
@@ -546,7 +549,7 @@ func (s *state) fixture(a Arg, n *jsontext.Node, bound map[string]value.Type) (*
 }
 
 // site instantiates an issue reference with the types bound gives the form's parameters.
-func (s *state) site(ref IssueRef, bound map[string]value.Type) (*Site, error) {
+func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) (*Site, error) {
 	v, ok := s.Catalog.Variants[ref.Key]
 	if !ok {
 		return nil, fmt.Errorf("issue %s is not in the catalogue", ref.Key)
@@ -566,14 +569,25 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type) (*Site, error) {
 	if err != nil {
 		return nil, err
 	}
-	site := &Site{Key: v.Key, Code: v.Code, Meta: meta, Fixed: ref.Fixed}
-	for name, n := range ref.Fixed {
+	site := &Site{Key: v.Key, Code: v.Code, Meta: meta, Values: map[string]value.Value{}}
+	for name, src := range ref.Meta {
 		t, ok := meta[name]
 		if !ok {
-			return nil, fmt.Errorf("issue %s has no metadata %s to fix", ref.Key, name)
+			return nil, fmt.Errorf("issue %s has no metadata %s", ref.Key, name)
 		}
-		if _, err := value.Observe(t, n); err != nil {
-			return nil, fmt.Errorf("issue %s: fixed %s: %w", ref.Key, name, err)
+		if src.Kind == "member" {
+			if ref.At != PlaceMember || t.Kind != value.String {
+				return nil, fmt.Errorf("issue %s: %s is a member name only for a string at each member", ref.Key, name)
+			}
+			site.MemberMeta = append(site.MemberMeta, name)
+			continue
+		}
+		val, err := metaValue(src, t, ca)
+		if err != nil {
+			return nil, fmt.Errorf("issue %s meta %s: %w", ref.Key, name, err)
+		}
+		if val != nil {
+			site.Values[name] = *val
 		}
 	}
 	for _, o := range ref.Omit {
@@ -627,4 +641,104 @@ func (c *Checker) Validate() error {
 		return fmt.Errorf("%s", strings.Join(problems, "\n"))
 	}
 	return nil
+}
+
+// metaValue computes the value a metadata source decides, or nil when an argument it reads was
+// left out of the form.
+func metaValue(src MetaSource, t value.Type, ca checkedArgs) (*value.Value, error) {
+	var v value.Value
+	var err error
+	switch src.Kind {
+	case "const":
+		v, err = value.Observe(t, src.Const)
+	case "const_by_type":
+		n, ok := src.ByType[t.String()]
+		if !ok {
+			return nil, fmt.Errorf("const_by_type has no value for %s", t)
+		}
+		v, err = value.Observe(t, n)
+	case "arg":
+		a, ok := ca.values[src.Arg]
+		if !ok {
+			return nil, nil
+		}
+		if !a.Type.Same(t) {
+			return nil, fmt.Errorf("argument %s is a %s, and the entry a %s", src.Arg, a.Type, t)
+		}
+		v = a
+	case "sorted", "ascii_lower_sorted":
+		a, ok := ca.values[src.Arg]
+		if !ok {
+			return nil, nil
+		}
+		v = a
+		if src.Kind == "ascii_lower_sorted" {
+			v = asciiLowered(a)
+			v.Type = t
+		}
+		if err := sortElems(&v); err != nil {
+			return nil, err
+		}
+		if !v.Type.Same(t) {
+			return nil, fmt.Errorf("argument %s sorted is a %s, and the entry a %s", src.Arg, v.Type, t)
+		}
+	case "sorted_keys":
+		keys, ok := ca.keys[src.Arg]
+		if !ok {
+			return nil, fmt.Errorf("sorted_keys reads %s, which is not a variants argument", src.Arg)
+		}
+		if t.Kind != value.List || t.Args[0].Kind != value.String {
+			return nil, fmt.Errorf("sorted_keys gives a list<string>, and the entry is a %s", t)
+		}
+		v = value.Value{Type: t}
+		for _, k := range keys {
+			v.Elems = append(v.Elems, value.Value{Type: t.Args[0], Str: k})
+		}
+		if err := sortElems(&v); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("%s is not a metadata source", src.Kind)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+// asciiLowered returns a list of strings with A-Z read as a-z.
+func asciiLowered(v value.Value) value.Value {
+	out := value.Value{Type: v.Type, Elems: make([]value.Value, len(v.Elems))}
+	for i, e := range v.Elems {
+		out.Elems[i] = e
+		out.Elems[i].Str = strings.Map(func(c rune) rune {
+			if 'A' <= c && c <= 'Z' {
+				return c - 'A' + 'a'
+			}
+			return c
+		}, e.Str)
+	}
+	return out
+}
+
+// sortElems sorts a list in ascending order: strings by code point, numbers and temporal values as
+// Compare orders them.
+func sortElems(v *value.Value) error {
+	if v.Type.Kind != value.List && v.Type.Kind != value.Set {
+		return fmt.Errorf("only a list can be sorted, not a %s", v.Type)
+	}
+	elems := slices.Clone(v.Elems)
+	var err error
+	slices.SortStableFunc(elems, func(a, b value.Value) int {
+		if a.Type.Kind == value.String {
+			return strings.Compare(a.Str, b.Str)
+		}
+		c, e := value.Compare(a, b)
+		if e != nil {
+			err = e
+		}
+		return c
+	})
+	v.Elems = elems
+	return err
 }

@@ -22,6 +22,17 @@ entries. Every other entry is always present.
 An issue's metadata has exactly the entries of its variant, and each is compared as a value of its
 instantiated type.
 
+The form that gives an issue decides some of its metadata, and `catalog/operations.json` says
+where each such value comes from: a constant (`{"const": "integer"}`), a constant for each type the
+entry can have (`{"const_by_type": ...}`: `positive` gives `min` 1 for an integer and 0 otherwise),
+an argument (`{"arg": "min"}`), an argument sorted in ascending order (`{"sorted": "allowed"}`:
+strings by code point, other values as the bounding operations order them), an argument with A-Z
+read as a-z and then sorted (`{"ascii_lower_sorted": "symbols"}`), the sorted names of a
+`variants` argument (`{"sorted_keys": "variants"}`), or the name of the member the issue is at
+(`{"member": true}`). A case's value for such an entry must be that value. An entry with no source,
+such as the `actual` of a failed bound, is known only when a decoder runs; see
+[conformance.md](conformance.md#what-the-verifier-checks).
+
 ## Messages
 
 The message of an issue is either derived or given.

@@ -75,8 +75,53 @@ type IssueRef struct {
 	At   Place
 	Bind map[string]value.Type
 	Omit []string
-	// Fixed are metadata values the form always gives, such as the expected of a type mismatch.
-	Fixed map[string]*jsontext.Node
+	// Meta says where the values of metadata entries come from; an entry it does not list is
+	// known only when a decoder runs.
+	Meta map[string]MetaSource
+}
+
+// MetaSource says where the value of a metadata entry comes from, when the form alone decides it.
+type MetaSource struct {
+	// Kind is const, const_by_type, arg, sorted, ascii_lower_sorted, sorted_keys or member.
+	Kind string
+	// Const is the value of a const, as an observation of the entry's type.
+	Const *jsontext.Node
+	// ByType is the value of a const_by_type, by the type the entry has.
+	ByType map[string]*jsontext.Node
+	// Arg is the argument an arg, sorted, ascii_lower_sorted or sorted_keys source reads.
+	Arg string
+}
+
+func parseMetaSource(n *jsontext.Node) (MetaSource, error) {
+	if n.Kind != jsontext.Object || len(n.Members) != 1 {
+		return MetaSource{}, fmt.Errorf("a metadata source is an object with one member")
+	}
+	m := n.Members[0]
+	src := MetaSource{Kind: m.Name}
+	switch m.Name {
+	case "const":
+		src.Const = m.Value
+	case "const_by_type":
+		if m.Value.Kind != jsontext.Object {
+			return src, fmt.Errorf("const_by_type must be an object of values by type")
+		}
+		src.ByType = map[string]*jsontext.Node{}
+		for _, e := range m.Value.Members {
+			src.ByType[e.Name] = e.Value
+		}
+	case "arg", "sorted", "ascii_lower_sorted", "sorted_keys":
+		if m.Value.Kind != jsontext.String {
+			return src, fmt.Errorf("%s must name an argument", m.Name)
+		}
+		src.Arg = m.Value.Text
+	case "member":
+		if m.Value.Kind != jsontext.Bool || !m.Value.Bool {
+			return src, fmt.Errorf("member must be true")
+		}
+	default:
+		return src, fmt.Errorf("%q is not a metadata source", m.Name)
+	}
+	return src, nil
 }
 
 // Form describes a constructor, field, operation, encoder or property.
@@ -471,9 +516,13 @@ func parseIssueRef(n *jsontext.Node) (IssueRef, error) {
 			if m.Value.Kind != jsontext.Object {
 				return ref, fmt.Errorf("meta must be an object")
 			}
-			ref.Fixed = map[string]*jsontext.Node{}
+			ref.Meta = map[string]MetaSource{}
 			for _, f := range m.Value.Members {
-				ref.Fixed[f.Name] = f.Value
+				src, err := parseMetaSource(f.Value)
+				if err != nil {
+					return ref, fmt.Errorf("meta %s: %w", f.Name, err)
+				}
+				ref.Meta[f.Name] = src
 			}
 		default:
 			t, err := value.ParseType(m.Value.Text)

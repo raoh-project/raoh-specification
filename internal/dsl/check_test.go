@@ -1,7 +1,7 @@
 package dsl
 
 import (
-	"github.com/raoh-project/raoh-specification/internal/schemas"
+	"encoding/json"
 	"os"
 	"slices"
 	"strings"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/raoh-project/raoh-specification/internal/catalog"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/schemas"
 )
 
 func checker(t *testing.T) *Checker {
@@ -261,20 +262,25 @@ func TestMissingTypesAreErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	fx, _ := os.ReadFile("../../catalog/fixtures.json")
-	for name, edit := range map[string][2]string{
-		"constructor result": {`      "result": "string",
-      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "string"}}]`, `      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "string"}}]`},
-		"encoder input": {`      "doc": "Encodes a string as a JSON string.",
-      "input": "string"`, `      "doc": "Encodes a string as a JSON string."`},
+	for name, member := range map[string][3]string{
+		"constructor result": {"constructors", "string", "result"},
+		"field result":       {"fields", "field", "result"},
+		"encoder input":      {"encoders", "string", "input"},
 	} {
-		broken := strings.Replace(string(ops), edit[0], edit[1], 1)
-		if broken == string(ops) {
-			t.Fatalf("%s: the edit did not apply", name)
+		var doc map[string]any
+		if err := json.Unmarshal(ops, &doc); err != nil {
+			t.Fatal(err)
 		}
-		if err := schemasFor(t).Validate("operations", []byte(broken)); err == nil {
+		form := doc[member[0]].(map[string]any)[member[1]].(map[string]any)
+		if _, ok := form[member[2]]; !ok {
+			t.Fatalf("%s: nothing to remove", name)
+		}
+		delete(form, member[2])
+		broken, _ := json.Marshal(doc)
+		if err := schemasFor(t).Validate("operations", broken); err == nil {
 			t.Errorf("%s: the schema accepts it", name)
 		}
-		if _, err := Parse([]byte(broken), fx); err == nil {
+		if _, err := Parse(broken, fx); err == nil {
 			t.Errorf("%s: the parser accepts it", name)
 		}
 	}
