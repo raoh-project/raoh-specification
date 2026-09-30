@@ -1,0 +1,87 @@
+{
+  "first": {
+    "kind": "map",
+    "input": "product<T>",
+    "output": "T",
+    "doc": "The only element of a one-element product."
+  },
+  "square_side": {
+    "kind": "map",
+    "input": "product<int32>",
+    "output": "int32",
+    "doc": "side × side, for a product of the side."
+  },
+  "square": {
+    "kind": "map",
+    "input": "product<int32,string>",
+    "output": "int32",
+    "doc": "side × side, for a product of the side and the kind."
+  },
+  "area": {
+    "kind": "map",
+    "input": "product<int32,int32>",
+    "output": "int32",
+    "doc": "w × h."
+  },
+  "shift_add_10": {
+    "kind": "map",
+    "input": "product<int32,int32>",
+    "output": "int32",
+    "doc": "a × 10 + b."
+  },
+  "shift_add_100": {
+    "kind": "map",
+    "input": "product<int32,int32>",
+    "output": "int32",
+    "doc": "a × 100 + b."
+  },
+  "shift_add_1000": {
+    "kind": "map",
+    "input": "product<int32,int32>",
+    "output": "int32",
+    "doc": "a × 1000 + b."
+  },
+  "decimal_string": {
+    "kind": "map",
+    "input": "int32",
+    "output": "string",
+    "doc": "The integer written in decimal, with a minus sign when negative."
+  },
+  "even": {
+    "kind": "refine",
+    "input": "int32",
+    "doc": "Holds for an even integer.",
+    "issue": {
+      "code": "must_be_even",
+      "message_key": "must_be_even",
+      "message": "must be even",
+      "meta": {"actual": "int32"},
+      "values": {"actual": "input"}
+    }
+  },
+  "ordered_period": {
+    "kind": "flatMap",
+    "input": "product<int32,int32>",
+    "output": "product<int32,int32>",
+    "doc": "Gives the product unchanged when start <= end, and otherwise fails with the issue.",
+    "issue": {
+      "path": ["end"],
+      "code": "invalid_value",
+      "message_key": "invalid_value",
+      "message": "end is before start",
+      "meta": {}
+    }
+  },
+  "issue_count_plus_10": {
+    "kind": "recover",
+    "input": "issues",
+    "output": "int32",
+    "doc": "The number of issues, plus 10."
+  },
+  "identity": {
+    "kind": "getter",
+    "input": "T",
+    "output": "T",
+    "doc": "The value itself."
+  }
+}

@@ -1,0 +1,19 @@
+[
+  {"id": "R000005", "title": "decimal accepts 12.5", "decoder": ["decimal"], "input": 12.5, "ok": "12.5"},
+  {"id": "R000006", "title": "decimal rejects \"12.5\" with type_mismatch", "decoder": ["decimal"], "input": "12.5", "issues": [{"path":"","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"string","expected":"number"}}]},
+  {"id": "R000007", "title": "decimal.scale(2) rejects 1.125 with invalid_scale", "decoder": ["decimal",["scale",2]], "input": 1.125, "issues": [{"path":"","code":"invalid_scale","message_key":"invalid_scale","meta":{"actualScale":3,"maxScale":2}}]},
+  {"id": "R000008", "title": "decimal.positive() rejects 0 with out_of_range.positive", "decoder": ["decimal",["positive"]], "input": 0, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.positive","meta":{"actual":"0","min":"0"}}]},
+  {"id": "R000009", "title": "decimal.range(\"0\", \"10\") rejects 10.5 with out_of_range.range", "decoder": ["decimal",["range","0","10"]], "input": 10.5, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.range","meta":{"actual":"10.5","max":"10","min":"0"}}]},
+  {"id": "R000010", "title": "decimal accepts 0.0001", "decoder": ["decimal"], "input": 0.0001, "ok": "0.0001"},
+  {"id": "R000011", "title": "decimal.min(\"0.0005\") rejects 0.0001 with out_of_range.minimum", "decoder": ["decimal",["min","0.0005"]], "input": 0.0001, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.minimum","meta":{"actual":"0.0001","min":"0.0005"}}]},
+  {"id": "R000012", "title": "decimal.max(\"10\") accepts 10", "decoder": ["decimal",["max","10"]], "input": 10, "ok": "10"},
+  {"id": "R000013", "title": "decimal.max(\"10\") rejects 10.5 with out_of_range.maximum", "decoder": ["decimal",["max","10"]], "input": 10.5, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.maximum","meta":{"actual":"10.5","max":"10"}}]},
+  {"id": "R000014", "title": "decimal.negative() accepts -1.5", "decoder": ["decimal",["negative"]], "input": -1.5, "ok": "-1.5"},
+  {"id": "R000015", "title": "decimal.negative() rejects 0 with out_of_range.negative", "decoder": ["decimal",["negative"]], "input": 0, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.negative","meta":{"actual":"0","max":"0"}}]},
+  {"id": "R000016", "title": "decimal.nonNegative() accepts 0", "decoder": ["decimal",["nonNegative"]], "input": 0, "ok": "0"},
+  {"id": "R000017", "title": "decimal.nonNegative() rejects -0.5 with out_of_range.non_negative", "decoder": ["decimal",["nonNegative"]], "input": -0.5, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.non_negative","meta":{"actual":"-0.5","min":"0"}}]},
+  {"id": "R000018", "title": "decimal.nonPositive() accepts 0", "decoder": ["decimal",["nonPositive"]], "input": 0, "ok": "0"},
+  {"id": "R000019", "title": "decimal.nonPositive() rejects 0.5 with out_of_range.non_positive", "decoder": ["decimal",["nonPositive"]], "input": 0.5, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.non_positive","meta":{"actual":"0.5","max":"0"}}]},
+  {"id": "R000020", "title": "decimal.multipleOf(\"0.5\") accepts 1.5", "decoder": ["decimal",["multipleOf","0.5"]], "input": 1.5, "ok": "1.5"},
+  {"id": "R000021", "title": "decimal.multipleOf(\"0.5\") rejects 1.2 with not_multiple_of", "decoder": ["decimal",["multipleOf","0.5"]], "input": 1.2, "issues": [{"path":"","code":"not_multiple_of","message_key":"not_multiple_of","meta":{"actual":"1.2","divisor":"0.5"}}]}
+]

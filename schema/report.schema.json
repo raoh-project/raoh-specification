@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/raoh-project/raoh-specification/schema/report.schema.json",
+  "title": "Conformance report",
+  "description": "What raoh-verify found. See spec/conformance.md.",
+  "type": "object",
+  "required": ["format", "specification", "implementation", "environment", "profiles", "cases"],
+  "properties": {
+    "format": {"const": "raoh-conformance-report/v1"},
+    "specification": {"$ref": "runner-result.schema.json#/$defs/specification"},
+    "implementation": {"$ref": "runner-result.schema.json#/$defs/implementation"},
+    "environment": {"$ref": "runner-result.schema.json#/$defs/environment"},
+    "verifier": {"type": "string", "description": "The version of raoh-verify that wrote the report."},
+    "profiles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status", "matched", "divergent", "unsupported", "failed"],
+        "properties": {
+          "status": {"enum": ["conformant", "partially_conformant", "non_conformant"]},
+          "matched": {"type": "integer", "minimum": 0},
+          "divergent": {"type": "integer", "minimum": 0},
+          "unsupported": {"type": "integer", "minimum": 0},
+          "failed": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "profile", "outcome"],
+        "properties": {
+          "id": {"type": "string", "description": "A case ID, or for a messages profile the message key."},
+          "profile": {"type": "string"},
+          "outcome": {"enum": ["matched", "divergent", "unsupported", "failed"]},
+          "detail": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

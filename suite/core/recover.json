@@ -1,0 +1,7 @@
+[
+  {"id": "R000272", "title": "object([id: withDefault(int, 0), page: recover(int, 1)]) accepts {\"page\":\"x\"}", "decoder": ["object",[["field","id",["withDefault",["int"],0]],["field","page",["recover",["int"],1]]]], "input": {"page":"x"}, "ok": [0,1]},
+  {"id": "R000273", "title": "object([id: int, page: recoverWith(int, \"issue_count_plus_10\")]) accepts {\"id\":1,\"page\":2}", "decoder": ["object",[["field","id",["int"]],["field","page",["recoverWith",["int"],"issue_count_plus_10"]]]], "input": {"id":1,"page":2}, "ok": [1,2]},
+  {"id": "R000274", "title": "object([id: int, page: recoverWith(int, \"issue_count_plus_10\")]) accepts {\"id\":1,\"page\":\"x\"}", "decoder": ["object",[["field","id",["int"]],["field","page",["recoverWith",["int"],"issue_count_plus_10"]]]], "input": {"id":1,"page":"x"}, "ok": [1,11]},
+  {"id": "R000275", "title": "object([id: int, page: recoverWith(int, \"issue_count_plus_10\")]) accepts {\"id\":1}", "decoder": ["object",[["field","id",["int"]],["field","page",["recoverWith",["int"],"issue_count_plus_10"]]]], "input": {"id":1}, "ok": [1,11]},
+  {"id": "R000276", "title": "object([id: int, page: recoverWith(int, \"issue_count_plus_10\")]) rejects {\"id\":\"x\",\"page\":\"y\"} with type_mismatch at /id", "decoder": ["object",[["field","id",["int"]],["field","page",["recoverWith",["int"],"issue_count_plus_10"]]]], "input": {"id":"x","page":"y"}, "issues": [{"path":"/id","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"string","expected":"integer"}}]}
+]

@@ -1,0 +1,4 @@
+[
+  {"id": "R000831", "title": "object([value: string via identity, default \"default\"]) encodes null", "encoder": ["object",[["propertyWithDefault","value","identity",["string"],"default"]]], "value": null, "ok": {"value":"default"}},
+  {"id": "R000832", "title": "object([value: string via identity, default \"default\"]) encodes \"hello\"", "encoder": ["object",[["propertyWithDefault","value","identity",["string"],"default"]]], "value": "hello", "ok": {"value":"hello"}}
+]
