@@ -28,6 +28,7 @@
   {"id": "R000314", "title": "string.cuid() rejects \"xjld2cjxh0000qzrmn831i7rn\" with invalid_format.cuid", "decoder": ["string",["cuid"]], "input": "xjld2cjxh0000qzrmn831i7rn", "issues": [{"path":"","code":"invalid_format","message_key":"invalid_format.cuid","meta":{}}]},
   {"id": "R000315", "title": "string.pattern(\"[a-z]+\\\\d\") accepts \"abc1\"", "decoder": ["string",["pattern","[a-z]+\\d"]], "input": "abc1", "ok": "abc1"},
   {"id": "R000316", "title": "string.pattern(\"[a-z]+\\\\d\") rejects \"abc1x\" with invalid_format", "decoder": ["string",["pattern","[a-z]+\\d"]], "input": "abc1x", "issues": [{"path":"","code":"invalid_format","message_key":"invalid_format","meta":{"pattern":"[a-z]+\\d"}}]},
+  {"id": "R000849", "title": "string.pattern(\"a{0,249998}\"), 250000 states, is admitted and accepts \"aaa\"", "decoder": ["string",["pattern","a{0,249998}"]], "input": "aaa", "ok": "aaa"},
   {"id": "R000317", "title": "string.uuid() accepts \"123e4567-e89b-12d3-a456-426614174000\"", "decoder": ["string",["uuid"]], "input": "123e4567-e89b-12d3-a456-426614174000", "ok": "123e4567-e89b-12d3-a456-426614174000"},
   {"id": "R000318", "title": "string.uuid() rejects \"not-a-uuid\" with invalid_format.uuid", "decoder": ["string",["uuid"]], "input": "not-a-uuid", "issues": [{"path":"","code":"invalid_format","message_key":"invalid_format.uuid","meta":{}}]},
   {"id": "R000319", "title": "string.url() accepts \"https://example.com/a?b=c\"", "decoder": ["string",["url"]], "input": "https://example.com/a?b=c", "ok": "https://example.com/a?b=c"},

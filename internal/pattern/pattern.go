@@ -1,9 +1,11 @@
 // Package pattern reads the pattern language of spec/pattern.md: it tells a pattern from text that
-// is not one. It is the language Souther's string patterns are written in, read the way Souther's
-// compiler reads it, so that one pattern means one set of strings in both.
+// is not one, and an admissible pattern from one past the limits spec/pattern.md sets apart from
+// what a pattern means. It is the language Souther's string patterns are written in, read the way
+// Souther's compiler reads it, so that one pattern means one set of strings in both.
 //
 // The verifier never matches a pattern; a case says what its decoder gives. What it needs is to
-// refuse, where a case is read, a pattern whose meaning the specification does not define.
+// refuse, where a case is read, text whose meaning the specification does not define and a pattern
+// that means a set of strings but is past a limit, since neither is an argument.
 package pattern
 
 import (
@@ -13,8 +15,14 @@ import (
 	"unicode/utf8"
 )
 
-// Deepest is how deep groups may nest.
-const Deepest = 200
+// The limits on an admissible pattern (spec/pattern.md): the largest count a repetition may write,
+// how deep groups may nest, and the most states a pattern may come to once its repetitions are
+// written out.
+const (
+	MostCount  = 134217727
+	Deepest    = 200
+	MostStates = 250000
+)
 
 // noCeiling is the upper count of a repetition with none.
 const noCeiling = -1
@@ -44,7 +52,7 @@ func (inTurn) isWritten()   {}
 func (eitherOf) isWritten() {}
 func (repeated) isWritten() {}
 
-// refusal is why text is no pattern, and the construct that stopped the reading.
+// refusal is why text is no admissible pattern, and the construct that stopped the reading.
 type refusal struct {
 	why       string
 	construct string
@@ -61,7 +69,8 @@ type reader struct {
 	construct int
 }
 
-// Read reports whether text is a pattern, and if it is not, why.
+// Read reports whether text is an admissible pattern, and if it is not, why: it is no pattern, or
+// a pattern past a limit.
 func Read(text string) (err error) {
 	if !utf8.ValidString(text) {
 		return fmt.Errorf("a pattern is text")
@@ -84,7 +93,56 @@ func Read(text string) (err error) {
 	if !placed(w, yes, yes) {
 		return refusal{"an anchor whose answer would turn on the string matched", text}
 	}
+	if plus(1, states(w)) > MostStates {
+		return refusal{fmt.Sprintf("more than %d states once its repetitions are written out", MostStates), text}
+	}
 	return nil
+}
+
+// past is one more than MostStates: every count above the limit is this, so a count as large as a
+// pattern writes is multiplied without overflowing.
+const past = MostStates + 1
+
+// states is what w comes to with its repetitions written out, before the one state the whole
+// pattern adds, counted as spec/pattern.md counts it and never above past.
+func states(w written) int64 {
+	switch w := w.(type) {
+	case symbols, anchor:
+		return 1
+	case nothing:
+		return 0
+	case inTurn:
+		var sum int64
+		for _, part := range w.parts {
+			sum = plus(sum, states(part))
+		}
+		return sum
+	case eitherOf:
+		sum := int64(1)
+		for _, arm := range w.arms {
+			sum = plus(sum, plus(1, states(arm)))
+		}
+		return sum
+	case repeated:
+		copies := int64(w.most)
+		if w.most == noCeiling {
+			copies = int64(w.least) + 1
+		}
+		return plus(times(copies, states(w.what)), 1)
+	}
+	panic(fmt.Sprintf("a written pattern of no known shape: %T", w))
+}
+
+func plus(one, other int64) int64 { return min(past, one+other) }
+
+func times(copies, body int64) int64 {
+	if copies == 0 || body == 0 {
+		return 0
+	}
+	if copies > past/body {
+		return past
+	}
+	return min(past, copies*body)
 }
 
 func (r *reader) done() bool { return r.at >= len(r.text) }
@@ -431,14 +489,14 @@ func hexDigit(c rune) int {
 func (r *reader) count() int {
 	value, digits := 0, 0
 	for !r.done() && r.peek() >= '0' && r.peek() <= '9' {
-		value = value*10 + int(r.take()-'0')
+		value = min(MostCount+1, value*10+int(r.take()-'0'))
 		digits++
-		if value > (1<<31-1)/16 {
-			r.refuse("a count this cannot read", r.at)
-		}
 	}
 	if digits == 0 {
 		r.refuse("a count this cannot read", r.at)
+	}
+	if value > MostCount {
+		r.refuse(fmt.Sprintf("a count past the limit of %d", MostCount), r.at)
 	}
 	return value
 }

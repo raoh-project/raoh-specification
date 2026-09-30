@@ -58,12 +58,43 @@ count, `++` or any other count followed by `+`, accepts what a matcher's walk le
 language does not describe. `\p` and `\P`, the boundaries `\b`, `\B`, `\A`, `\z`, `\Z`, `\G` and
 `\R`, the quotation `\Q`...`\E`, a class inside a class and `&&`, and a backslash before any letter
 not named above have no spelling in the grammar. An escape spelling half of a surrogate pair,
-`\uD800` on its own or `\x{DC00}`, names a character no string holds. A count of more than
-134217727 and groups nested more than 200 deep are refused too.
+`\uD800` on its own or `\x{DC00}`, names a character no string holds.
 
-A form whose pattern is refused is not a decoder of the decoder language: the `pattern` operation
-requires its argument to be a pattern (`requires` in `catalog/operations.json`), and a case that
-writes another is rejected.
+## Limits on an admissible pattern
+
+A pattern is admitted only within three limits. They are not part of what a pattern means: a
+pattern past one of them denotes a set of strings like any other. They bound what running a
+pattern costs, and every implementation holds to the same numbers, counted from the text, so that
+no implementation's way of running patterns decides which ones it takes.
+
+| Limit | At most |
+|-------|---------|
+| A count written in `{n}`, `{n,}` or `{n,m}` | 134217727 |
+| Groups nested one inside another | 200 |
+| States, counted as below | 250000 |
+
+The states of a pattern are what it comes to with its repetitions written out, counted on the
+pattern as written:
+
+- a character, an escape, `.`, a shorthand and a class count one each, and so do `^` and `$`;
+- an empty pattern, group or alternative counts nothing;
+- a sequence counts the sum of its parts, and a group what is inside it;
+- a choice of n alternatives, written with n - 1 bars, counts one, plus one more than each
+  alternative;
+- `A{n,m}` counts m times `A`, plus one; `A{n}` is `A{n,n}` and `A?` is `A{0,1}`;
+- `A{n,}` counts n + 1 times `A`, plus one; `A*` is `A{0,}` and `A+` is `A{1,}`;
+- the pattern counts one more than what it is written as.
+
+So `a{249998}` is 1 + 249998 + 1 = 250000 states and is admitted, `a{249999}` is not, and neither
+is `(a{500}){500}`, which is 1 + 500 × 501 + 1. `(a|b)*` is 1 + (1 + 2 + 2) + 1 = 7. An anchor
+counts one wherever it stands and whatever it comes to. The count is that of a machine with a state
+to start in, one after each set of characters, one where a choice ends and one where each of its
+alternatives begins, and one where each repetition ends. An implementation may run another machine
+or none; it counts the same number all the same, and takes every pattern within the limits.
+
+A form whose pattern is refused, or is past one of these limits, is not a decoder of the decoder
+language: the `pattern` operation requires its argument to be a pattern this chapter admits
+(`requires` in `catalog/operations.json`), and a case that writes another is rejected.
 
 ## Implementing it
 
@@ -73,4 +104,7 @@ matches the whole string (`Matcher.matches`) with no flags, since its `.`, `\d`,
 the sets above by default; an ECMAScript engine needs the `u` flag and a translation of `.` and of
 the shorthands to explicit classes. A backtracking engine may take time that grows fast with the
 input on some patterns; that is a property of the engine, not of the pattern's meaning, and an
-implementation that runs untrusted patterns should not use one.
+implementation that runs untrusted input should not use one. The limits above are what a matcher
+that reads each character once can hold to: a pattern within them is a machine of at most 250000
+states, so a match takes time proportional to the input, with a bound on the work per character
+that every pattern admitted shares.

@@ -695,7 +695,7 @@ func meets(f *Form, r Require, ca checkedArgs) error {
 		}
 	case "pattern":
 		if err := pattern.Read(vs[0].Str); err != nil {
-			return fmt.Errorf("%s is not a pattern (spec/pattern.md): %w", name(0), err)
+			return fmt.Errorf("%s is not a pattern spec/pattern.md admits: %w", name(0), err)
 		}
 	case "named_fields":
 		for _, fl := range ca.fields[r.Args[0]] {
