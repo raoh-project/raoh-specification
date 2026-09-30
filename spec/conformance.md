@@ -112,7 +112,10 @@ invalid, and the verifier exits with status 2 without writing a report, when:
 - the declaration's specification version is not the suite's version;
 - the runner result or the declaration refers to a case ID or feature ID the suite does not have;
 - a divergence has a category other than `platform` or `design`;
-- a divergence refers to a case that needs a feature the runner does not bind;
+- a divergence refers to a case that needs a feature the runner does not bind, or to a case of a
+  profile the declaration does not list;
+- a divergence declares the outcome the case expects;
+- the runner result has an outcome for a case that needs a feature the runner does not bind;
 - a feature the runner binds is declared unsupported.
 
 ### Outcomes
