@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/raoh-project/raoh-specification/schema/case.schema.json",
+  "title": "A file of conformance cases",
+  "description": "suite/core/*.json and suite/encode/*.json. The schema gives the shape; raoh-verify check-suite also type-checks each form and reads each observation at its type.",
+  "type": "array",
+  "items": {
+    "oneOf": [
+      {"$ref": "#/$defs/decodingCase"},
+      {"$ref": "#/$defs/encodingCase"}
+    ]
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$"
+    },
+    "form": {
+      "type": "array",
+      "prefixItems": [{"type": "string"}],
+      "minItems": 1
+    },
+    "decodingCase": {
+      "type": "object",
+      "required": ["id", "decoder", "input"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "decoder": {"$ref": "#/$defs/form"},
+        "input": {"description": "The input, as JSON; its lexemes are part of it."},
+        "ok": {"description": "The observation of the result the decoder gives."},
+        "issues": {"$ref": "#/$defs/issues"}
+      },
+      "oneOf": [
+        {"required": ["ok"]},
+        {"required": ["issues"]}
+      ],
+      "additionalProperties": false
+    },
+    "encodingCase": {
+      "type": "object",
+      "required": ["id", "encoder", "value", "ok"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "encoder": {"$ref": "#/$defs/form"},
+        "value": {"description": "The observation of the value to encode."},
+        "ok": {"description": "The JSON the encoder gives."}
+      },
+      "additionalProperties": false
+    },
+    "issues": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/issue"}
+    },
+    "issue": {
+      "type": "object",
+      "required": ["path", "code", "message_key", "meta"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^(/([^~]|~[01])*)*$"},
+        "code": {"type": "string"},
+        "message_key": {"type": "string"},
+        "message": {"type": "string", "description": "Present when the message is given rather than derived."},
+        "meta": {"type": "object"}
+      },
+      "additionalProperties": false
+    }
+  }
+}
