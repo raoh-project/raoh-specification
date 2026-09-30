@@ -40,6 +40,25 @@ a new ID. `raoh-verify check-ids` checks a change against the revision it starts
 that revision is still a case or has been retired, and every retired ID stays retired. Conformance
 declarations refer to cases by ID.
 
+## What the verifier checks
+
+The verifier checks facts that the specification's artifacts and a case's input decide, and
+nothing else. It does not run a decoder.
+
+It checks, for every case: that the decoder or encoder form type-checks and its arguments meet what
+the form requires; that the expected result is an observation of the result type, including the
+alternatives of a symbol type; that the expected issues fit the decoder's issue flow for the input,
+in its order and groups; that each issue's metadata has the types its place gives, and the values
+the form decides (from constants, arguments and member names); and that each message is the one
+its place gives, derived from the catalogue or given by the form.
+
+Values that depend on running a decoder are checked for their type and their observation, not
+recomputed: the value a decoder gives, the `actual` a failed bound reports, the elements a
+`unique` or `containsAll` finds, the value a fixture computes. Whether a decoder's checks hold of
+its result (that `min(1)` gives nothing below 1, that `oneOf` gives one of its values) is decoder
+semantics, which implementations are checked for by running them on the cases; the verifier does
+not compute it. Nor does it check that the text of a `uri` belongs to the URI domain.
+
 ## Profiles
 
 | Profile | What it checks |

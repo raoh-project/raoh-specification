@@ -53,8 +53,12 @@ is the decimal 0.5 with scale 1; `["int", ["min", 0.5]]` does not type-check.
 Some forms put conditions on their arguments, listed as `requires` in `catalog/operations.json`:
 the bounds of `range` and `between` must be in order, the divisor of `multipleOf` must not be
 zero, the elements of `containsAll` must not be empty, and the symbols of `enum` must stay
-distinct when A-Z are read as a-z. raoh-java refuses to construct a decoder that breaks one of
+distinct when A-Z are read as a-z. A `strictObject` cannot have a `flat` field, since it could not
+tell which members that field reads. raoh-java refuses to construct a decoder that breaks one of
 them, so such a form is not a decoder of this language either.
+
+A form's result type follows from its arguments; `enum` gives `symbol<...>` of the names it lists
+(`symbols_from` in `catalog/operations.json`).
 
 A form that does not type-check, or whose arguments do not meet what it requires, is not a
 decoder, and a case that contains one is rejected.
