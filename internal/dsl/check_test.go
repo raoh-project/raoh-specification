@@ -12,6 +12,7 @@ import (
 	"github.com/raoh-project/raoh-specification/internal/catalog"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
 	"github.com/raoh-project/raoh-specification/internal/schemas"
+	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
 func checker(t *testing.T) *Checker {
@@ -24,8 +25,8 @@ func checker(t *testing.T) *Checker {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := &Checker{Registry: reg, Catalog: cat}
-	if err := c.Validate(); err != nil {
+	c, err := NewChecker(reg, cat)
+	if err != nil {
 		t.Fatal(err)
 	}
 	return c
@@ -159,7 +160,7 @@ func TestFeatures(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
-	all := c.Registry.Features()
+	all := c.Registry().Features()
 	for _, f := range got {
 		if !slices.Contains(all, f) {
 			t.Errorf("%s is not among the registry's features", f)
@@ -198,10 +199,10 @@ func TestReplacedIssuesAreNotPossible(t *testing.T) {
 	}
 	d := decoder(t, c, `["oneOf", [["int", ["map", "decimal_string"]], ["string", ["minLength", 3]]]]`)
 	one := issue(t, d, "one_of_failed")
-	if len(one.Candidates) != 2 {
-		t.Errorf("oneOf has %d candidates", len(one.Candidates))
+	if one.Candidates.Meta != "candidates" || len(one.Candidates.Flows) != 2 {
+		t.Errorf("oneOf lists %d candidates in %s", len(one.Candidates.Flows), one.Candidates.Meta)
 	}
-	if got := Describe(one.Candidates[1]); got != "chain(alt(alt(), required, type_mismatch), alt(alt(), too_short))" {
+	if got := Describe(one.Candidates.Flows[1]); got != "chain(alt(alt(), required, type_mismatch), alt(alt(), too_short))" {
 		t.Errorf("the second candidate: %s", got)
 	}
 }
@@ -452,4 +453,25 @@ func TestTheFlowLanguageHasNoAlt(t *testing.T) {
 	if _, err := Parse(broken, fx); err == nil || !strings.Contains(err.Error(), "reads , which is not") {
 		t.Errorf("a metadata source naming the empty argument: %v", err)
 	}
+}
+
+// An operation's arguments are complete once read: a value argument left out stands for its
+// default, a message argument left out gives no message, and nothing else can be left out.
+func TestLeftOutArgumentsHaveMeanings(t *testing.T) {
+	c := checker(t)
+	f := c.Registry().Operations["normalize"][0]
+	ca, err := c.newState().args(f, nil, map[string]value.Type{"R": value.Of(value.String)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := ca.values[argRef(0)]; !ok || v.Str != "NFC" {
+		t.Errorf("normalize without a form reads %v (%v)", v, ok)
+	}
+	f = c.Registry().Operations["toInt"][0]
+	ca, err = c.newState().args(f, nil, map[string]value.Type{"R": value.Of(value.String)})
+	if err != nil || ca.message != nil {
+		t.Errorf("toInt without a message gives the message %v (%v)", ca.message, err)
+	}
+	decoder(t, c, `["string", ["normalize"]]`)
+	rejected(t, c, `["int", ["refine"]]`, "refine takes 1 to 1 argument(s), found 0")
 }

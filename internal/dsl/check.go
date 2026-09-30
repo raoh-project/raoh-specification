@@ -21,11 +21,28 @@ type Checked struct {
 	Flow Flow
 }
 
-// Checker type-checks forms against a registry and an issue catalogue.
+// Checker type-checks forms against a registry and an issue catalogue that NewChecker has checked
+// against each other.
 type Checker struct {
-	Registry *Registry
-	Catalog  *catalog.Catalog
+	registry *Registry
+	catalog  *catalog.Catalog
 }
+
+// NewChecker checks a registry against the issue catalogue (see Validate) and returns a checker for
+// them. A Checker exists only for a registry and a catalogue that agree, so checking a form never
+// finds the catalogues wrong.
+func NewChecker(r *Registry, c *catalog.Catalog) (*Checker, error) {
+	if err := Validate(r, c); err != nil {
+		return nil, err
+	}
+	return &Checker{registry: r, catalog: c}, nil
+}
+
+// Registry is the registry the checker checks forms against.
+func (c *Checker) Registry() *Registry { return c.registry }
+
+// Catalog is the issue catalogue the checker checks forms against.
+func (c *Checker) Catalog() *catalog.Catalog { return c.catalog }
 
 type state struct {
 	*Checker
@@ -98,6 +115,7 @@ func concrete(t value.Type, what string) error {
 // checkedArgs is what checking a form's arguments gives besides the types it binds, by the
 // index of the argument.
 type checkedArgs struct {
+	// values are the values of every value argument, the default of one left out.
 	values map[ArgRef]value.Value
 	// flows are the flows of a decoder argument (one), a decoders argument or a variants
 	// argument (one for each decoder).
@@ -109,8 +127,8 @@ type checkedArgs struct {
 	// keys are the variant names of a variants argument.
 	keys     map[ArgRef][]string
 	fixtures map[ArgRef]*Fixture
-	// message is the message a message argument gives, or nil when there is none; an empty
-	// message is a message.
+	// message is the message the form's message argument gives, or nil when the form has none or
+	// it is left out; an empty message is a message.
 	message *string
 }
 
@@ -126,7 +144,7 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
 	if err != nil {
 		return value.Type{}, nil, err
 	}
-	f, ok := s.Registry.Constructors[name]
+	f, ok := s.registry.Constructors[name]
 	if !ok {
 		return value.Type{}, nil, fmt.Errorf("unknown constructor %q", name)
 	}
@@ -135,7 +153,7 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
 		return value.Type{}, nil, fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
 	}
 	bound := map[string]value.Type{}
-	ca, err := s.args(f, f.Args, n.Elems[1:1+len(f.Args)], bound)
+	ca, err := s.args(f, n.Elems[1:1+len(f.Args)], bound)
 	if err != nil {
 		return value.Type{}, nil, fmt.Errorf("%s: %w", name, err)
 	}
@@ -219,12 +237,8 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 		body, err := s.build(owner, f, x.Body, bound, ca)
 		return &Repeat{Over: x.Over, Body: body}, err
 	case ExprAt:
-		member, ok := ca.values[x.Member]
-		if !ok {
-			return nil, fmt.Errorf("%s: the member argument %s is left out", owner, f.Args[x.Member.Index()].Name)
-		}
 		body, err := s.build(owner, f, x.Body, bound, ca)
-		return &At{Name: member.Str, Body: body}, err
+		return &At{Name: ca.values[x.Member].Str, Body: body}, err
 	case ExprUnknown:
 		var known []string
 		if x.KnownArg != NoArg {
@@ -250,7 +264,7 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", owner, err)
 		}
-		site.Candidates = ca.flows[x.Decoders]
+		site.Candidates = &CandidateList{Meta: x.Meta, Flows: ca.flows[x.Decoders]}
 		return &Candidates{Site: site}, nil
 	case ExprFixture:
 		fx := ca.fixtures[x.Arg]
@@ -270,7 +284,7 @@ func (s *state) field(n *jsontext.Node) (value.Type, field, error) {
 	if err != nil {
 		return value.Type{}, field{}, err
 	}
-	f, ok := s.Registry.Fields[name]
+	f, ok := s.registry.Fields[name]
 	if !ok {
 		return value.Type{}, field{}, fmt.Errorf("unknown field kind %q", name)
 	}
@@ -279,7 +293,7 @@ func (s *state) field(n *jsontext.Node) (value.Type, field, error) {
 		return value.Type{}, field{}, fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
 	}
 	bound := map[string]value.Type{}
-	ca, err := s.args(f, f.Args, n.Elems[1:], bound)
+	ca, err := s.args(f, n.Elems[1:], bound)
 	if err != nil {
 		return value.Type{}, field{}, fmt.Errorf("%s: %w", name, err)
 	}
@@ -303,7 +317,7 @@ func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, Fl
 	if err != nil {
 		return value.Type{}, nil, err
 	}
-	forms, ok := s.Registry.Operations[name]
+	forms, ok := s.registry.Operations[name]
 	if !ok {
 		return value.Type{}, nil, fmt.Errorf("unknown operation %q", name)
 	}
@@ -337,7 +351,7 @@ func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, Fl
 	if len(given) < required || len(given) > len(f.Args) {
 		return value.Type{}, nil, fmt.Errorf("%s takes %d to %d argument(s), found %d", name, required, len(f.Args), len(given))
 	}
-	ca, err := s.args(f, f.Args[:len(given)], given, bound)
+	ca, err := s.args(f, given, bound)
 	if err != nil {
 		return value.Type{}, nil, fmt.Errorf("%s: %w", name, err)
 	}
@@ -357,7 +371,7 @@ func (s *state) encoder(n *jsontext.Node) (value.Type, error) {
 	if err != nil {
 		return value.Type{}, err
 	}
-	f, ok := s.Registry.Encoders[name]
+	f, ok := s.registry.Encoders[name]
 	if !ok {
 		return value.Type{}, fmt.Errorf("unknown encoder %q", name)
 	}
@@ -366,7 +380,7 @@ func (s *state) encoder(n *jsontext.Node) (value.Type, error) {
 		return value.Type{}, fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
 	}
 	bound := map[string]value.Type{}
-	if _, err := s.args(f, f.Args, n.Elems[1:], bound); err != nil {
+	if _, err := s.args(f, n.Elems[1:], bound); err != nil {
 		return value.Type{}, fmt.Errorf("%s: %w", name, err)
 	}
 	input := f.Input.Subst(bound)
@@ -378,7 +392,7 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 	if err != nil {
 		return value.Type{}, err
 	}
-	f, ok := s.Registry.Properties[name]
+	f, ok := s.registry.Properties[name]
 	if !ok {
 		return value.Type{}, fmt.Errorf("unknown property kind %q", name)
 	}
@@ -387,7 +401,7 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 		return value.Type{}, fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
 	}
 	bound := map[string]value.Type{}
-	if _, err := s.args(f, f.Args, n.Elems[1:], bound); err != nil {
+	if _, err := s.args(f, n.Elems[1:], bound); err != nil {
 		return value.Type{}, fmt.Errorf("%s: %w", name, err)
 	}
 	t, ok := bound["T"]
@@ -397,10 +411,12 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 	return t, nil
 }
 
-// args checks arguments in three passes, so that the types that decoders and encoders fix are
-// known when values are read and fixtures are matched, and then the conditions the form
-// requires of them.
-func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[string]value.Type) (checkedArgs, error) {
+// args checks the arguments given, the first of the form's, in three passes, so that the types
+// that decoders and encoders fix are known when values are read and fixtures are matched, and
+// then the conditions the form requires of them. A value argument left out stands for its
+// default, so every value argument has a value in what args gives; a message argument left out
+// gives no message.
+func (s *state) args(f *Form, nodes []*jsontext.Node, bound map[string]value.Type) (checkedArgs, error) {
 	ca := checkedArgs{values: map[ArgRef]value.Value{}, flows: map[ArgRef][]Flow{}, fields: map[ArgRef][]field{},
 		keys: map[ArgRef][]string{}, fixtures: map[ArgRef]*Fixture{}}
 	decoder := func(r ArgRef, a Arg, n *jsontext.Node) error {
@@ -415,9 +431,15 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 		return nil
 	}
 	for pass := 0; pass < 3; pass++ {
-		for i, a := range args {
-			v := nodes[i]
+		for i, a := range f.Args {
 			ref := argRef(i)
+			if i >= len(nodes) {
+				if pass == 1 && a.Kind == "value" {
+					ca.values[ref] = *a.Default
+				}
+				continue
+			}
+			v := nodes[i]
 			var err error
 			switch {
 			case pass == 0 && a.Kind == "decoder":
@@ -466,7 +488,7 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 				}
 			case pass == 1 && a.Kind == "value":
 				ca.values[ref], err = s.literal(a, v, bound)
-			case pass == 1 && a.Kind == "message":
+			case pass == 1 && ref == f.Message:
 				if v.Kind != jsontext.String {
 					err = fmt.Errorf("%s must be a string", a.Name)
 				}
@@ -488,15 +510,11 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 	return ca, nil
 }
 
-// meets checks a condition on argument values. An argument left out is not checked.
+// meets checks a condition on argument values.
 func meets(f *Form, r Require, values map[ArgRef]value.Value) error {
 	var vs []value.Value
 	for _, i := range r.Args {
-		v, ok := values[i]
-		if !ok {
-			return nil
-		}
-		vs = append(vs, v)
+		vs = append(vs, values[i])
 	}
 	name := func(k int) string { return f.Args[r.Args[k].Index()].Name }
 	switch r.Check {
@@ -557,7 +575,7 @@ func (s *state) fixture(a Arg, n *jsontext.Node, bound map[string]value.Type) (*
 	if n.Kind != jsontext.String {
 		return nil, fmt.Errorf("%s must name a fixture", a.Name)
 	}
-	fx, ok := s.Registry.Fixtures[n.Text]
+	fx, ok := s.registry.Fixtures[n.Text]
 	if !ok {
 		return nil, fmt.Errorf("unknown fixture %q", n.Text)
 	}
@@ -600,19 +618,13 @@ func (s *state) fixture(a Arg, n *jsontext.Node, bound map[string]value.Type) (*
 }
 
 // site instantiates an issue reference with the types bound gives the form's parameters and the
-// values its arguments give its metadata.
+// values its arguments give its metadata. NewChecker has checked that the catalogue has the
+// variant, and that the reference binds its parameters and names only metadata it has.
 func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) (*Site, error) {
-	v, ok := s.Catalog.Variants[ref.Key]
-	if !ok {
-		return nil, fmt.Errorf("issue %s is not in the catalogue", ref.Key)
-	}
+	v := s.catalog.Variants[ref.Key]
 	args := map[string]value.Type{}
 	for _, p := range v.Params {
-		b, ok := ref.Bind[p]
-		if !ok {
-			return nil, fmt.Errorf("issue %s: %s is not bound", ref.Key, p)
-		}
-		args[p] = b.Subst(bound)
+		args[p] = ref.Bind[p].Subst(bound)
 		if err := concrete(args[p], "issue "+ref.Key); err != nil {
 			return nil, err
 		}
@@ -623,16 +635,10 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) 
 	}
 	site := &Site{Key: v.Key, Code: v.Code, Meta: meta, Values: map[string]value.Value{}, Message: ca.message}
 	for _, o := range ref.Omit {
-		if _, ok := meta[o]; !ok {
-			return nil, fmt.Errorf("issue %s has no metadata %s to omit", ref.Key, o)
-		}
 		delete(meta, o)
 	}
 	for name, src := range ref.Meta {
-		t, ok := meta[name]
-		if !ok {
-			return nil, fmt.Errorf("issue %s has no metadata %s", ref.Key, name)
-		}
+		t := meta[name]
 		if src.Kind == "member" {
 			if t.Kind != value.String {
 				return nil, fmt.Errorf("issue %s: %s is a member name, and a %s", ref.Key, name, t)
@@ -644,9 +650,7 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) 
 		if err != nil {
 			return nil, fmt.Errorf("issue %s meta %s: %w", ref.Key, name, err)
 		}
-		if val != nil {
-			site.Values[name] = *val
-		}
+		site.Values[name] = val
 	}
 	for _, o := range v.Optional {
 		if _, ok := meta[o]; ok {
@@ -656,13 +660,18 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) 
 	return site, nil
 }
 
-// Validate checks the registry against the issue catalogue: every issue a form declares is in
-// it, with every parameter bound and every metadata source naming an entry the variant has.
-func (c *Checker) Validate() error {
+// candidatesType is the type of the metadata entry that lists the candidates of an issue.
+var candidatesType = value.MustParseType("list<record<candidate:int32,issues:issues>>")
+
+// Validate checks a registry against the issue catalogue: every issue a form declares is in it,
+// with its parameters bound and nothing else, and every metadata entry the form omits or gives a
+// source is one the variant has. An issue that lists candidates lists them in an entry of exactly
+// the candidates' type that every such issue has.
+func Validate(r *Registry, c *catalog.Catalog) error {
 	var problems []string
 	check := func(owner string, f *Form) {
 		for _, ref := range f.Issues {
-			v, ok := c.Catalog.Variants[ref.Key]
+			v, ok := c.Variants[ref.Key]
 			if !ok {
 				problems = append(problems, fmt.Sprintf("%s: issue %s is not in the catalogue", owner, ref.Key))
 				continue
@@ -672,20 +681,54 @@ func (c *Checker) Validate() error {
 					problems = append(problems, fmt.Sprintf("%s: issue %s does not bind %s", owner, ref.Key, p))
 				}
 			}
-			for name := range ref.Meta {
-				if _, ok := v.Meta[name]; !ok {
+			for p := range ref.Bind {
+				if !slices.Contains(v.Params, p) {
+					problems = append(problems, fmt.Sprintf("%s: issue %s has no parameter %s to bind", owner, ref.Key, p))
+				}
+			}
+			for name, src := range ref.Meta {
+				t, ok := v.Meta[name]
+				if !ok {
 					problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to give a source", owner, ref.Key, name))
+					continue
+				}
+				if err := sourceFits(f, src, t.Subst(ref.Bind)); err != nil {
+					problems = append(problems, fmt.Sprintf("%s: issue %s meta %s: %v", owner, ref.Key, name, err))
+				}
+			}
+			for _, name := range ref.Omit {
+				if _, ok := v.Meta[name]; !ok {
+					problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to omit", owner, ref.Key, name))
 				}
 			}
 		}
+		walkExpr(f.Flow, func(e Expr) {
+			x, ok := e.(ExprCandidates)
+			if !ok {
+				return
+			}
+			ref := f.Issues[x.Issue.Index()]
+			v, ok := c.Variants[ref.Key]
+			if !ok {
+				return
+			}
+			switch t, ok := v.Meta[x.Meta]; {
+			case !ok:
+				problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to list the candidates", owner, ref.Key, x.Meta))
+			case !t.Same(candidatesType):
+				problems = append(problems, fmt.Sprintf("%s: issue %s lists the candidates in %s, which is a %s, not a %s", owner, ref.Key, x.Meta, t, candidatesType))
+			case slices.Contains(v.Optional, x.Meta):
+				problems = append(problems, fmt.Sprintf("%s: issue %s may leave out %s, and an issue that lists candidates lists them all", owner, ref.Key, x.Meta))
+			}
+		})
 	}
-	for name, f := range c.Registry.Constructors {
+	for name, f := range r.Constructors {
 		check("constructor "+name, f)
 	}
-	for name, f := range c.Registry.Fields {
+	for name, f := range r.Fields {
 		check("field "+name, f)
 	}
-	for name, forms := range c.Registry.Operations {
+	for name, forms := range r.Operations {
 		for _, f := range forms {
 			check("operation "+name, f)
 		}
@@ -697,9 +740,52 @@ func (c *Checker) Validate() error {
 	return nil
 }
 
-// metaValue computes the value a metadata source decides, or nil when the argument it reads was
-// left out of the form (an optional argument).
-func metaValue(src MetaSource, t value.Type, ca checkedArgs) (*value.Value, error) {
+// sourceFits checks what of a metadata source the forms alone decide: a constant is an
+// observation of the entry's type, and an argument has the entry's type, wherever neither
+// mentions a type parameter a decoder binds.
+func sourceFits(f *Form, src MetaSource, t value.Type) error {
+	concrete := len(t.Params()) == 0
+	switch src.Kind {
+	case "const":
+		if concrete {
+			if _, err := value.Observe(t, src.Const); err != nil {
+				return err
+			}
+		}
+	case "const_by_type":
+		for name, n := range src.ByType {
+			bt, err := value.ParseType(name)
+			if err != nil {
+				return err
+			}
+			if _, err := value.Observe(bt, n); err != nil {
+				return fmt.Errorf("the value for %s: %w", name, err)
+			}
+		}
+		if concrete {
+			if _, ok := src.ByType[t.String()]; !ok {
+				return fmt.Errorf("const_by_type has no value for %s", t)
+			}
+		}
+	case "arg", "sorted", "ascii_lower_sorted":
+		at := f.Args[src.Arg.Index()].Type
+		if concrete && len(at.Params()) == 0 && !at.Same(t) {
+			return fmt.Errorf("argument %s is a %s, and the entry a %s", f.Args[src.Arg.Index()].Name, at, t)
+		}
+	case "sorted_keys":
+		if t.Kind != value.List || t.Args[0].Kind != value.String {
+			return fmt.Errorf("sorted_keys gives a list<string>, and the entry is a %s", t)
+		}
+	case "member":
+		if concrete && t.Kind != value.String {
+			return fmt.Errorf("the name of a member is a string, and the entry a %s", t)
+		}
+	}
+	return nil
+}
+
+// metaValue computes the value a metadata source decides.
+func metaValue(src MetaSource, t value.Type, ca checkedArgs) (value.Value, error) {
 	var v value.Value
 	var err error
 	switch src.Kind {
@@ -708,14 +794,11 @@ func metaValue(src MetaSource, t value.Type, ca checkedArgs) (*value.Value, erro
 	case "const_by_type":
 		n, ok := src.ByType[t.String()]
 		if !ok {
-			return nil, fmt.Errorf("const_by_type has no value for %s", t)
+			return value.Value{}, fmt.Errorf("const_by_type has no value for %s", t)
 		}
 		v, err = value.Observe(t, n)
 	case "arg", "sorted", "ascii_lower_sorted":
-		a, ok := ca.values[src.Arg]
-		if !ok {
-			return nil, nil
-		}
+		a := ca.values[src.Arg]
 		v = a
 		if src.Kind == "ascii_lower_sorted" {
 			v = asciiLowered(a)
@@ -723,30 +806,30 @@ func metaValue(src MetaSource, t value.Type, ca checkedArgs) (*value.Value, erro
 		}
 		if src.Kind != "arg" {
 			if err := sortElems(&v); err != nil {
-				return nil, err
+				return value.Value{}, err
 			}
 		}
 		if !v.Type.Same(t) {
-			return nil, fmt.Errorf("the source is a %s, and the entry a %s", v.Type, t)
+			return value.Value{}, fmt.Errorf("the source is a %s, and the entry a %s", v.Type, t)
 		}
 	case "sorted_keys":
 		if t.Kind != value.List || t.Args[0].Kind != value.String {
-			return nil, fmt.Errorf("sorted_keys gives a list<string>, and the entry is a %s", t)
+			return value.Value{}, fmt.Errorf("sorted_keys gives a list<string>, and the entry is a %s", t)
 		}
 		v = value.Value{Type: t}
 		for _, k := range ca.keys[src.Arg] {
 			v.Elems = append(v.Elems, value.Value{Type: t.Args[0], Str: k})
 		}
 		if err := sortElems(&v); err != nil {
-			return nil, err
+			return value.Value{}, err
 		}
 	default:
-		return nil, fmt.Errorf("%s is not a metadata source", src.Kind)
+		return value.Value{}, fmt.Errorf("%s is not a metadata source", src.Kind)
 	}
 	if err != nil {
-		return nil, err
+		return value.Value{}, err
 	}
-	return &v, nil
+	return v, nil
 }
 
 // asciiLowered returns a list of strings with A-Z read as a-z.

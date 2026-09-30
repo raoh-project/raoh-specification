@@ -22,6 +22,12 @@ An operation is a JSON array whose first element is the operation's name and who
 its arguments. An operation may have optional trailing arguments; a constructor may not, so that the
 end of a constructor's arguments never depends on what follows.
 
+Only a value or a message argument can be optional, and leaving one out means one thing: a value
+argument left out stands for its `default`, which every optional value argument declares (`normalize`
+without a form is `normalize` with `"NFC"`), and a message argument left out gives the message the
+catalogue derives. A form's arguments have distinct names, and a form has at most one message
+argument.
+
 Arguments are of these kinds:
 
 | Kind | Written as |
@@ -86,9 +92,11 @@ failed.
 `catalog/operations.json` gives the meaning of each form in its `doc`, the issues it can give in
 `issues`, and how it gives them in `flow`, an expression over its arguments and its issues that
 [issues.md](issues.md) describes. Every argument whose decoders give issues is placed in the flow
-or discarded exactly once, and every issue is given by exactly one part of it; the registry is
-rejected otherwise, as it is when the flow or a metadata source names an argument or an issue the
-form does not have. The cases in `suite/` are the specification of the details. Where a `doc` and a case
+or discarded exactly once, and every issue is declared once and given by exactly one part of it;
+the registry is rejected otherwise, as it is when the flow or a metadata source names an argument
+or an issue the form does not have, or a member the language does not define. These conditions are
+checked when the catalogue is read, so a catalogue that breaks one is invalid rather than wrong for
+some case. The cases in `suite/` are the specification of the details. Where a `doc` and a case
 disagree, the specification has a defect; report it.
 
 Several meanings in version 0.8.0 are raoh-java 0.8.0's behaviour written down, where a later

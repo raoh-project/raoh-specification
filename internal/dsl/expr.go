@@ -81,10 +81,11 @@ type ExprUnknown struct {
 }
 
 // ExprCandidates is an issue that lists, for every decoder of a decoders argument, the issues it
-// gave.
+// gave, in the metadata entry Meta.
 type ExprCandidates struct {
 	Decoders ArgRef
 	Issue    IssueIndex
+	Meta     string
 }
 
 // ExprFixture is the issue the fixture a fixture argument names declares.
@@ -116,19 +117,25 @@ type exprResolver struct {
 	own      int
 }
 
-func (r *exprResolver) arg(name string, kinds ...string) (ArgRef, error) {
-	for i, a := range r.f.Args {
-		if a.Name == name {
-			if !slices.Contains(kinds, a.Kind) {
-				return NoArg, fmt.Errorf("argument %s is a %s argument, and the flow needs one of %v", name, a.Kind, kinds)
-			}
-			return argRef(i), nil
-		}
+func (r *exprResolver) arg(n *jsontext.Node, kinds ...string) (ArgRef, error) {
+	if n.Kind != jsontext.String {
+		return NoArg, fmt.Errorf("the flow names an argument with a string")
 	}
-	return NoArg, fmt.Errorf("the flow names %s, which is not an argument", name)
+	i, ok := r.f.arg(n.Text)
+	if !ok {
+		return NoArg, fmt.Errorf("the flow names %s, which is not an argument", n.Text)
+	}
+	if a := r.f.Args[i.Index()]; !slices.Contains(kinds, a.Kind) {
+		return NoArg, fmt.Errorf("argument %s is a %s argument, and the flow needs one of %v", a.Name, a.Kind, kinds)
+	}
+	return i, nil
 }
 
-func (r *exprResolver) issue(key string) (IssueIndex, error) {
+func (r *exprResolver) issue(n *jsontext.Node) (IssueIndex, error) {
+	if n.Kind != jsontext.String {
+		return 0, fmt.Errorf("the flow names an issue with a string")
+	}
+	key := n.Text
 	for i, ref := range r.f.Issues {
 		if ref.Key == key {
 			if r.named[i] {
@@ -159,7 +166,7 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 	v := m.Value
 	switch m.Name {
 	case "arg":
-		i, err := r.arg(v.Text, "decoder", "variants", "fields")
+		i, err := r.arg(v, "decoder", "variants", "fields")
 		if err != nil {
 			return nil, err
 		}
@@ -168,6 +175,9 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 	case "cat", "chain":
 		// There is no alt: a form cannot skip a decoder it runs. What excludes each other is a
 		// form's own issues, and the variants of a variants argument.
+		if v.Kind != jsontext.Array || len(v.Elems) < 2 {
+			return nil, fmt.Errorf("%s is an array of two flows or more", m.Name)
+		}
 		var items []Expr
 		for _, e := range v.Elems {
 			x, err := r.parse(e)
@@ -191,7 +201,10 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		}
 		return ExprEach{Over: over, Body: body}, nil
 	case "at":
-		member, err := v.String("member")
+		if err := object(v, "at", "member", "flow"); err != nil {
+			return nil, err
+		}
+		member, err := v.Member("member")
 		if err != nil {
 			return nil, err
 		}
@@ -199,8 +212,8 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if r.f.Args[i.Index()].Type.Kind != value.String {
-			return nil, fmt.Errorf("at names %s, which is a %s, not a string", member, r.f.Args[i.Index()].Type)
+		if t := r.f.Args[i.Index()].Type; t.Kind != value.String {
+			return nil, fmt.Errorf("at names %s, which is a %s, not a string", member.Text, t)
 		}
 		body, err := v.Member("flow")
 		if err != nil {
@@ -212,26 +225,33 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		}
 		return ExprAt{Member: i, Body: b}, nil
 	case "unknown_members":
+		if err := object(v, "unknown_members", "known", "issue"); err != nil {
+			return nil, err
+		}
 		x := ExprUnknown{}
 		known, err := v.Member("known")
 		if err != nil {
 			return nil, err
 		}
-		if name, ok := known.Get("arg"); ok {
-			if x.KnownArg, err = r.arg(name.Text, "value"); err != nil {
+		if known.Kind != jsontext.Object || len(known.Members) != 1 {
+			return nil, fmt.Errorf("the known members come from an arg or from fields")
+		}
+		switch k := known.Members[0]; k.Name {
+		case "arg":
+			if x.KnownArg, err = r.arg(k.Value, "value"); err != nil {
 				return nil, err
 			}
 			if t := r.f.Args[x.KnownArg.Index()].Type; t.Kind != value.List || t.Args[0].Kind != value.String {
-				return nil, fmt.Errorf("the known members come from %s, which is a %s, not a list<string>", name.Text, t)
+				return nil, fmt.Errorf("the known members come from %s, which is a %s, not a list<string>", k.Value.Text, t)
 			}
-		} else if name, ok := known.Get("fields"); ok {
-			if x.KnownFields, err = r.arg(name.Text, "fields"); err != nil {
+		case "fields":
+			if x.KnownFields, err = r.arg(k.Value, "fields"); err != nil {
 				return nil, err
 			}
-		} else {
+		default:
 			return nil, fmt.Errorf("the known members come from an arg or from fields")
 		}
-		key, err := v.String("issue")
+		key, err := v.Member("issue")
 		if err != nil {
 			return nil, err
 		}
@@ -240,25 +260,36 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		}
 		return x, nil
 	case "candidates":
+		if err := object(v, "candidates", "decoders", "issue", "meta"); err != nil {
+			return nil, err
+		}
 		x := ExprCandidates{}
-		name, err := v.String("decoders")
+		decoders, err := v.Member("decoders")
 		if err != nil {
 			return nil, err
 		}
-		if x.Decoders, err = r.arg(name, "decoders"); err != nil {
+		if x.Decoders, err = r.arg(decoders, "decoders"); err != nil {
 			return nil, err
 		}
 		r.flowRefs[x.Decoders]++
-		key, err := v.String("issue")
+		key, err := v.Member("issue")
 		if err != nil {
 			return nil, err
 		}
 		if x.Issue, err = r.issue(key); err != nil {
 			return nil, err
 		}
+		if x.Meta, err = v.String("meta"); err != nil {
+			return nil, err
+		}
+		// The form does not decide the candidates, and cannot leave them out.
+		ref := r.f.Issues[x.Issue.Index()]
+		if _, ok := ref.Meta[x.Meta]; ok || slices.Contains(ref.Omit, x.Meta) {
+			return nil, fmt.Errorf("issue %s lists the candidates in %s, which the form gives a source or omits", ref.Key, x.Meta)
+		}
 		return x, nil
 	case "fixture":
-		i, err := r.arg(v.Text, "fixture")
+		i, err := r.arg(v, "fixture")
 		if err != nil {
 			return nil, err
 		}
@@ -267,9 +298,12 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		}
 		return ExprFixture{Arg: i}, nil
 	case "discard":
+		if v.Kind != jsontext.Array || len(v.Elems) == 0 {
+			return nil, fmt.Errorf("discard is a non-empty array of arguments")
+		}
 		x := ExprDiscard{}
 		for _, e := range v.Elems {
-			i, err := r.arg(e.Text, "decoder", "decoders", "variants", "fields")
+			i, err := r.arg(e, "decoder", "decoders", "variants", "fields")
 			if err != nil {
 				return nil, err
 			}

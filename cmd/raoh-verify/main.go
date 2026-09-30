@@ -78,7 +78,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
-		for _, f := range s.Checker.Registry.Features() {
+		for _, f := range s.Checker.Registry().Features() {
 			fmt.Fprintln(stdout, f)
 		}
 		return 0

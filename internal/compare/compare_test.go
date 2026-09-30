@@ -25,7 +25,11 @@ func oneCase(t *testing.T, text string) *suite.Case {
 	if strings.Contains(text, `"encoder"`) {
 		profile = "encode"
 	}
-	cases, problems := suite.ParseFile("suite/"+profile+"/t.json", profile, []byte("["+text+"]"), &dsl.Checker{Registry: reg, Catalog: cat})
+	chk, err := dsl.NewChecker(reg, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases, problems := suite.ParseFile("suite/"+profile+"/t.json", profile, []byte("["+text+"]"), chk)
 	if len(problems) > 0 {
 		t.Fatal(problems)
 	}
@@ -225,7 +229,11 @@ func suiteParse(t *testing.T, text string) ([]*suite.Case, []string) {
 	sch, _ := schemas.Load("../..")
 	cat, _ := catalog.Load("../..", sch)
 	reg, _ := dsl.Load("../..", sch)
-	return suite.ParseFile("suite/core/t.json", "core", []byte("["+text+"]"), &dsl.Checker{Registry: reg, Catalog: cat})
+	chk, err := dsl.NewChecker(reg, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return suite.ParseFile("suite/core/t.json", "core", []byte("["+text+"]"), chk)
 }
 
 // An implementation's one_of_failed is read as the case's is: every candidate exactly once.

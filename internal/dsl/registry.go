@@ -22,9 +22,10 @@ type Arg struct {
 	// Type is the type of a value, or the result type of a decoder, or the input type of an
 	// encoder; it may mention type parameters.
 	Type value.Type
-	// Optional marks a trailing argument of an operation that may be left out.
+	// Optional marks a trailing value or message argument of an operation that may be left out.
 	Optional bool
-	// Default is what an optional value argument left out stands for, if the form says.
+	// Default is what an optional value argument left out stands for; every optional value
+	// argument has one. An optional message argument left out gives no message.
 	Default *value.Value
 	// OneOf restricts a string value to the values listed.
 	OneOf []string
@@ -101,6 +102,8 @@ type Form struct {
 	Name string
 	Doc  string
 	Args []Arg
+	// Message is the form's message argument, or NoArg; a form has at most one.
+	Message ArgRef
 	// Result is the result type of a constructor, field or operation; the product type of an
 	// object is computed from its fields.
 	Result value.Type
@@ -149,7 +152,13 @@ type Fixture struct {
 	Issue  *FixtureIssue
 }
 
-// Registry is catalog/operations.json and catalog/fixtures.json.
+var fixtureKinds = []string{"map", "refine", "flatMap", "recover", "getter"}
+
+// Registry is catalog/operations.json and catalog/fixtures.json. A Registry that Parse returns
+// meets every condition the checker relies on: its argument names are unambiguous, every argument
+// that may be left out says what leaving it out means, every reference resolves to exactly one
+// argument or issue, and every member the files write means something. Only what needs the issue
+// catalogue is left to Checker.
 type Registry struct {
 	Constructors map[string]*Form
 	Fields       map[string]*Form
@@ -178,7 +187,17 @@ func Load(root string, sch *schemas.Set) (*Registry, error) {
 	return Parse(ops, fixtures)
 }
 
-// Parse reads a registry from the text of operations.json and fixtures.json.
+// sectionMembers are the members a form of each section may have.
+var sectionMembers = map[string][]string{
+	"constructor": {"doc", "result", "args", "issues", "requires", "symbols_from", "flow"},
+	"field":       {"doc", "result", "args", "issues", "requires", "symbols_from", "flow"},
+	"operation":   {"name", "doc", "receivers", "result", "args", "issues", "requires", "symbols_from", "flow"},
+	"encoder":     {"doc", "input", "args"},
+	"property":    {"doc", "args"},
+}
+
+// Parse reads a registry from the text of operations.json and fixtures.json. It does not rely on
+// the schemas: what it accepts without them means what it means with them.
 func Parse(operations, fixtures []byte) (*Registry, error) {
 	r := &Registry{
 		Constructors: map[string]*Form{}, Fields: map[string]*Form{}, Operations: map[string][]*Form{},
@@ -188,35 +207,23 @@ func Parse(operations, fixtures []byte) (*Registry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("operations.json: %w", err)
 	}
+	if err := object(root, "operations.json", "constructors", "fields", "operations", "encoders", "properties"); err != nil {
+		return nil, err
+	}
 	for _, section := range []struct {
-		name string
-		into map[string]*Form
-	}{{"constructors", r.Constructors}, {"fields", r.Fields}, {"encoders", r.Encoders}, {"properties", r.Properties}} {
+		name, form string
+		into       map[string]*Form
+	}{{"constructors", "constructor", r.Constructors}, {"fields", "field", r.Fields}, {"encoders", "encoder", r.Encoders}, {"properties", "property", r.Properties}} {
 		n, ok := root.Get(section.name)
 		if !ok || n.Kind != jsontext.Object {
 			return nil, fmt.Errorf("operations.json: %s must be an object", section.name)
 		}
 		for _, m := range n.Members {
-			f, err := parseForm(m.Name, m.Value)
+			f, err := parseForm(section.form, m.Name, m.Value)
 			if err != nil {
-				return nil, fmt.Errorf("operations.json: %s %s: %w", section.name, m.Name, err)
+				return nil, fmt.Errorf("operations.json: %s %s: %w", section.form, m.Name, err)
 			}
 			section.into[m.Name] = f
-		}
-	}
-	for name, f := range r.Constructors {
-		if err := f.needs(name, "constructor", true, false); err != nil {
-			return nil, err
-		}
-	}
-	for name, f := range r.Fields {
-		if err := f.needs(name, "field", true, false); err != nil {
-			return nil, err
-		}
-	}
-	for name, f := range r.Encoders {
-		if err := f.needs(name, "encoder", false, true); err != nil {
-			return nil, err
 		}
 	}
 	list, ok := root.Get("operations")
@@ -224,19 +231,16 @@ func Parse(operations, fixtures []byte) (*Registry, error) {
 		return nil, fmt.Errorf("operations.json: operations must be an array")
 	}
 	for _, e := range list.Elems {
-		name, ok := e.Get("name")
-		if !ok || name.Kind != jsontext.String {
+		if e.Kind != jsontext.Object {
+			return nil, fmt.Errorf("operations.json: an operation must be an object")
+		}
+		name, ok, err := text(e, "name")
+		if err != nil || !ok {
 			return nil, fmt.Errorf("operations.json: an operation has no name")
 		}
-		f, err := parseForm(name.Text, e)
+		f, err := parseForm("operation", name, e)
 		if err != nil {
-			return nil, fmt.Errorf("operations.json: operation %s: %w", name.Text, err)
-		}
-		if len(f.Receivers) == 0 {
-			return nil, fmt.Errorf("operations.json: operation %s has no receivers", name.Text)
-		}
-		if err := f.needs(name.Text, "operation", true, false); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("operations.json: operation %s: %w", name, err)
 		}
 		for _, other := range r.Operations[f.Name] {
 			for _, rc := range f.Receivers {
@@ -251,6 +255,9 @@ func Parse(operations, fixtures []byte) (*Registry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fixtures.json: %w", err)
 	}
+	if fx.Kind != jsontext.Object {
+		return nil, fmt.Errorf("fixtures.json must be an object")
+	}
 	for _, m := range fx.Members {
 		f, err := parseFixture(m.Name, m.Value)
 		if err != nil {
@@ -261,15 +268,35 @@ func Parse(operations, fixtures []byte) (*Registry, error) {
 	return r, nil
 }
 
-func str(n *jsontext.Node, name string) (string, bool) {
-	v, ok := n.Get(name)
-	if !ok || v.Kind != jsontext.String {
-		return "", false
+// object checks that n is an object whose members are among those listed, so that a member the
+// language does not have is an error and never passed over.
+func object(n *jsontext.Node, what string, allowed ...string) error {
+	if n.Kind != jsontext.Object {
+		return fmt.Errorf("%s must be an object", what)
 	}
-	return v.Text, true
+	for _, m := range n.Members {
+		if !slices.Contains(allowed, m.Name) {
+			return fmt.Errorf("%s has no member %q", what, m.Name)
+		}
+	}
+	return nil
 }
 
-func strs(n *jsontext.Node, name string) ([]string, error) {
+// text reads a string member: ok is false when it is absent, and anything but a string is an
+// error.
+func text(n *jsontext.Node, name string) (string, bool, error) {
+	v, ok := n.Get(name)
+	if !ok {
+		return "", false, nil
+	}
+	if v.Kind != jsontext.String {
+		return "", false, fmt.Errorf("%s must be a string", name)
+	}
+	return v.Text, true, nil
+}
+
+// elems reads an array member; absent, it has no elements.
+func elems(n *jsontext.Node, name string) ([]*jsontext.Node, error) {
 	v, ok := n.Get(name)
 	if !ok {
 		return nil, nil
@@ -277,8 +304,16 @@ func strs(n *jsontext.Node, name string) ([]string, error) {
 	if v.Kind != jsontext.Array {
 		return nil, fmt.Errorf("%s must be an array", name)
 	}
+	return v.Elems, nil
+}
+
+func strs(n *jsontext.Node, name string) ([]string, error) {
+	es, err := elems(n, name)
+	if err != nil {
+		return nil, err
+	}
 	out := []string{}
-	for _, e := range v.Elems {
+	for _, e := range es {
 		if e.Kind != jsontext.String {
 			return nil, fmt.Errorf("%s must be an array of strings", name)
 		}
@@ -288,9 +323,9 @@ func strs(n *jsontext.Node, name string) ([]string, error) {
 }
 
 func typeOf(n *jsontext.Node, name string) (value.Type, bool, error) {
-	s, ok := str(n, name)
-	if !ok {
-		return value.Type{}, false, nil
+	s, ok, err := text(n, name)
+	if err != nil || !ok {
+		return value.Type{}, false, err
 	}
 	t, err := value.ParseType(s)
 	return t, true, err
@@ -298,19 +333,25 @@ func typeOf(n *jsontext.Node, name string) (value.Type, bool, error) {
 
 var argKinds = []string{"decoder", "decoders", "fields", "variants", "value", "message", "fixture", "encoder", "properties"}
 
-func parseForm(name string, n *jsontext.Node) (*Form, error) {
+// typedKinds are the argument kinds that have a type, and only they.
+var typedKinds = []string{"decoder", "decoders", "variants", "value", "encoder"}
+
+func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
+	if err := object(n, section, sectionMembers[section]...); err != nil {
+		return nil, err
+	}
 	f := &Form{Name: name}
 	var err error
 	if f.Doc, err = n.String("doc"); err != nil {
 		return nil, err
 	}
-	if s, ok := str(n, "result"); ok {
-		if s != "product" {
-			if f.Result, err = value.ParseType(s); err != nil {
-				return nil, err
-			}
-		} else {
-			f.Result = value.Type{Kind: value.Product}
+	if s, ok, err := text(n, "result"); err != nil {
+		return nil, err
+	} else if ok && s == "product" {
+		f.Result = value.Type{Kind: value.Product}
+	} else if ok {
+		if f.Result, err = value.ParseType(s); err != nil {
+			return nil, err
 		}
 	}
 	if t, ok, err := typeOf(n, "input"); err != nil {
@@ -328,121 +369,163 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 			}
 		}
 	}
-	if args, ok := n.Get("args"); ok {
-		for _, a := range args.Elems {
-			arg, err := parseArg(a)
-			if err != nil {
-				return nil, err
-			}
-			f.Args = append(f.Args, arg)
-		}
+	if err := f.parseArgs(section, n); err != nil {
+		return nil, err
 	}
-	if from, ok := str(n, "symbols_from"); ok {
-		i := f.argIndex(from)
-		if f.Result.Kind != value.Symbol || i < 0 || f.Args[i].Kind != "value" || f.Args[i].Type.String() != "list<string>" {
+	if from, ok, err := text(n, "symbols_from"); err != nil {
+		return nil, err
+	} else if ok {
+		i, found := f.arg(from)
+		if f.Result.Kind != value.Symbol || !found || f.Args[i.Index()].Kind != "value" || f.Args[i.Index()].Type.String() != "list<string>" {
 			return nil, fmt.Errorf("symbols_from %s needs a symbol result and a list<string> value argument %s", from, from)
 		}
-		f.SymbolsFrom = argRef(i)
+		f.SymbolsFrom = i
 	}
-	for i, a := range f.Args {
-		if !a.Optional && i > 0 && f.Args[i-1].Optional {
-			return nil, fmt.Errorf("argument %s follows an optional argument", a.Name)
-		}
+	reqs, err := elems(n, "requires")
+	if err != nil {
+		return nil, err
 	}
-	if reqs, ok := n.Get("requires"); ok {
-		for _, e := range reqs.Elems {
-			var r Require
-			r.Check, _ = str(e, "check")
-			args, err := strs(e, "args")
-			if err != nil {
-				return nil, err
-			}
-			if want, ok := requireArity[r.Check]; !ok || len(args) != want {
-				return nil, fmt.Errorf("requires %q with %d argument(s) is not a condition", r.Check, len(args))
-			}
-			for _, name := range args {
-				i := f.argIndex(name)
-				if i < 0 || f.Args[i].Kind != "value" {
-					return nil, fmt.Errorf("requires %s of %s, which is not a value argument", r.Check, name)
-				}
-				r.Args = append(r.Args, argRef(i))
-			}
-			f.Requires = append(f.Requires, r)
+	for _, e := range reqs {
+		if err := object(e, "a condition", "check", "args"); err != nil {
+			return nil, err
 		}
+		var r Require
+		if r.Check, err = e.String("check"); err != nil {
+			return nil, err
+		}
+		args, err := strs(e, "args")
+		if err != nil {
+			return nil, err
+		}
+		if want, ok := requireArity[r.Check]; !ok || len(args) != want {
+			return nil, fmt.Errorf("requires %q with %d argument(s) is not a condition", r.Check, len(args))
+		}
+		for _, name := range args {
+			i, ok := f.arg(name)
+			if !ok || f.Args[i.Index()].Kind != "value" {
+				return nil, fmt.Errorf("requires %s of %s, which is not a value argument", r.Check, name)
+			}
+			r.Args = append(r.Args, i)
+		}
+		f.Requires = append(f.Requires, r)
 	}
-	if issues, ok := n.Get("issues"); ok {
-		for _, e := range issues.Elems {
-			ref, err := parseIssueRef(e)
-			if err != nil {
-				return nil, err
-			}
-			for name, src := range ref.Meta {
-				if !readsArg(src.Kind) {
-					continue
-				}
-				i := f.argIndex(src.ArgName)
-				kind := "value"
-				if src.Kind == "sorted_keys" {
-					kind = "variants"
-				}
-				if i < 0 || f.Args[i].Kind != kind {
-					return nil, fmt.Errorf("issue %s meta %s reads %s, which is not a %s argument", ref.Key, name, src.ArgName, kind)
-				}
-				if src.Kind == "ascii_lower_sorted" && f.Args[i].Type.String() != "list<string>" {
-					return nil, fmt.Errorf("issue %s meta %s lower-cases %s, which is not a list<string>", ref.Key, name, src.ArgName)
-				}
-				if src.Kind == "sorted" && f.Args[i].Type.Kind != value.List {
-					return nil, fmt.Errorf("issue %s meta %s sorts %s, which is not a list", ref.Key, name, src.ArgName)
-				}
-				src.Arg = argRef(i)
-				ref.Meta[name] = src
-			}
-			f.Issues = append(f.Issues, ref)
-		}
+	if err := f.parseIssues(n); err != nil {
+		return nil, err
 	}
 	if fl, ok := n.Get("flow"); ok {
 		if f.Flow, err = resolveFlow(f, fl); err != nil {
 			return nil, fmt.Errorf("flow: %w", err)
 		}
 	}
+	switch section {
+	case "constructor", "field", "operation":
+		if f.Result.Kind == value.Invalid {
+			return nil, fmt.Errorf("it has no result type")
+		}
+		if f.Flow == nil {
+			return nil, fmt.Errorf("it has no flow")
+		}
+	case "encoder":
+		if f.Input.Kind == value.Invalid {
+			return nil, fmt.Errorf("it has no input type")
+		}
+	}
+	if section == "operation" && len(f.Receivers) == 0 {
+		return nil, fmt.Errorf("it has no receivers")
+	}
 	return f, nil
 }
 
-// argIndex is the index of the argument with a name, or -1.
-func (f *Form) argIndex(name string) int {
-	for i, a := range f.Args {
-		if a.Name == name {
-			return i
+// parseArgs reads a form's arguments: each name once, at most one message argument, and optional
+// arguments only at the end of an operation's.
+func (f *Form) parseArgs(section string, n *jsontext.Node) error {
+	nodes, err := elems(n, "args")
+	if err != nil {
+		return err
+	}
+	for _, e := range nodes {
+		a, err := parseArg(section, e)
+		if err != nil {
+			return err
 		}
-	}
-	return -1
-}
-
-// needs checks that a form has the types its section requires, so that a type the file leaves
-// out is an error and never the zero Type.
-func (f *Form) needs(name, section string, result, input bool) error {
-	if result && f.Result.Kind == value.Invalid {
-		return fmt.Errorf("operations.json: %s %s has no result type", section, name)
-	}
-	if result && f.Flow == nil {
-		return fmt.Errorf("operations.json: %s %s has no flow", section, name)
-	}
-	if input && f.Input.Kind == value.Invalid {
-		return fmt.Errorf("operations.json: %s %s has no input type", section, name)
-	}
-	for _, a := range f.Args {
-		if slices.Contains([]string{"decoder", "decoders", "variants", "value", "encoder"}, a.Kind) && a.Type.Kind == value.Invalid {
-			return fmt.Errorf("operations.json: %s %s: argument %s has no type", section, name, a.Name)
+		if _, dup := f.arg(a.Name); dup {
+			return fmt.Errorf("two arguments are named %s", a.Name)
 		}
-		if a.Kind == "fixture" && a.FixtureInput.Kind == value.Invalid {
-			return fmt.Errorf("operations.json: %s %s: argument %s has no fixture input type", section, name, a.Name)
+		if len(f.Args) > 0 && f.Args[len(f.Args)-1].Optional && !a.Optional {
+			return fmt.Errorf("argument %s follows an optional argument", a.Name)
+		}
+		f.Args = append(f.Args, a)
+		if a.Kind == "message" {
+			if f.Message != NoArg {
+				return fmt.Errorf("arguments %s and %s are both messages", f.Args[f.Message.Index()].Name, a.Name)
+			}
+			f.Message = argRef(len(f.Args) - 1)
 		}
 	}
 	return nil
 }
 
-func parseArg(n *jsontext.Node) (Arg, error) {
+// parseIssues reads the issues a form declares, each once, and resolves the arguments their
+// metadata sources read.
+func (f *Form) parseIssues(n *jsontext.Node) error {
+	nodes, err := elems(n, "issues")
+	if err != nil {
+		return err
+	}
+	for _, e := range nodes {
+		ref, err := parseIssueRef(e)
+		if err != nil {
+			return err
+		}
+		for _, other := range f.Issues {
+			if other.Key == ref.Key {
+				return fmt.Errorf("issue %s is declared twice", ref.Key)
+			}
+		}
+		for name, src := range ref.Meta {
+			if slices.Contains(ref.Omit, name) {
+				return fmt.Errorf("issue %s both omits %s and gives it a source", ref.Key, name)
+			}
+			if !readsArg(src.Kind) {
+				continue
+			}
+			i, ok := f.arg(src.ArgName)
+			kind := "value"
+			if src.Kind == "sorted_keys" {
+				kind = "variants"
+			}
+			if !ok || f.Args[i.Index()].Kind != kind {
+				return fmt.Errorf("issue %s meta %s reads %s, which is not a %s argument", ref.Key, name, src.ArgName, kind)
+			}
+			if src.Kind == "ascii_lower_sorted" && f.Args[i.Index()].Type.String() != "list<string>" {
+				return fmt.Errorf("issue %s meta %s lower-cases %s, which is not a list<string>", ref.Key, name, src.ArgName)
+			}
+			if src.Kind == "sorted" && f.Args[i.Index()].Type.Kind != value.List {
+				return fmt.Errorf("issue %s meta %s sorts %s, which is not a list", ref.Key, name, src.ArgName)
+			}
+			src.Arg = i
+			ref.Meta[name] = src
+		}
+		f.Issues = append(f.Issues, ref)
+	}
+	return nil
+}
+
+// arg is the argument with a name; argument names are unique within a form.
+func (f *Form) arg(name string) (ArgRef, bool) {
+	for i, a := range f.Args {
+		if a.Name == name {
+			return argRef(i), true
+		}
+	}
+	return NoArg, false
+}
+
+func parseArg(section string, n *jsontext.Node) (Arg, error) {
 	var a Arg
+	if err := object(n, "an argument", "name", "kind", "type", "optional", "default", "one_of", "fixture", "input", "output"); err != nil {
+		return a, err
+	}
 	var err error
 	if a.Name, err = n.String("name"); err != nil {
 		return a, err
@@ -457,55 +540,107 @@ func parseArg(n *jsontext.Node) (Arg, error) {
 	if err != nil {
 		return a, err
 	}
-	if ok {
-		a.Type = t
-	} else if slices.Contains([]string{"decoder", "decoders", "variants", "value", "encoder"}, a.Kind) {
+	switch typed := slices.Contains(typedKinds, a.Kind); {
+	case typed && !ok:
 		return a, fmt.Errorf("argument %s needs a type", a.Name)
+	case !typed && ok:
+		return a, fmt.Errorf("argument %s is a %s argument, which has no type", a.Name, a.Kind)
 	}
-	if o, ok := n.Get("optional"); ok && o.Kind == jsontext.Bool {
+	a.Type = t
+	if o, ok := n.Get("optional"); ok {
+		if o.Kind != jsontext.Bool {
+			return a, fmt.Errorf("optional must be true or false")
+		}
 		a.Optional = o.Bool
 	}
+	if a.Optional && section != "operation" {
+		return a, fmt.Errorf("argument %s is optional, and only an operation has optional arguments", a.Name)
+	}
+	if a.Optional && a.Kind != "value" && a.Kind != "message" {
+		return a, fmt.Errorf("argument %s is a %s argument, which cannot be left out", a.Name, a.Kind)
+	}
+	if _, ok := n.Get("one_of"); ok {
+		if a.Kind != "value" || a.Type.Kind != value.String {
+			return a, fmt.Errorf("argument %s restricts its values, and only a string value argument can", a.Name)
+		}
+		if a.OneOf, err = strs(n, "one_of"); err != nil {
+			return a, err
+		}
+		if len(a.OneOf) == 0 {
+			return a, fmt.Errorf("argument %s allows no value", a.Name)
+		}
+	}
 	if d, ok := n.Get("default"); ok {
+		if !a.Optional || a.Kind != "value" {
+			return a, fmt.Errorf("argument %s has a default, and only an optional value argument has one", a.Name)
+		}
+		if ps := a.Type.Params(); len(ps) > 0 {
+			return a, fmt.Errorf("argument %s has a default, and its type %s is not concrete", a.Name, a.Type)
+		}
 		v, err := value.Observe(a.Type, d)
 		if err != nil {
 			return a, fmt.Errorf("argument %s: default: %w", a.Name, err)
 		}
+		if len(a.OneOf) > 0 && !slices.Contains(a.OneOf, v.Str) {
+			return a, fmt.Errorf("argument %s: the default %s is not one of its values", a.Name, v.Str)
+		}
 		a.Default = &v
+	} else if a.Optional && a.Kind == "value" {
+		return a, fmt.Errorf("argument %s may be left out, and has no default to stand for it", a.Name)
 	}
-	if a.OneOf, err = strs(n, "one_of"); err != nil {
+	_, hasFixture := n.Get("fixture")
+	_, hasInput := n.Get("input")
+	_, hasOutput := n.Get("output")
+	if a.Kind != "fixture" {
+		if hasFixture || hasInput || hasOutput {
+			return a, fmt.Errorf("argument %s is not a fixture argument, and has fixture, input or output", a.Name)
+		}
+		return a, nil
+	}
+	if a.FixtureKind, err = n.String("fixture"); err != nil {
 		return a, err
 	}
-	if a.Kind == "fixture" {
-		if a.FixtureKind, err = n.String("fixture"); err != nil {
-			return a, err
-		}
-		in, ok, err := typeOf(n, "input")
-		if err != nil || !ok {
-			return a, fmt.Errorf("fixture argument %s needs an input type", a.Name)
-		}
-		a.FixtureInput = in
-		if out, ok, err := typeOf(n, "output"); err != nil {
-			return a, err
-		} else if ok {
-			a.FixtureOutput = &out
-		}
+	if !slices.Contains(fixtureKinds, a.FixtureKind) {
+		return a, fmt.Errorf("fixture argument %s has unknown fixture kind %q", a.Name, a.FixtureKind)
+	}
+	in, ok, err := typeOf(n, "input")
+	if err != nil {
+		return a, err
+	}
+	if !ok {
+		return a, fmt.Errorf("fixture argument %s needs an input type", a.Name)
+	}
+	a.FixtureInput = in
+	if out, ok, err := typeOf(n, "output"); err != nil {
+		return a, err
+	} else if ok {
+		a.FixtureOutput = &out
 	}
 	return a, nil
 }
 
 func parseIssueRef(n *jsontext.Node) (IssueRef, error) {
-	if n.Kind == jsontext.String {
-		return IssueRef{Key: n.Text}, nil
-	}
 	ref := IssueRef{Bind: map[string]value.Type{}}
+	switch n.Kind {
+	case jsontext.String:
+		ref.Key = n.Text
+	case jsontext.Object:
+	default:
+		return ref, fmt.Errorf("an issue reference is a key or an object")
+	}
 	for _, m := range n.Members {
 		switch {
 		case m.Name == "key":
+			if m.Value.Kind != jsontext.String {
+				return ref, fmt.Errorf("key must be a string")
+			}
 			ref.Key = m.Value.Text
 		case m.Name == "omit":
-			for _, e := range m.Value.Elems {
-				ref.Omit = append(ref.Omit, e.Text)
+			omit, err := strs(n, "omit")
+			if err != nil {
+				return ref, err
 			}
+			ref.Omit = omit
 		case m.Name == "meta":
 			if m.Value.Kind != jsontext.Object {
 				return ref, fmt.Errorf("meta must be an object")
@@ -518,12 +653,17 @@ func parseIssueRef(n *jsontext.Node) (IssueRef, error) {
 				}
 				ref.Meta[f.Name] = src
 			}
-		default:
+		case len(m.Name) == 1 && m.Name[0] >= 'A' && m.Name[0] <= 'Z':
+			if m.Value.Kind != jsontext.String {
+				return ref, fmt.Errorf("%s must be bound to a type", m.Name)
+			}
 			t, err := value.ParseType(m.Value.Text)
 			if err != nil {
 				return ref, err
 			}
 			ref.Bind[m.Name] = t
+		default:
+			return ref, fmt.Errorf("an issue reference has no member %q", m.Name)
 		}
 	}
 	if ref.Key == "" {
@@ -533,19 +673,25 @@ func parseIssueRef(n *jsontext.Node) (IssueRef, error) {
 }
 
 func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
+	if err := object(n, "a fixture", "kind", "doc", "input", "output", "issue"); err != nil {
+		return nil, err
+	}
 	f := &Fixture{Name: name}
 	var err error
 	if f.Kind, err = n.String("kind"); err != nil {
 		return nil, err
 	}
-	if !slices.Contains([]string{"map", "refine", "flatMap", "recover", "getter"}, f.Kind) {
+	if !slices.Contains(fixtureKinds, f.Kind) {
 		return nil, fmt.Errorf("unknown kind %q", f.Kind)
 	}
 	if f.Doc, err = n.String("doc"); err != nil {
 		return nil, err
 	}
 	in, ok, err := typeOf(n, "input")
-	if err != nil || !ok {
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		return nil, fmt.Errorf("no input type")
 	}
 	f.Input = in
@@ -558,6 +704,9 @@ func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 		return nil, fmt.Errorf("a %s fixture %s an output type", f.Kind, map[bool]string{true: "has no", false: "has"}[f.Kind == "refine"])
 	}
 	if is, ok := n.Get("issue"); ok {
+		if err := object(is, "the issue", "code", "message_key", "message", "path", "meta", "values"); err != nil {
+			return nil, err
+		}
 		fi := &FixtureIssue{Meta: map[string]value.Type{}}
 		if fi.Code, err = is.String("code"); err != nil {
 			return nil, err
@@ -572,7 +721,13 @@ func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 			return nil, err
 		}
 		if meta, ok := is.Get("meta"); ok {
+			if meta.Kind != jsontext.Object {
+				return nil, fmt.Errorf("meta must be an object of types")
+			}
 			for _, m := range meta.Members {
+				if m.Value.Kind != jsontext.String {
+					return nil, fmt.Errorf("meta %s must be a type", m.Name)
+				}
 				t, err := value.ParseType(m.Value.Text)
 				if err != nil {
 					return nil, err
@@ -584,6 +739,9 @@ func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 			return nil, fmt.Errorf("the issue needs a code, a message_key and a message")
 		}
 		if values, ok := is.Get("values"); ok {
+			if values.Kind != jsontext.Object {
+				return nil, fmt.Errorf("values must be an object")
+			}
 			for _, m := range values.Members {
 				if _, ok := fi.Meta[m.Name]; !ok {
 					return nil, fmt.Errorf("values gives %s, which meta does not have", m.Name)

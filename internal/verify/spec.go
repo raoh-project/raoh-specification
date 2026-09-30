@@ -75,8 +75,7 @@ func Load(root string) (*Spec, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.Checker = &dsl.Checker{Registry: reg, Catalog: s.Catalog}
-	if err := s.Checker.Validate(); err != nil {
+	if s.Checker, err = dsl.NewChecker(reg, s.Catalog); err != nil {
 		return nil, fmt.Errorf("catalog/operations.json: %w", err)
 	}
 	for _, f := range reg.Features() {
@@ -106,7 +105,7 @@ func (s *Spec) Uncovered() []string {
 		}
 	}
 	var out []string
-	for _, f := range s.Checker.Registry.Features() {
+	for _, f := range s.Checker.Registry().Features() {
 		if !used[f] {
 			out = append(out, f)
 		}

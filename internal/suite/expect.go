@@ -44,10 +44,9 @@ type TypedIssue struct {
 	// Group identifies the unordered group instance the issue belongs to; empty when it is
 	// ordered.
 	Group string
-	// CandidatesMeta names the metadata entry that lists the candidates of an issue that lists
-	// them, and Candidates holds, by candidate index, the issues each gave; nil otherwise.
-	CandidatesMeta *string
-	Candidates     map[int][]TypedIssue
+	// Candidates holds, for an issue that lists candidates, by candidate index, the issues each
+	// gave, read from the metadata entry its slot names; nil otherwise.
+	Candidates map[int][]TypedIssue
 }
 
 // ReadIssues reads a case's or a divergence's issues as the flow gives them for an input at a
@@ -196,9 +195,7 @@ func instance(is surface, slot dsl.Slot, cat *catalog.Catalog, mode Mode, agains
 		if !ok {
 			return e, fmt.Errorf("%s has no metadata %s", slot.Key, m.Name)
 		}
-		if slot.Candidates != nil && t.Kind == value.List && t.Args[0].Kind == value.Record {
-			name := m.Name
-			e.CandidatesMeta = &name
+		if slot.Candidates != nil && m.Name == slot.Candidates.Meta {
 			if err := e.candidates(m.Value, slot, cat, mode, against); err != nil {
 				return e, fmt.Errorf("%s meta %s: %w", slot.Key, m.Name, err)
 			}
@@ -212,7 +209,7 @@ func instance(is surface, slot dsl.Slot, cat *catalog.Catalog, mode Mode, agains
 	}
 	for name := range slot.Meta {
 		_, typed := e.Meta[name]
-		listed := e.CandidatesMeta != nil && *e.CandidatesMeta == name
+		listed := e.Candidates != nil && name == slot.Candidates.Meta
 		if !typed && !listed && !slices.Contains(slot.Optional, name) {
 			return e, fmt.Errorf("%s needs metadata %s", slot.Key, name)
 		}
@@ -279,8 +276,8 @@ func (e *TypedIssue) candidates(n *jsontext.Node, slot dsl.Slot, cat *catalog.Ca
 			return err
 		}
 		i, err := value.Observe(value.Of(value.Int32), idx)
-		if err != nil || i.Int.Sign() < 0 || i.Int.Int64() >= int64(len(slot.Candidates)) {
-			return fmt.Errorf("candidate %s is not an index of the %d candidates", idx.Raw, len(slot.Candidates))
+		if err != nil || i.Int.Sign() < 0 || i.Int.Int64() >= int64(len(slot.Candidates.Flows)) {
+			return fmt.Errorf("candidate %s is not an index of the %d candidates", idx.Raw, len(slot.Candidates.Flows))
 		}
 		k := int(i.Int.Int64())
 		if _, dup := e.Candidates[k]; dup {
@@ -299,7 +296,7 @@ func (e *TypedIssue) candidates(n *jsontext.Node, slot dsl.Slot, cat *catalog.Ca
 			surfaces[j] = is.surface()
 		}
 		if against == nil {
-			typed, err := read(surfaces, slot.Candidates[k], slot.Input, slot.Path, cat, mode)
+			typed, err := read(surfaces, slot.Candidates.Flows[k], slot.Input, slot.Path, cat, mode)
 			if err != nil {
 				return fmt.Errorf("candidate %d: %w", k, err)
 			}
@@ -316,7 +313,7 @@ func (e *TypedIssue) candidates(n *jsontext.Node, slot dsl.Slot, cat *catalog.Ca
 		}
 		e.Candidates[k] = typed
 	}
-	for k := range slot.Candidates {
+	for k := range slot.Candidates.Flows {
 		if _, ok := e.Candidates[k]; !ok {
 			return fmt.Errorf("candidate %d is missing: every candidate failed, and each reports its issues", k)
 		}
@@ -411,8 +408,8 @@ func metaNames(t TypedIssue) string {
 	for k := range t.Meta {
 		names = append(names, k)
 	}
-	if t.CandidatesMeta != nil {
-		names = append(names, *t.CandidatesMeta)
+	if t.Candidates != nil {
+		names = append(names, t.Slot.Candidates.Meta)
 	}
 	sort.Strings(names)
 	return strings.Join(names, ",")

@@ -92,7 +92,7 @@ an expression over the lists of issues a decoder can give; the empty list is suc
 | `{"each_element": x}`, `{"each_member": x}` | a list of `x` for each element of an array input, or each member of an object input, in order, at its path |
 | `{"at": {"member": a, "flow": x}}` | a list of `x` at the member the string argument `a` names |
 | `{"unknown_members": {"known": ..., "issue": k}}` | issue `k` for every member of an object input not among the known names (a list argument, or the members the fields of a fields argument read), in any order, at its path |
-| `{"candidates": {"decoders": a, "issue": k}}` | none, when some decoder of argument `a` can give none; or issue `k`, listing for every decoder of `a` a non-empty list it gives |
+| `{"candidates": {"decoders": a, "issue": k, "meta": m}}` | none, when some decoder of argument `a` can give none; or issue `k`, listing in its metadata entry `m` for every decoder of `a` a non-empty list it gives |
 | `{"fixture": a}` | none, or the issue the fixture argument `a` declares |
 | `{"discard": [a, ...]}` | none: the issues of the arguments listed never reach the caller |
 
@@ -120,8 +120,10 @@ are matched against it, each read at the place of the expected issue it is match
 except that the consecutive issues of one `unknown_members` group are matched in any order. A
 divergence's issues are read as a case's are, with the messages they write.
 
-`one_of_failed` is given only when every candidate failed, and it lists every candidate exactly
-once, by index; the order of the list does not matter. Each candidate's issues are parsed with
+The metadata entry that lists the candidates is the one the flow names: its type is
+`list<record<candidate:int32,issues:issues>>`, the form gives it no source, and the variant cannot
+leave it out. `one_of_failed` lists them in `candidates`, and is given only when every candidate
+failed; it lists every candidate exactly once, by index; the order of the list does not matter. Each candidate's issues are parsed with
 that candidate's flow on the same input. As raoh-java writes them, they have a path, a code, a
 message and metadata, and no message key. Their message is the one their place gives, as for any
 other issue; a case may write it, and then it has to be that message.

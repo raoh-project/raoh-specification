@@ -135,7 +135,7 @@
       "args": [{"name": "candidates", "kind": "decoders", "type": "T"}],
       "result": "T",
       "issues": ["one_of_failed"],
-      "flow": {"candidates": {"decoders": "candidates", "issue": "one_of_failed"}}
+      "flow": {"candidates": {"decoders": "candidates", "issue": "one_of_failed", "meta": "candidates"}}
     },
     "withDefault": {
       "doc": "Gives the default for a JSON null or an absent value, and decodes anything else with the inner decoder.",

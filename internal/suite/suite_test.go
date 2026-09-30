@@ -20,7 +20,11 @@ func checker(t *testing.T) *dsl.Checker {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &dsl.Checker{Registry: reg, Catalog: cat}
+	c, err := dsl.NewChecker(reg, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }
 
 func parse(t *testing.T, profile, text string) ([]*Case, []string) {

@@ -145,7 +145,7 @@ func parseCase(file, profile string, n *jsontext.Node, chk *dsl.Checker) (*Case,
 	if n.Kind != jsontext.Object {
 		return nil, fmt.Errorf("expected an object")
 	}
-	c := &Case{File: file, Profile: profile, Catalog: chk.Catalog}
+	c := &Case{File: file, Profile: profile, Catalog: chk.Catalog()}
 	id, ok := n.Get("id")
 	if !ok || id.Kind != jsontext.String || !IDPattern.MatchString(id.Text) {
 		return nil, fmt.Errorf("id must be R and six digits, such as R000123")
@@ -216,7 +216,7 @@ func parseCase(file, profile string, n *jsontext.Node, chk *dsl.Checker) (*Case,
 	if err != nil {
 		return nil, err
 	}
-	if c.Issues, err = ReadIssues(list, c.Checked.Flow, c.Input, nil, chk.Catalog, CaseIssues); err != nil {
+	if c.Issues, err = ReadIssues(list, c.Checked.Flow, c.Input, nil, chk.Catalog(), CaseIssues); err != nil {
 		return nil, err
 	}
 	return c, nil

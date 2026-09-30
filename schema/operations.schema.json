@@ -38,7 +38,12 @@
           "result",
           "issues",
           "flow"
-        ]
+        ],
+        "not": {
+          "required": [
+            "input"
+          ]
+        }
       }
     }
   },
@@ -65,9 +70,29 @@
           "flow"
         ],
         "not": {
-          "required": [
-            "receivers"
+          "anyOf": [
+            {
+              "required": [
+                "receivers"
+              ]
+            },
+            {
+              "required": [
+                "input"
+              ]
+            }
           ]
+        },
+        "properties": {
+          "args": {
+            "items": {
+              "properties": {
+                "optional": {
+                  "const": false
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -88,9 +113,29 @@
           "flow"
         ],
         "not": {
-          "required": [
-            "receivers"
+          "anyOf": [
+            {
+              "required": [
+                "receivers"
+              ]
+            },
+            {
+              "required": [
+                "input"
+              ]
+            }
           ]
+        },
+        "properties": {
+          "args": {
+            "items": {
+              "properties": {
+                "optional": {
+                  "const": false
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -124,8 +169,34 @@
               "required": [
                 "issues"
               ]
+            },
+            {
+              "required": [
+                "flow"
+              ]
+            },
+            {
+              "required": [
+                "requires"
+              ]
+            },
+            {
+              "required": [
+                "symbols_from"
+              ]
             }
           ]
+        },
+        "properties": {
+          "args": {
+            "items": {
+              "properties": {
+                "optional": {
+                  "const": false
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -159,8 +230,39 @@
               "required": [
                 "issues"
               ]
+            },
+            {
+              "required": [
+                "flow"
+              ]
+            },
+            {
+              "required": [
+                "requires"
+              ]
+            },
+            {
+              "required": [
+                "symbols_from"
+              ]
+            },
+            {
+              "required": [
+                "input"
+              ]
             }
           ]
+        },
+        "properties": {
+          "args": {
+            "items": {
+              "properties": {
+                "optional": {
+                  "const": false
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -270,7 +372,8 @@
           "$ref": "#/$defs/type"
         },
         "optional": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Only a value or message argument of an operation may be left out: a value argument left out stands for its default, and a message argument left out gives no message."
         },
         "default": {
           "description": "What an optional argument left out stands for, as an observation of its type."
@@ -280,7 +383,8 @@
           "items": {
             "type": "string"
           },
-          "minItems": 1
+          "minItems": 1,
+          "description": "The values a string value argument allows."
         },
         "fixture": {
           "enum": [
@@ -351,6 +455,122 @@
               "kind": {
                 "const": "value"
               }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "optional"
+            ],
+            "properties": {
+              "optional": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "value",
+                  "message"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "optional",
+              "kind"
+            ],
+            "properties": {
+              "optional": {
+                "const": true
+              },
+              "kind": {
+                "const": "value"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "default"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "one_of"
+            ]
+          },
+          "then": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "kind": {
+                "const": "value"
+              },
+              "type": {
+                "const": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "fields",
+                  "message",
+                  "fixture",
+                  "properties"
+                ]
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "type"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "not": {
+                  "const": "fixture"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "fixture"
+                  ]
+                },
+                {
+                  "required": [
+                    "input"
+                  ]
+                },
+                {
+                  "required": [
+                    "output"
+                  ]
+                }
+              ]
             }
           }
         }
@@ -559,7 +779,8 @@
               "type": "object",
               "required": [
                 "decoders",
-                "issue"
+                "issue",
+                "meta"
               ],
               "properties": {
                 "decoders": {
@@ -569,6 +790,11 @@
                 "issue": {
                   "type": "string",
                   "minLength": 1
+                },
+                "meta": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The metadata entry of the issue that lists the candidates."
                 }
               },
               "additionalProperties": false

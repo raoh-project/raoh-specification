@@ -29,9 +29,16 @@ type Site struct {
 	// Message is the message the issue is given, by a message argument or by the fixture that
 	// creates it; nil when the message is derived from the catalogue. An empty message is given.
 	Message *string
-	// Candidates are, for an issue that lists what candidates gave, the flow of each candidate, by
-	// index.
-	Candidates []Flow
+	// Candidates are, for an issue that lists what candidates gave, the metadata entry that lists
+	// them and the flow of each candidate; nil for any other issue.
+	Candidates *CandidateList
+}
+
+// CandidateList is what an issue that lists what candidates gave lists: in the metadata entry
+// Meta, for the candidate at each index of Flows, the issues its flow gives.
+type CandidateList struct {
+	Meta  string
+	Flows []Flow
 }
 
 // Alt is the issue lists of any one of its items. An Alt with no items gives only the empty list.
@@ -259,7 +266,7 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, group string, sta
 	case *Unordered:
 		ends = p.unordered(f, in, at, start)
 	case *Candidates:
-		for _, c := range f.Site.Candidates {
+		for _, c := range f.Site.Candidates.Flows {
 			if len(p.parse(c, in, at, group, start)[start]) > 0 {
 				add(ends, start, partial{})
 				break
@@ -369,7 +376,7 @@ func Describe(f Flow) string {
 	case *Unordered:
 		return fmt.Sprintf("unknown#%d(except %s: %s)", f.ID, strings.Join(f.Known, ","), f.Site.Key)
 	case *Candidates:
-		return "candidates(" + describeAll(f.Site.Candidates) + ": " + f.Site.Key + ")"
+		return "candidates(" + describeAll(f.Site.Candidates.Flows) + ": " + f.Site.Key + ")"
 	}
 	return "?"
 }
