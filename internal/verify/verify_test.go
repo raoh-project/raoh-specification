@@ -3,6 +3,7 @@ package verify
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -313,4 +314,18 @@ func without(list []string, drop string) []string {
 		}
 	}
 	return out
+}
+
+func TestUncoveredFeatures(t *testing.T) {
+	got := miniSpec(t).Uncovered()
+	for _, f := range []string{"decoder.list", "operation.string.email", "fixture.area"} {
+		if !slices.Contains(got, f) {
+			t.Errorf("%s is not reported uncovered", f)
+		}
+	}
+	for _, f := range []string{"decoder.int", "operation.int32.min", "fixture.identity"} {
+		if slices.Contains(got, f) {
+			t.Errorf("%s is reported uncovered", f)
+		}
+	}
 }

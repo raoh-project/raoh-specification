@@ -20,6 +20,10 @@ go run ./cmd/raoh-verify check-suite .
 go test ./...
 ```
 
+`check-suite` also fails when a feature of `catalog/operations.json` or `catalog/fixtures.json` is
+needed by no case: a feature is listed only once a case pins it. One case is the least a feature
+needs, not proof that it is fully specified.
+
 `check-suite` rejects a case that does not type-check, whose expected outcome is not an observation
 of the decoder's result type, whose issues are not ones the decoder can produce, or whose input is
 not valid JSON or repeats a member name.

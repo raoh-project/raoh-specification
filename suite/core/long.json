@@ -6,5 +6,21 @@
   {"id": "long.type_mismatch_minus_0_point_0", "decoder": ["long"], "input": -0.0, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "number", "expected": "long"}}]},
   {"id": "long.type_mismatch_1e_plus_30", "decoder": ["long"], "input": 1e+30, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "number", "expected": "long"}}]},
   {"id": "long.type_mismatch_numeric_range_12345678901234567890", "decoder": ["long"], "input": 12345678901234567890, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch.numeric_range", "meta": {"expected": "long"}}]},
-  {"id": "long.type_mismatch_numeric_range_123456789012345678901", "decoder": ["long"], "input": 123456789012345678901, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch.numeric_range", "meta": {"expected": "long"}}]}
+  {"id": "long.type_mismatch_numeric_range_123456789012345678901", "decoder": ["long"], "input": 123456789012345678901, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch.numeric_range", "meta": {"expected": "long"}}]},
+  {"id": "recorded.long_min.1", "decoder": ["long", ["min", 1]], "input": 1, "ok": 1},
+  {"id": "recorded.long_min.2", "decoder": ["long", ["min", 1]], "input": 0, "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "meta": {"actual": 0, "min": 1}}]},
+  {"id": "recorded.long_max.1", "decoder": ["long", ["max", 10]], "input": 10, "ok": 10},
+  {"id": "recorded.long_max.2", "decoder": ["long", ["max", 10]], "input": 11, "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.maximum", "meta": {"actual": 11, "max": 10}}]},
+  {"id": "recorded.long_range.1", "decoder": ["long", ["range", 0, 150]], "input": 150, "ok": 150},
+  {"id": "recorded.long_range.2", "decoder": ["long", ["range", 0, 150]], "input": -1, "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.range", "meta": {"actual": -1, "max": 150, "min": 0}}]},
+  {"id": "recorded.long_negative.1", "decoder": ["long", ["negative"]], "input": -1, "ok": -1},
+  {"id": "recorded.long_negative.2", "decoder": ["long", ["negative"]], "input": 0, "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.negative", "meta": {"actual": 0, "max": -1}}]},
+  {"id": "recorded.long_non_negative.1", "decoder": ["long", ["nonNegative"]], "input": 0, "ok": 0},
+  {"id": "recorded.long_non_negative.2", "decoder": ["long", ["nonNegative"]], "input": -1, "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.non_negative", "meta": {"actual": -1, "min": 0}}]},
+  {"id": "recorded.long_non_positive.1", "decoder": ["long", ["nonPositive"]], "input": 0, "ok": 0},
+  {"id": "recorded.long_non_positive.2", "decoder": ["long", ["nonPositive"]], "input": 1, "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.non_positive", "meta": {"actual": 1, "max": 0}}]},
+  {"id": "recorded.long_multiple_of.1", "decoder": ["long", ["multipleOf", 3]], "input": 9, "ok": 9},
+  {"id": "recorded.long_multiple_of.2", "decoder": ["long", ["multipleOf", 3]], "input": 10, "issues": [{"path": "", "code": "not_multiple_of", "message_key": "not_multiple_of", "meta": {"actual": 10, "divisor": 3}}]},
+  {"id": "recorded.long_one_of.1", "decoder": ["long", ["oneOf", [3, 1]]], "input": 3, "ok": 3},
+  {"id": "recorded.long_one_of.2", "decoder": ["long", ["oneOf", [3, 1]]], "input": 2, "issues": [{"path": "", "code": "not_allowed", "message_key": "not_allowed", "meta": {"actual": 2, "allowed": [1, 3]}}]}
 ]

@@ -95,3 +95,21 @@ func Load(root string) (*Spec, error) {
 func (s *Spec) Validate(schema string, text []byte) error {
 	return s.Schemas.Validate(schema, text)
 }
+
+// Uncovered lists the features no case needs. A feature is in the registry only if a case pins
+// it: a case is the least a specified feature has, though one case does not specify it all.
+func (s *Spec) Uncovered() []string {
+	used := map[string]bool{}
+	for _, c := range s.Suite.Cases {
+		for _, f := range c.Features() {
+			used[f] = true
+		}
+	}
+	var out []string
+	for _, f := range s.Checker.Registry.Features() {
+		if !used[f] {
+			out = append(out, f)
+		}
+	}
+	return out
+}

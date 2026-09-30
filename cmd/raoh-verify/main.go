@@ -48,6 +48,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
+		if uncovered := s.Uncovered(); len(uncovered) > 0 {
+			fmt.Fprintf(stderr, "no case needs these features, so the registry cannot list them:\n  %s\n", strings.Join(uncovered, "\n  "))
+			return 1
+		}
 		fmt.Fprintf(stdout, "specification %s: %d cases, %d features, manifest %s\n", s.Version, len(s.Suite.Cases), len(s.Features), s.Digest)
 		return 0
 	case "manifest":
