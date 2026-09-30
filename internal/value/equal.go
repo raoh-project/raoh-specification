@@ -108,8 +108,12 @@ func EqualJSON(a, b *jsontext.Node) bool {
 	case jsontext.String:
 		return a.Text == b.Text
 	case jsontext.Number:
-		x, _ := new(big.Rat).SetString(a.Text)
-		y, _ := new(big.Rat).SetString(b.Text)
+		x, okx := new(big.Rat).SetString(a.Text)
+		y, oky := new(big.Rat).SetString(b.Text)
+		if !okx || !oky {
+			// An exponent too large for an exact value: only the same lexeme is the same number.
+			return a.Text == b.Text
+		}
 		return x.Cmp(y) == 0
 	case jsontext.Array:
 		if len(a.Elems) != len(b.Elems) {
