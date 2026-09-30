@@ -64,8 +64,9 @@ A product is what an object decoder produces from its fields before any `map`: t
 field, in the order the fields are declared. Implementations represent it however they like, as a
 tuple, a record, an array or a list; the specification needs only its elements.
 
-`optional<T>` is what an optional field produces when the field is absent. `nullable<T>` is what a
-nullable decoder produces when the input is null. The two are observed the same way and are
+`optional<T>` is the type of an optional field's value: empty when the field is absent, the decoded
+value otherwise. `nullable<T>` is the type of a nullable decoder's result: null when the input is
+null, the inner decoder's value otherwise. The two are observed the same way and are
 different types.
 
 ## Types for metadata and fixtures

@@ -89,6 +89,11 @@ type ExprCandidates struct {
 	Meta     string
 }
 
+// ExprForm is the flow of a decoder form written in the catalogue itself, such as the string decoder
+// discriminate reads its tag with. The form is part of the meaning of the form that embeds it, not
+// a feature a case uses; NewChecker checks that it type-checks and that no form embeds itself.
+type ExprForm struct{ Form *jsontext.Node }
+
 // ExprFixture is the issue the fixture a fixture argument names declares.
 type ExprFixture struct{ Arg ArgRef }
 
@@ -106,6 +111,7 @@ func (ExprAt) isExpr()         {}
 func (ExprUnknown) isExpr()    {}
 func (ExprCandidates) isExpr() {}
 func (ExprFixture) isExpr()    {}
+func (ExprForm) isExpr()       {}
 func (ExprDiscard) isExpr()    {}
 
 // exprResolver resolves the names a form's expression uses.
@@ -294,6 +300,11 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 			return nil, fmt.Errorf("issue %s lists the candidates in %s, which the form gives a source or omits", ref.Key, x.Meta)
 		}
 		return x, nil
+	case "form":
+		if v.Kind != jsontext.Array || len(v.Elems) == 0 || v.Elems[0].Kind != jsontext.String {
+			return nil, fmt.Errorf("form is a decoder form, [name, ...]")
+		}
+		return ExprForm{Form: v}, nil
 	case "fixture":
 		i, err := r.arg(v, "fixture")
 		if err != nil {

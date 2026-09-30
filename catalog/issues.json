@@ -7,7 +7,7 @@
     "meta": {"expected": "string", "actual": "string"},
     "optional_meta": ["actual"]
   },
-  "type_mismatch.string_keys": {"code": "type_mismatch", "meta": {"actual": "string"}},
+  "type_mismatch.string_keys": {"code": "type_mismatch", "meta": {"expected": "string", "actual": "string"}},
   "type_mismatch.numeric_range": {"code": "type_mismatch", "meta": {"expected": "string"}},
   "too_short": {"code": "too_short", "meta": {"min": "int32", "actual": "int32"}},
   "too_long": {"code": "too_long", "meta": {"max": "int32", "actual": "int32"}},

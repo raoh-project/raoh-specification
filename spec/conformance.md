@@ -96,7 +96,8 @@ A runner result (`schema/runner-result.schema.json`) records:
   recorded, never compared.
 - `bound_features`: the feature IDs the runner binds.
 - `results`: for each case ID the runner ran, the `observed` outcome, written as the case writes its
-  expected outcome.
+  expected outcome; or, when the implementation gave none (it threw, or refused to construct the
+  decoder the case names), `{"error": "..."}` saying what happened.
 - `catalogs`: for each locale the implementation ships (`en`, `ja`), every message key and its
   template.
 
@@ -173,7 +174,8 @@ Each case of a profile the declaration lists is classified in this order:
 
 1. If a feature the case needs is not bound: `unsupported` when every such feature is declared
    unsupported, `failed` otherwise.
-2. If the runner result has no outcome for the case: `failed`.
+2. If the runner result has no outcome for the case, or has an error for it: `failed`. An error is
+   a defect, and no divergence excuses it.
 3. If the outcome is the one the case expects: `matched`, unless the case is declared divergent, in
    which case the divergence is stale and the case is `failed`.
 4. If the case is declared divergent and the outcome is the one the declaration gives: `divergent`.

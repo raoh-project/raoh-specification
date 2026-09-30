@@ -50,5 +50,6 @@
   {"id": "R000145", "title": "float.min(0.1) rejects 0.05 with out_of_range.minimum", "decoder": ["float",["min",0.1]], "input": 0.05, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.minimum","meta":{"actual":0.05,"min":0.1}}]},
   {"id": "R000146", "title": "float.min(0.1) accepts 0.1", "decoder": ["float",["min",0.1]], "input": 0.1, "ok": 0.1},
   {"id": "R000147", "title": "float.min(1e7) rejects 1 with out_of_range.minimum", "decoder": ["float",["min",1e7]], "input": 1, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.minimum","meta":{"actual":1.0,"min":1.0E7}}]},
-  {"id": "R000148", "title": "float.max(1e-4) rejects 1 with out_of_range.maximum", "decoder": ["float",["max",1e-4]], "input": 1, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.maximum","meta":{"actual":1.0,"max":1.0E-4}}]}
+  {"id": "R000148", "title": "float.max(1e-4) rejects 1 with out_of_range.maximum", "decoder": ["float",["max",1e-4]], "input": 1, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.maximum","meta":{"actual":1.0,"max":1.0E-4}}]},
+  {"id": "R000845", "title": "float rounds 1.000000059604644775390625000000001 to the nearest float32, once", "decoder": ["float"], "input": 1.0000000596046448, "ok": 1.0000001}
 ]

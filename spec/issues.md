@@ -11,7 +11,9 @@ A decoder that fails gives one or more issues. An issue has five parts:
 | `message` | A human-readable description |
 
 The message key identifies the variant. `catalog/issues.json` lists every variant the operations of
-the decoder language produce, with its code and the type of each metadata entry. A variant may
+the decoder language produce, with its code and the type of each metadata entry. It also lists
+three that no operation of this language produces and raoh-java's message catalogue has:
+`missing_field`, `out_of_range` and `type_mismatch.string_keys`. A variant may
 have type parameters: `out_of_range.minimum` has `min` and `actual` of type `T`, and `T` is the
 type of the value being checked (`int32` for `int().min(1)`, `float64` for `double().min(0.5)`).
 `catalog/operations.json` says, for each operation, which variants it produces, what their type
@@ -48,14 +50,19 @@ written. If the catalogue has no template for the message key, the template of t
 
 A given message is one the user of the library supplied, such as the `"bad"` of
 `string().toInt("bad")`, or the message of an issue a fixture creates. It is the message, whatever
-the catalogue says. An implementation's message resolver, applied later by its user, leaves a given
-message alone.
+the catalogue says, and resolving messages leaves it alone. A fixture that stands for user code
+creates its issue with a given message, with whatever the implementation offers for that (in
+raoh-java 0.8.0, `refine` or `Result.failCustom`; an issue made with `Result.fail` has its message
+replaced when it is resolved).
 
 A case writes an issue without `message` when the message is derived, and with it, exactly as it is
 given, when the message is given. `raoh-verify check-suite` rejects a case that writes a derived
 message, or that leaves out or changes a given one. An issue that two parts of a decoder could give
-with different types or messages is ambiguous, and a case that expects one is rejected too. A runner always writes the message its implementation gave. The verifier derives the
-message the case leaves out and compares it with what the runner wrote.
+with different types or messages is ambiguous, and a case that expects one is rejected too. A runner always writes the message its implementation gives for an issue once the implementation
+has resolved its messages with its default English catalogue (in raoh-java 0.8.0,
+`Issues.resolve(MessageResolver.DEFAULT)`); the issues a `one_of_failed` lists are written the same
+way. The verifier derives the message the case leaves out and compares it with what the runner
+wrote.
 
 ### Message forms
 
@@ -67,16 +74,18 @@ raoh-java 0.8.0 writes, which is `String.valueOf` of the value:
 | `bool` | `true` or `false` |
 | `int32`, `int64` | the integer in decimal |
 | `float32`, `float64` | the shortest decimal that reads back as the float, written plainly with at least one digit after the point when 10⁻³ ≤ \|v\| < 10⁷ (`0.5`, `100.0`), and as a mantissa with at least one digit after the point, `E` and the exponent otherwise (`1.0E7`, `1.0E-4`); zeros are `0.0` and `-0.0`, the others `NaN`, `Infinity` and `-Infinity` |
-| `decimal` | the coefficient with the point placed by the scale when the scale is not negative and the adjusted exponent (the exponent of the first digit) is at least -6 (`0.00010`, `10`); otherwise the first digit, the rest after a point, `E`, a sign and the adjusted exponent (`1E+3`, `1E-7`) |
+| `decimal` | the coefficient with the point placed by the scale when the scale is not negative and the adjusted exponent (the exponent of the first digit) is at least -6 (`0.00010`, `10`); otherwise the first digit, then a point and the other digits when there are any, `E`, a sign and the adjusted exponent (`1E+3`, `1.5E-7`) |
 | `string`, `symbol`, `uuid`, `uri` | the text |
-| `date` | `yyyy-mm-dd` |
+| `date` | the year as its observation writes it ([observation.md](observation.md): four digits from 0000 to 9999, otherwise a sign and its digits), `-`, two digits of month, `-`, two digits of day |
 | `time` | `hh:mm`, followed by `:ss` when the seconds or the fraction are not zero, followed by the fraction in three, six or nine digits when it is not zero |
 | `datetime` | the date, `T`, the time |
-| `offset_datetime` | the date-time, then `Z` for a zero offset or `±hh:mm` |
+| `offset_datetime` | the date-time, then `Z` for a zero offset, otherwise `±hh:mm`, followed by `:ss` when the offset's seconds are not zero |
 | `instant` | the date, `T`, the time with the seconds always written, `Z` |
 | `list<T>` | `[`, the message forms of the elements separated by `, `, `]` |
 
-Other types have no message form, and no template refers to metadata of those types.
+Other types have no message form. A message writes only metadata whose type has one: an issue
+whose template writes an entry of another type is not given, and a form that would give it does not
+type-check ([decoder-language.md](decoder-language.md#types)).
 
 Whether the float and decimal forms should stay as raoh-java writes them is an open question for a
 later version.
@@ -98,6 +107,7 @@ an expression over the lists of issues a decoder can give; the empty list is suc
 | `{"unknown_members": {"known": ..., "issue": k}}` | issue `k` for every member of an object input not among the known names (a list argument, or the members the fields of a fields argument read), in any order, at its path |
 | `{"candidates": {"decoders": a, "issue": k, "meta": m}}` | none, when some decoder of argument `a` can give none; or issue `k`, listing in its metadata entry `m` for every decoder of `a` a non-empty list it gives |
 | `{"fixture": a}` | none, or the issue the fixture argument `a` declares |
+| `{"form": [...]}` | the lists of the decoder form written there, such as the `["string"]` `discriminate` reads its tag with; that form is part of the meaning of the one that embeds it, and not a feature a case needs |
 | `{"discard": [a, ...]}` | none: the issues of the arguments listed, decoders or fixtures that give issues, never reach the caller |
 
 A decoder's operations run in order, each only if what came before succeeded: the flow of a form

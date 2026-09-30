@@ -247,13 +247,59 @@ func Derive(key, code string, meta map[string]value.Value, cat *catalog.Catalog)
 
 var placeholder = regexp.MustCompile(`\{[A-Za-z0-9_]+\}`)
 
+// IDs are the case IDs of a revision of the suite, and the IDs it retired.
+type IDs struct {
+	Cases   []string
+	Retired []string
+}
+
+// LoadIDs reads the case IDs of the revision under root and the IDs it retired, and nothing else.
+// A change is checked against its base for the IDs it keeps; the base is read as it was written,
+// not by this revision's verifier, whose rules may have grown since.
+func LoadIDs(root string) (*IDs, error) {
+	list, err := artifacts.List(root)
+	if err != nil {
+		return nil, err
+	}
+	ids := &IDs{}
+	retired, err := os.ReadFile(filepath.Join(root, "suite", "retired.json"))
+	if err != nil {
+		return nil, err
+	}
+	n, err := jsontext.Parse(retired)
+	if err != nil || n.Kind != jsontext.Array {
+		return nil, fmt.Errorf("suite/retired.json is not an array of IDs")
+	}
+	for _, e := range n.Elems {
+		ids.Retired = append(ids.Retired, e.Text)
+	}
+	for _, a := range artifacts.OfKind(list, artifacts.CaseFile) {
+		text, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(a.Path)))
+		if err != nil {
+			return nil, err
+		}
+		n, err := jsontext.Parse(text)
+		if err != nil || n.Kind != jsontext.Array {
+			return nil, fmt.Errorf("%s is not an array of cases", a.Path)
+		}
+		for i, c := range n.Elems {
+			id, err := c.String("id")
+			if err != nil {
+				return nil, fmt.Errorf("%s: case %d: %w", a.Path, i, err)
+			}
+			ids.Cases = append(ids.Cases, id)
+		}
+	}
+	return ids, nil
+}
+
 // CheckIDs checks that a suite keeps the IDs of a base suite, the one a change starts from: every
 // case ID of the base is still a case or has been retired, and every retired ID stays retired.
-func CheckIDs(base, head *Suite) error {
+func CheckIDs(base *IDs, head *Suite) error {
 	var problems []string
-	for _, c := range base.Cases {
-		if _, ok := head.ByID[c.ID]; !ok && !slices.Contains(head.Retired, c.ID) {
-			problems = append(problems, fmt.Sprintf("%s was removed without being added to suite/retired.json", c.ID))
+	for _, id := range base.Cases {
+		if _, ok := head.ByID[id]; !ok && !slices.Contains(head.Retired, id) {
+			problems = append(problems, fmt.Sprintf("%s was removed without being added to suite/retired.json", id))
 		}
 	}
 	for _, id := range base.Retired {

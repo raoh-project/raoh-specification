@@ -433,5 +433,10 @@
   {"id": "R000719", "title": "string.url() rejects \"http://%zz.example/\" with invalid_format.url", "decoder": ["string",["url"]], "input": "http://%zz.example/", "issues": [{"path":"","code":"invalid_format","message_key":"invalid_format.url","meta":{}}]},
   {"id": "R000720", "title": "string.url() accepts \"http://host/%41\"", "decoder": ["string",["url"]], "input": "http://host/%41", "ok": "http://host/%41"},
   {"id": "R000721", "title": "string.url() accepts \"http://us%40er@host/\"", "decoder": ["string",["url"]], "input": "http://us%40er@host/", "ok": "http://us%40er@host/"},
-  {"id": "R000722", "title": "string.url() accepts \"http://[::1]:80/%7e?q=%20#%41\"", "decoder": ["string",["url"]], "input": "http://[::1]:80/%7e?q=%20#%41", "ok": "http://[::1]:80/%7e?q=%20#%41"}
+  {"id": "R000722", "title": "string.url() accepts \"http://[::1]:80/%7e?q=%20#%41\"", "decoder": ["string",["url"]], "input": "http://[::1]:80/%7e?q=%20#%41", "ok": "http://[::1]:80/%7e?q=%20#%41"},
+  {"id": "R000840", "title": "string.ulid() accepts \"01arz3ndektsv4rrffq69g5fav\" unchanged", "decoder": ["string",["ulid"]], "input": "01arz3ndektsv4rrffq69g5fav", "ok": "01arz3ndektsv4rrffq69g5fav"},
+  {"id": "R000841", "title": "string.ulid() accepts \"7ZZZZZZZZZZZZZZZZZZZZZZZZZ\", the largest ULID", "decoder": ["string",["ulid"]], "input": "7ZZZZZZZZZZZZZZZZZZZZZZZZZ", "ok": "7ZZZZZZZZZZZZZZZZZZZZZZZZZ"},
+  {"id": "R000842", "title": "string.ulid() rejects \"80000000000000000000000000\", past 128 bits", "decoder": ["string",["ulid"]], "input": "80000000000000000000000000", "issues": [{"path":"","code":"invalid_format","message_key":"invalid_format.ulid","meta":{}}]},
+  {"id": "R000843", "title": "string.toLowerCase() gives \"α1σ\" for \"Α1Σ\": a digit is no case-ignorable, so the sigma is not final", "decoder": ["string",["toLowerCase"]], "input": "Α1Σ", "ok": "α1σ"},
+  {"id": "R000844", "title": "string.toLowerCase() gives \"α.ς\" for \"Α.Σ\": a full stop is case-ignorable", "decoder": ["string",["toLowerCase"]], "input": "Α.Σ", "ok": "α.ς"}
 ]

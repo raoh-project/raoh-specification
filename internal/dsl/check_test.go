@@ -320,6 +320,49 @@ func TestArgumentsMeetWhatTheFormRequires(t *testing.T) {
 	rejected(t, c, `["enum", ["Red", "RED"], ["string"]]`, "ASCII case folding")
 	decoder(t, c, `["enum", ["RED", "GREEN"], ["string"]]`)
 	rejected(t, c, `["decimal", ["oneOf", ["1"]]]`, "does not apply to decimal")
+	rejected(t, c, `["string", ["oneOf", ["a", "b", "a"]]]`, "allowed lists the same value twice")
+	rejected(t, c, `["double", ["oneOf", [{"float": "NaN"}, {"float": "NaN"}]]]`, "allowed lists the same value twice")
+	decoder(t, c, `["double", ["oneOf", [0, {"float": "-0"}]]]`)
+	rejected(t, c, `["strictObject", [["field", "a", ["int"]], ["flat", ["object", [["field", "b", ["int"]]]]]]]`, "a field that reads the whole input")
+	if _, err := c.CheckEncoder(jsontext.MustParse(`["object", [["propertyWithDefault", "v", "identity", ["string"], "x"], ["propertyWithDefault", "v", "identity", ["string"], "y"]]]`)); err == nil || !strings.Contains(err.Error(), `two properties write the member "v"`) {
+		t.Errorf("two properties of one member: %v", err)
+	}
+}
+
+// A form a flow embeds is checked when the checker is made, and one that embeds itself, directly
+// or through another, is refused there, since its flow would never end.
+func TestEmbeddedFormsAreCheckedAndDoNotLoop(t *testing.T) {
+	ops := readDoc(t, "../../catalog/operations.json")
+	cons := ops["constructors"].(doc)
+	cons["loopA"] = doc{"doc": "x", "result": "string", "issues": []any{}, "flow": doc{"form": []any{"loopB"}}}
+	cons["loopB"] = doc{"doc": "x", "result": "string", "issues": []any{}, "flow": doc{"form": []any{"loopA"}}}
+	fx, _ := os.ReadFile("../../catalog/fixtures.json")
+	reg, err := Parse(encode(t, ops), fx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat, err := catalog.Load("../..", schemasFor(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewChecker(reg, cat); err == nil || !strings.Contains(err.Error(), "embeds itself") {
+		t.Errorf("a loop of embedded forms: %v", err)
+	}
+	delete(cons, "loopA")
+	delete(cons, "loopB")
+	cons["badEmbed"] = doc{"doc": "x", "result": "string", "issues": []any{}, "flow": doc{"form": []any{"nosuch"}}}
+	reg, err = Parse(encode(t, ops), fx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewChecker(reg, cat); err == nil || !strings.Contains(err.Error(), `unknown constructor "nosuch"`) {
+		t.Errorf("an embedded form that does not check: %v", err)
+	}
+	// A case that uses discriminate needs discriminate, not the string decoder it reads its tag with.
+	d := decoder(t, checker(t), `["discriminate", "kind", {"a": ["int"]}]`)
+	if slices.Contains(d.Features, "decoder.string") {
+		t.Errorf("discriminate needs %v", d.Features)
+	}
 }
 
 func TestResultTypesMustBeWellFormed(t *testing.T) {
@@ -655,4 +698,38 @@ func TestInstantiatedTypesAreWellFormed(t *testing.T) {
 		"issues": []any{doc{"key": "probe", "T": "nullable<R>"}}, "flow": "own"}}, nil,
 		doc{"probe": doc{"code": "probe", "params": []any{"T"}, "meta": doc{"x": "optional<T>"}}})
 	rejected(t, c, `["string", ["probe"]]`, "optional<nullable<string>> cannot tell its own null")
+}
+
+// A message writes only values that have a message form: an issue whose template writes a
+// metadata entry of another type cannot be given, where a case gives that type and where the
+// catalogue fixes it.
+func TestMessagesWriteOnlyWhatHasAMessageForm(t *testing.T) {
+	c := checker(t)
+	rejected(t, c, `["list", ["dict", ["int"]], ["unique"]]`, "a message cannot write a list<map<int32>>")
+	rejected(t, c, `["list", ["nullable", ["int"]], ["contains", null]]`, "a message cannot write a nullable<int32>")
+	decoder(t, c, `["list", ["int"], ["unique"]]`)
+
+	ops := readDoc(t, "../../catalog/operations.json")
+	ops["operations"] = append(ops["operations"].([]any), doc{"name": "probe", "doc": "x", "receivers": []any{"string"}, "result": "R",
+		"issues": []any{doc{"key": "probe", "T": "map<R>"}}, "flow": "own"})
+	fx, _ := os.ReadFile("../../catalog/fixtures.json")
+	reg, err := Parse(encode(t, ops), fx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat, err := catalog.Load("../..", schemasFor(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	is := readDoc(t, "../../catalog/issues.json")
+	is["probe"] = doc{"code": "probe", "params": []any{"T"}, "meta": doc{"x": "T"}}
+	if cat.Variants, err = catalog.ParseVariants(encode(t, is)); err != nil {
+		t.Fatal(err)
+	}
+	for _, locale := range catalog.Locales {
+		cat.Messages[locale]["probe"] = "is {x}"
+	}
+	if _, err := NewChecker(reg, cat); err == nil || !strings.Contains(err.Error(), "writes meta x, a map<string>, into its message") {
+		t.Errorf("a template writing a map: %v", err)
+	}
 }

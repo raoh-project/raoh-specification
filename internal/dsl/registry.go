@@ -105,6 +105,8 @@ type Form struct {
 	Args []Arg
 	// Message is the form's message argument, or NoArg; a form has at most one.
 	Message ArgRef
+	// Member is, for a property, the string value argument that names the member it writes.
+	Member ArgRef
 	// Result is how the result type of a constructor, field or operation is found.
 	Result Result
 	// Receivers are the receivers an operation applies to.
@@ -142,14 +144,43 @@ type Overload struct {
 
 // Require is a condition on the values of some of a form's arguments.
 type Require struct {
-	// Check is ordered (the first is not after the second, as Compare orders them), nonzero,
-	// nonempty (a list with an element) or distinct_ascii_fold (strings that stay distinct when
-	// A-Z are read as a-z).
+	// Check is a kind of condition (see requirements).
 	Check string
 	Args  []ArgRef
 }
 
-var requireArity = map[string]int{"ordered": 2, "nonzero": 1, "nonempty": 1, "distinct_ascii_fold": 1}
+// requirement is what a kind of condition reads: how many arguments, of what kind, and, for a
+// value argument, whether it is a list, and whether of strings.
+type requirement struct {
+	arity   int
+	kind    string
+	list    bool
+	strings bool
+	// text is a condition on one string value.
+	text bool
+}
+
+// requirements are the kinds of condition. Each is a condition on what the arguments mean, which
+// the specification refuses whether or not an implementation checks it, and never one that only a
+// host language's API imposes (see spec/decoder-language.md).
+var requirements = map[string]requirement{
+	// ordered: the first value is not after the second, as Compare orders them.
+	"ordered": {arity: 2, kind: "value"},
+	// nonzero: the value is not zero.
+	"nonzero": {arity: 1, kind: "value"},
+	// nonempty: the list has an element.
+	"nonempty": {arity: 1, kind: "value", list: true},
+	// distinct: no two elements of the list are the same value (value-model sameness).
+	"distinct": {arity: 1, kind: "value", list: true},
+	// distinct_ascii_fold: the strings stay distinct when A-Z are read as a-z.
+	"distinct_ascii_fold": {arity: 1, kind: "value", list: true, strings: true},
+	// pattern: the string is a pattern of spec/pattern.md.
+	"pattern": {arity: 1, kind: "value", text: true},
+	// named_fields: every field names the member it reads; none is flat.
+	"named_fields": {arity: 1, kind: "fields"},
+	// distinct_members: no two properties write the same member.
+	"distinct_members": {arity: 1, kind: "properties"},
+}
 
 // FixtureIssue is the issue a refine or flatMap fixture creates.
 type FixtureIssue struct {
@@ -243,8 +274,8 @@ var sectionMembers = map[string][]string{
 	"constructor": {"doc", "result", "args", "issues", "requires", "symbols_from", "flow"},
 	"field":       {"doc", "result", "args", "issues", "requires", "symbols_from", "flow"},
 	"operation":   {"name", "doc", "receivers", "result", "args", "issues", "requires", "symbols_from", "flow"},
-	"encoder":     {"doc", "input", "args"},
-	"property":    {"doc", "input", "args"},
+	"encoder":     {"doc", "input", "args", "requires"},
+	"property":    {"doc", "input", "args", "member"},
 }
 
 // Parse reads a registry from the text of operations.json and fixtures.json. It does not rely on
@@ -497,17 +528,36 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 		if err != nil {
 			return nil, err
 		}
-		if want, ok := requireArity[r.Check]; !ok || len(args) != want {
+		req, ok := requirements[r.Check]
+		if !ok || len(args) != req.arity {
 			return nil, fmt.Errorf("requires %q with %d argument(s) is not a condition", r.Check, len(args))
 		}
 		for _, name := range args {
 			i, ok := f.arg(name)
-			if !ok || f.Args[i.Index()].Kind != "value" {
-				return nil, fmt.Errorf("requires %s of %s, which is not a value argument", r.Check, name)
+			if !ok || f.Args[i.Index()].Kind != req.kind {
+				return nil, fmt.Errorf("requires %s of %s, which is not a %s argument", r.Check, name, req.kind)
+			}
+			t := f.Args[i.Index()].Type
+			if req.list && (t.Kind != value.List || (req.strings && t.Args[0].Kind != value.String)) {
+				return nil, fmt.Errorf("requires %s of %s, a %s, and it reads a list", r.Check, name, t)
+			}
+			if req.text && t.Kind != value.String {
+				return nil, fmt.Errorf("requires %s of %s, a %s, and it reads a string", r.Check, name, t)
 			}
 			r.Args = append(r.Args, i)
 		}
 		f.Requires = append(f.Requires, r)
+	}
+	if member, ok, err := text(n, "member"); err != nil {
+		return nil, err
+	} else if ok {
+		i, found := f.arg(member)
+		if !found || f.Args[i.Index()].Kind != "value" || f.Args[i.Index()].Type.Kind != value.String {
+			return nil, fmt.Errorf("member %s is not a string value argument", member)
+		}
+		f.Member = i
+	} else if section == "property" {
+		return nil, fmt.Errorf("it does not say which argument names the member it writes")
 	}
 	if err := f.parseIssues(n); err != nil {
 		return nil, err
@@ -515,6 +565,22 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 	if fl, ok := n.Get("flow"); ok {
 		if f.Flow, err = resolveFlow(f, fl); err != nil {
 			return nil, fmt.Errorf("flow: %w", err)
+		}
+		// Members a form knows by its fields are known only if every field names one.
+		var problem error
+		walkExpr(f.Flow, func(e Expr) {
+			x, ok := e.(ExprUnknown)
+			if !ok || x.KnownFields == NoArg {
+				return
+			}
+			if !slices.ContainsFunc(f.Requires, func(r Require) bool {
+				return r.Check == "named_fields" && r.Args[0] == x.KnownFields
+			}) {
+				problem = fmt.Errorf("flow: the members it knows come from %s, which it does not require to be named_fields", f.Args[x.KnownFields.Index()].Name)
+			}
+		})
+		if problem != nil {
+			return nil, problem
 		}
 	}
 	switch section {

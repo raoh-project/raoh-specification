@@ -88,7 +88,7 @@ type runnerResult struct {
 	impl     Implementation
 	env      map[string]string
 	bound    map[string]bool
-	results  map[string]suite.Outcome
+	results  map[string]observation
 	catalogs map[string]map[string]string
 }
 
@@ -243,6 +243,26 @@ func unbound(c *suite.Case, res *runnerResult) []string {
 	return missing
 }
 
+// observation is what a runner observed for a case: the implementation's outcome, or, when it
+// gave none (it threw, or refused to construct the decoder), what happened instead.
+type observation struct {
+	outcome suite.Outcome
+	failure *string
+}
+
+// parseObservation reads {"ok": value}, {"issues": [...]} or {"error": "what happened"}.
+func parseObservation(n *jsontext.Node) (observation, error) {
+	if e, ok := n.Get("error"); ok && len(n.Members) == 1 {
+		if e.Kind != jsontext.String || len(e.Text) == 0 {
+			return observation{}, fmt.Errorf("error says what happened, as non-empty text")
+		}
+		text := e.Text
+		return observation{failure: &text}, nil
+	}
+	o, err := suite.ParseOutcome(n)
+	return observation{outcome: o}, err
+}
+
 func classify(c *suite.Case, res *runnerResult, decl *declaration) CaseResult {
 	r := CaseResult{ID: c.ID, Profile: c.Profile}
 	if missing := unbound(c, res); len(missing) > 0 {
@@ -259,12 +279,18 @@ func classify(c *suite.Case, res *runnerResult, decl *declaration) CaseResult {
 		}
 		return r
 	}
-	observed, ok := res.results[c.ID]
+	obs, ok := res.results[c.ID]
 	if !ok {
 		r.Outcome, r.Detail = Failed, "the runner has no result for the case"
 		return r
 	}
 	div, declared := decl.divergences[c.ID]
+	if obs.failure != nil {
+		// A failure is a defect, which no divergence declares.
+		r.Outcome, r.Detail = Failed, "the implementation failed: "+*obs.failure
+		return r
+	}
+	observed := obs.outcome
 	if ok, why := compare.Expected(c, observed); ok {
 		if declared {
 			r.Outcome, r.Detail = Failed, "the case is declared divergent, and the implementation gives what the case expects: the divergence is stale"
@@ -311,7 +337,7 @@ func parseResult(t []byte) (*runnerResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &runnerResult{env: map[string]string{}, bound: map[string]bool{}, results: map[string]suite.Outcome{}, catalogs: map[string]map[string]string{}}
+	r := &runnerResult{env: map[string]string{}, bound: map[string]bool{}, results: map[string]observation{}, catalogs: map[string]map[string]string{}}
 	spec, err := n.Member("specification")
 	if err != nil {
 		return nil, err
@@ -361,7 +387,7 @@ func parseResult(t []byte) (*runnerResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("result for %s: %w", m.Name, err)
 		}
-		o, err := suite.ParseOutcome(obs)
+		o, err := parseObservation(obs)
 		if err != nil {
 			return nil, fmt.Errorf("result for %s: %w", m.Name, err)
 		}

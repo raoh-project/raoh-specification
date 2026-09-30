@@ -9,6 +9,7 @@ import (
 
 	"github.com/raoh-project/raoh-specification/internal/catalog"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/pattern"
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
@@ -36,7 +37,58 @@ func NewChecker(r *Registry, c *catalog.Catalog) (*Checker, error) {
 	if err := Validate(r, c); err != nil {
 		return nil, err
 	}
-	return &Checker{registry: r, catalog: c}, nil
+	chk := &Checker{registry: r, catalog: c}
+	if err := chk.checkEmbedded(); err != nil {
+		return nil, err
+	}
+	return chk, nil
+}
+
+// checkEmbedded type-checks every form a flow embeds, so that building a flow never finds one
+// wrong, and rejects a form that embeds itself, directly or through others, whose flow would never
+// end.
+func (c *Checker) checkEmbedded() error {
+	var problems []string
+	each := func(owner string, f *Form) {
+		walkExpr(f.Flow, func(e Expr) {
+			if x, ok := e.(ExprForm); ok {
+				if _, _, err := c.newState().embedded(x); err != nil {
+					problems = append(problems, fmt.Sprintf("%s: the form it embeds: %v", owner, err))
+				}
+			}
+		})
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.registry.Constructors)) {
+		each("constructor "+name, c.registry.Constructors[name])
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.registry.Fields)) {
+		each("field "+name, c.registry.Fields[name])
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.registry.Operations)) {
+		seen := map[*Form]bool{}
+		for _, key := range slices.Sorted(maps.Keys(c.registry.Operations[name])) {
+			if f := c.registry.Operations[name][key].Form; !seen[f] {
+				seen[f] = true
+				each("operation "+name, f)
+			}
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("%s", strings.Join(problems, "\n"))
+	}
+	return nil
+}
+
+// embedded checks a form a flow embeds, recording none of its features: it is part of the meaning
+// of the form that embeds it, not something a case uses.
+func (s *state) embedded(x ExprForm) (value.Type, Flow, error) {
+	if slices.Contains(s.embedding, x.Form) {
+		return value.Type{}, nil, fmt.Errorf("%s embeds itself", abbreviate(x.Form))
+	}
+	features := s.features
+	s.features, s.embedding = map[string]bool{}, append(s.embedding, x.Form)
+	defer func() { s.features, s.embedding = features, s.embedding[:len(s.embedding)-1] }()
+	return s.decoder(x.Form)
 }
 
 // Registry is the registry the checker checks forms against.
@@ -50,6 +102,8 @@ type state struct {
 	features map[string]bool
 	// unordered counts the Unordered flows made, to give each its own ID.
 	unordered int
+	// embedding are the forms embedded in a flow (ExprForm) being checked, innermost last.
+	embedding []*jsontext.Node
 }
 
 func (c *Checker) newState() *state {
@@ -128,6 +182,8 @@ type checkedArgs struct {
 	flows map[ArgRef][]Flow
 	// fields are the fields of a fields argument.
 	fields map[ArgRef][]field
+	// members are the members the properties of a properties argument write, in order.
+	members map[ArgRef][]string
 	// keys are the variant names of a variants argument.
 	keys     map[ArgRef][]string
 	fixtures map[ArgRef]checkedFixture
@@ -250,7 +306,7 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 		} else {
 			for _, fl := range ca.fields[x.KnownFields] {
 				if !fl.named {
-					return nil, fmt.Errorf("%s: a field that reads the whole input leaves the members it knows unknown", owner)
+					panic("registry invariant: " + owner + " takes its known members from fields it does not require to be named")
 				}
 				known = append(known, fl.member)
 			}
@@ -268,6 +324,14 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 		}
 		site.Candidates = &CandidateList{Meta: x.Meta, Flows: ca.flows[x.Decoders]}
 		return &Candidates{Site: site}, nil
+	case ExprForm:
+		// NewChecker checks every embedded form through here, and refuses the catalogue when one
+		// fails; once it has, none does.
+		_, fl, err := s.embedded(x)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", owner, err)
+		}
+		return fl, nil
 	case ExprFixture:
 		fx := ca.fixtures[x.Arg]
 		meta := map[string]value.Type{}
@@ -410,24 +474,27 @@ func (s *state) encoder(n *jsontext.Node) (value.Type, error) {
 	return instantiate(f.Input, bound, name)
 }
 
-func (s *state) property(n *jsontext.Node) (value.Type, error) {
+// property checks a property form: the type it reads, and the member it writes.
+func (s *state) property(n *jsontext.Node) (value.Type, string, error) {
 	name, err := head(n, "property")
 	if err != nil {
-		return value.Type{}, err
+		return value.Type{}, "", err
 	}
 	f, ok := s.registry.Properties[name]
 	if !ok {
-		return value.Type{}, fmt.Errorf("unknown property kind %q", name)
+		return value.Type{}, "", fmt.Errorf("unknown property kind %q", name)
 	}
 	s.features["property."+name] = true
 	if len(n.Elems)-1 != len(f.Args) {
-		return value.Type{}, fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
+		return value.Type{}, "", fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
 	}
 	bound := map[string]value.Type{}
-	if _, err := s.args(f, n.Elems[1:], bound); err != nil {
-		return value.Type{}, fmt.Errorf("%s: %w", name, err)
+	ca, err := s.args(f, n.Elems[1:], bound)
+	if err != nil {
+		return value.Type{}, "", fmt.Errorf("%s: %w", name, err)
 	}
-	return instantiate(f.Input, bound, name)
+	t, err := instantiate(f.Input, bound, name)
+	return t, ca.values[f.Member].Str, err
 }
 
 // args checks the arguments given, the first of the form's, in the order their types are bound:
@@ -438,7 +505,7 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 // what args gives; a message argument left out gives no message.
 func (s *state) args(f *Form, nodes []*jsontext.Node, bound map[string]value.Type) (checkedArgs, error) {
 	ca := checkedArgs{values: map[ArgRef]value.Value{}, flows: map[ArgRef][]Flow{}, fields: map[ArgRef][]field{},
-		keys: map[ArgRef][]string{}, fixtures: map[ArgRef]checkedFixture{}}
+		keys: map[ArgRef][]string{}, members: map[ArgRef][]string{}, fixtures: map[ArgRef]checkedFixture{}}
 	given := func(i int) bool { return i < len(nodes) }
 	for i, a := range f.Args {
 		if !given(i) || argKinds[a.Kind].Binding != bindsByForms {
@@ -471,7 +538,7 @@ func (s *state) args(f *Form, nodes []*jsontext.Node, bound map[string]value.Typ
 		}
 	}
 	for _, r := range f.Requires {
-		if err := meets(f, r, ca.values); err != nil {
+		if err := meets(f, r, ca); err != nil {
 			return ca, err
 		}
 	}
@@ -538,10 +605,11 @@ func (s *state) binder(a Arg, ref ArgRef, v *jsontext.Node, bound map[string]val
 			return fmt.Errorf("properties must be a non-empty array")
 		}
 		for _, e := range v.Elems {
-			t, err := s.property(e)
+			t, member, err := s.property(e)
 			if err != nil {
 				return err
 			}
+			ca.members[ref] = append(ca.members[ref], member)
 			if !value.Unify(a.Type, t, bound) {
 				return fmt.Errorf("%s: expected properties that read %s, found one that reads %s", a.Name, a.Type.Subst(bound), t)
 			}
@@ -610,13 +678,38 @@ func (s *state) fixtures(f *Form, nodes []*jsontext.Node, bound map[string]value
 }
 
 // meets checks a condition on argument values.
-func meets(f *Form, r Require, values map[ArgRef]value.Value) error {
+func meets(f *Form, r Require, ca checkedArgs) error {
 	var vs []value.Value
 	for _, i := range r.Args {
-		vs = append(vs, values[i])
+		vs = append(vs, ca.values[i])
 	}
 	name := func(k int) string { return f.Args[r.Args[k].Index()].Name }
 	switch r.Check {
+	case "distinct":
+		for i, e := range vs[0].Elems {
+			for _, o := range vs[0].Elems[:i] {
+				if value.Equal(e, o) {
+					return fmt.Errorf("%s lists the same value twice", name(0))
+				}
+			}
+		}
+	case "pattern":
+		if err := pattern.Read(vs[0].Str); err != nil {
+			return fmt.Errorf("%s is not a pattern (spec/pattern.md): %w", name(0), err)
+		}
+	case "named_fields":
+		for _, fl := range ca.fields[r.Args[0]] {
+			if !fl.named {
+				return fmt.Errorf("%s: a field that reads the whole input leaves the members this form knows unknown", name(0))
+			}
+		}
+	case "distinct_members":
+		members := ca.members[r.Args[0]]
+		for i, m := range members {
+			if slices.Contains(members[:i], m) {
+				return fmt.Errorf("%s: two properties write the member %q", name(0), m)
+			}
+		}
 	case "ordered":
 		c, err := value.Compare(vs[0], vs[1])
 		if err != nil {
@@ -703,6 +796,11 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) 
 	meta, err := v.Instantiate(args)
 	if err != nil {
 		return nil, fmt.Errorf("issue %s: %w", ref.Key, err)
+	}
+	for _, name := range s.catalog.Written(ref.Key) {
+		if t, ok := meta[name]; ok && !t.HasMessageForm() {
+			return nil, fmt.Errorf("issue %s writes %s, a %s, into its message, and a message cannot write a %s", ref.Key, name, t, t)
+		}
 	}
 	site := &Site{Key: v.Key, Code: v.Code, Meta: meta, Values: map[string]value.Value{}, Message: ca.message}
 	for _, o := range ref.Omit {
@@ -864,6 +962,9 @@ func checkSources(owner string, f *Form, c *catalog.Catalog, contexts []context)
 					if err := t.Concrete(); err != nil {
 						bad("meta %s is a %s: %v", name, t, err)
 						continue
+					}
+					if slices.Contains(c.Written(ref.Key), name) && !t.HasMessageForm() {
+						bad("writes meta %s, a %s, into its message, and a message cannot write a %s", name, t, t)
 					}
 				}
 				src, ok := ref.Meta[name]
