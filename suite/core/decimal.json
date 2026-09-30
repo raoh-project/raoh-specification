@@ -1,9 +1,9 @@
 [
-  {"id": "decimal.accepts_12_5", "decoder": ["decimal"], "input": 12.5, "ok": "12.5"},
-  {"id": "decimal.type_mismatch_12_5", "decoder": ["decimal"], "input": "12.5", "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "number"}}]},
-  {"id": "decimal.scale.invalid_scale_1_125", "decoder": ["decimal",["scale",2]], "input": 1.125, "issues": [{"path": "", "code": "invalid_scale", "message_key": "invalid_scale", "meta": {"actualScale": 3, "maxScale": 2}}]},
+  {"id": "decimal.accepts_12_point_5", "decoder": ["decimal"], "input": 12.5, "ok": "12.5"},
+  {"id": "decimal.type_mismatch_12_point_5", "decoder": ["decimal"], "input": "12.5", "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "number"}}]},
+  {"id": "decimal.scale.invalid_scale_1_point_125", "decoder": ["decimal",["scale",2]], "input": 1.125, "issues": [{"path": "", "code": "invalid_scale", "message_key": "invalid_scale", "meta": {"actualScale": 3, "maxScale": 2}}]},
   {"id": "decimal.positive.out_of_range_positive_0", "decoder": ["decimal",["positive"]], "input": 0, "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.positive", "meta": {"actual": "0", "min": "0"}}]},
-  {"id": "decimal.range.out_of_range_range_10_5", "decoder": ["decimal",["range","0","10"]], "input": 10.5, "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.range", "meta": {"actual": "10.5", "max": "10", "min": "0"}}]},
-  {"id": "decimal.accepts_0_0001", "decoder": ["decimal"], "input": 0.0001, "ok": "0.0001"},
-  {"id": "decimal.min.small_bound.out_of_range_minimum_0_0001", "decoder": ["decimal",["min","0.0005"]], "input": 0.0001, "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "meta": {"actual": "0.0001", "min": "0.0005"}}]}
+  {"id": "decimal.range.out_of_range_range_10_point_5", "decoder": ["decimal",["range","0","10"]], "input": 10.5, "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.range", "meta": {"actual": "10.5", "max": "10", "min": "0"}}]},
+  {"id": "decimal.accepts_0_point_0001", "decoder": ["decimal"], "input": 0.0001, "ok": "0.0001"},
+  {"id": "decimal.min.small_bound.out_of_range_minimum_0_point_0001", "decoder": ["decimal",["min","0.0005"]], "input": 0.0001, "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "meta": {"actual": "0.0001", "min": "0.0005"}}]}
 ]
