@@ -44,9 +44,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		s, err := verify.Load(root)
-		if err == nil {
-			err = s.CheckSuiteFiles()
-		}
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1

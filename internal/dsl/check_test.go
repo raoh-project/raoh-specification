@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"slices"
 	"strings"
 	"testing"
@@ -11,11 +12,11 @@ import (
 
 func checker(t *testing.T) *Checker {
 	t.Helper()
-	cat, err := catalog.Load("../..")
+	cat, err := catalog.Load("../..", schemasFor(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg, err := Load("../..")
+	reg, err := Load("../..", schemasFor(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,4 +208,13 @@ func TestResultTypesMustBeWellFormed(t *testing.T) {
 	rejected(t, c, `["nullable", ["nullable", ["int"]]]`, "cannot tell its own null")
 	rejected(t, c, `["object", [["optionalField", "a", ["nullable", ["int"]]]]]`, "cannot tell its own null")
 	decoder(t, c, `["nullable", ["list", ["nullable", ["int"]]]]`)
+}
+
+func schemasFor(t *testing.T) *schemas.Set {
+	t.Helper()
+	sch, err := schemas.Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sch
 }

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/raoh-project/raoh-specification/schema/fixtures.schema.json",
+  "title": "The fixtures",
+  "description": "catalog/fixtures.json: the named functions cases use where a form takes a function.",
+  "type": "object",
+  "propertyNames": {"pattern": "^[a-z0-9_]+$"},
+  "additionalProperties": {
+    "type": "object",
+    "required": ["kind", "input", "doc"],
+    "properties": {
+      "kind": {"enum": ["map", "refine", "flatMap", "recover", "getter"]},
+      "input": {"type": "string", "minLength": 1},
+      "output": {"type": "string", "minLength": 1},
+      "doc": {"type": "string", "minLength": 1},
+      "issue": {
+        "type": "object",
+        "required": ["code", "message_key", "message", "meta"],
+        "properties": {
+          "path": {"type": "array", "items": {"type": "string"}},
+          "code": {"type": "string", "minLength": 1},
+          "message_key": {"type": "string", "minLength": 1},
+          "message": {"type": "string", "minLength": 1},
+          "meta": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+          "values": {"type": "object", "additionalProperties": {"const": "input"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "allOf": [
+      {"if": {"properties": {"kind": {"const": "refine"}}}, "then": {"not": {"required": ["output"]}}, "else": {"required": ["output"]}},
+      {"if": {"properties": {"kind": {"enum": ["refine", "flatMap"]}}}, "then": {"required": ["issue"]}, "else": {"not": {"required": ["issue"]}}}
+    ],
+    "additionalProperties": false
+  }
+}

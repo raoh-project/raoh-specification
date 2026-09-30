@@ -239,6 +239,16 @@ func TestClassification(t *testing.T) {
 			invalid: "has a result for string.cuid.rejects_a_non_cuid",
 		},
 		{
+			name:    "a declaration of another implementation",
+			decl:    []byte(strings.Replace(string(declare(v, "")), `"implementation": "raoh-test"`, `"implementation": "raoh-rust"`, 1)),
+			invalid: "the declaration is raoh-rust's, and the runner result is raoh-test's",
+		},
+		{
+			name:    "a divergence whose outcome is not an observation",
+			decl:    declare(v, `, "divergences": {"int.accepts_an_integer": {"category": "design", "reason": "r", "observed": {"ok": "1"}}}`),
+			invalid: "is not an observation",
+		},
+		{
 			name:    "a divergence that gives what the case expects",
 			decl:    declare(v, strings.Replace(divergentMin, "too small", "must be at least 1", 1)),
 			invalid: "gives what the case expects",
@@ -292,12 +302,6 @@ func TestReportMatchesItsSchema(t *testing.T) {
 	}
 	if !rep.Conformant() || rep.Profiles["core"].Matched != 3 || rep.Profiles["messages-en"].Matched != len(s.Catalog.Messages["en"]) {
 		t.Errorf("%+v", rep.Profiles)
-	}
-}
-
-func TestSuiteFilesMatchTheCaseSchema(t *testing.T) {
-	if err := miniSpec(t).CheckSuiteFiles(); err != nil {
-		t.Error(err)
 	}
 }
 

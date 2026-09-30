@@ -13,6 +13,7 @@ import (
 	"github.com/raoh-project/raoh-specification/internal/catalog"
 	"github.com/raoh-project/raoh-specification/internal/dsl"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
@@ -58,8 +59,9 @@ type Suite struct {
 	ByID  map[string]*Case
 }
 
-// Load reads every case file of the specification under root.
-func Load(root string, chk *dsl.Checker) (*Suite, error) {
+// Load reads every case file of the specification under root, each checked against the case
+// schema first.
+func Load(root string, chk *dsl.Checker, sch *schemas.Set) (*Suite, error) {
 	list, err := artifacts.List(root)
 	if err != nil {
 		return nil, err
@@ -70,6 +72,10 @@ func Load(root string, chk *dsl.Checker) (*Suite, error) {
 		text, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(a.Path)))
 		if err != nil {
 			return nil, err
+		}
+		if err := sch.Validate("case", text); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %v", a.Path, err))
+			continue
 		}
 		cases, errs := ParseFile(a.Path, a.Profile, text, chk)
 		problems = append(problems, errs...)

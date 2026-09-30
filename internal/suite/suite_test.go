@@ -1,6 +1,7 @@
 package suite
 
 import (
+	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"strings"
 	"testing"
 
@@ -11,11 +12,11 @@ import (
 
 func checker(t *testing.T) *dsl.Checker {
 	t.Helper()
-	cat, err := catalog.Load("../..")
+	cat, err := catalog.Load("../..", schemasFor(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg, err := dsl.Load("../..")
+	reg, err := dsl.Load("../..", schemasFor(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +112,7 @@ func TestLoadRejectsRepeatedIDs(t *testing.T) {
 		"suite/core/a.json": `[{"id": "int.one", "decoder": ["int"], "input": 1, "ok": 1}]`,
 		"suite/core/b.json": `[{"id": "int.one", "decoder": ["int"], "input": 2, "ok": 2}]`,
 	})
-	_, err := Load(root, checker(t))
+	_, err := Load(root, checker(t), schemasFor(t))
 	if err == nil || !strings.Contains(err.Error(), "also used in suite/core/a.json") {
 		t.Errorf("got %v", err)
 	}
@@ -157,4 +158,13 @@ func TestAnIssueThatFitsTwoTypingsIsRejected(t *testing.T) {
 	rejected(t, "core", `[{"id": "a.b", "decoder": ["object", [["field", "a", ["int", ["oneOf", [1, 2]]]], ["field", "b", ["double", ["oneOf", [1, 2]]]]]],
 		"input": {"a": 1, "b": 3},
 		"issues": [{"path": "/b", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": [1, 2], "actual": 3}}]}]`, "ambiguous")
+}
+
+func schemasFor(t *testing.T) *schemas.Set {
+	t.Helper()
+	sch, err := schemas.Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sch
 }

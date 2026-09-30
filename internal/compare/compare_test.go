@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"strings"
 	"testing"
 
@@ -12,11 +13,11 @@ import (
 
 func oneCase(t *testing.T, text string) *suite.Case {
 	t.Helper()
-	cat, err := catalog.Load("../..")
+	cat, err := catalog.Load("../..", schemasFor(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg, err := dsl.Load("../..")
+	reg, err := dsl.Load("../..", schemasFor(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,4 +150,13 @@ func TestCatalog(t *testing.T) {
 			t.Errorf("%s: %q, want %q", k, got[k], v)
 		}
 	}
+}
+
+func schemasFor(t *testing.T) *schemas.Set {
+	t.Helper()
+	sch, err := schemas.Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sch
 }

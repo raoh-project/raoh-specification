@@ -93,10 +93,11 @@ type runnerResult struct {
 }
 
 type declaration struct {
-	specification string
-	profiles      []string
-	unsupported   map[string]bool
-	divergences   map[string]divergence
+	implementation string
+	specification  string
+	profiles       []string
+	unsupported    map[string]bool
+	divergences    map[string]divergence
 }
 
 // Verify classifies a runner's result against the specification and the declaration. It returns
@@ -182,6 +183,9 @@ func (s *Spec) consistency(res *runnerResult, decl *declaration) []string {
 	if res.spec.ManifestDigest != s.Digest {
 		add("the runner read a suite whose manifest digest is %s, and this suite's is %s", res.spec.ManifestDigest, s.Digest)
 	}
+	if decl.implementation != res.impl.Name {
+		add("the declaration is %s's, and the runner result is %s's", decl.implementation, res.impl.Name)
+	}
 	if decl.specification != s.Version {
 		add("the declaration is for specification %s, and the suite is %s", decl.specification, s.Version)
 	}
@@ -220,7 +224,9 @@ func (s *Spec) consistency(res *runnerResult, decl *declaration) []string {
 		if missing := unbound(c, res); len(missing) > 0 {
 			add("a divergence is declared for %s, which needs %s, which the runner does not bind", id, strings.Join(missing, ", "))
 		}
-		if ok, _ := compare.Expected(c, decl.divergences[id].observed); ok {
+		if err := compare.Observation(c, decl.divergences[id].observed); err != nil {
+			add("the divergence declared for %s: %v", id, err)
+		} else if ok, _ := compare.Expected(c, decl.divergences[id].observed); ok {
 			add("the divergence declared for %s gives what the case expects", id)
 		}
 	}
@@ -300,35 +306,61 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
-func text(n *jsontext.Node, name string) string {
-	if v, ok := n.Get(name); ok && v.Kind == jsontext.String {
-		return v.Text
-	}
-	return ""
-}
-
 func parseResult(t []byte) (*runnerResult, error) {
 	n, err := jsontext.Parse(t)
 	if err != nil {
 		return nil, err
 	}
 	r := &runnerResult{env: map[string]string{}, bound: map[string]bool{}, results: map[string]suite.Outcome{}, catalogs: map[string]map[string]string{}}
-	spec, _ := n.Get("specification")
-	r.spec = Specification{Version: text(spec, "version"), Revision: text(spec, "revision"), ManifestDigest: text(spec, "manifest_digest")}
-	impl, _ := n.Get("implementation")
-	r.impl = Implementation{Name: text(impl, "name"), Version: text(impl, "version"), Revision: text(impl, "revision")}
-	if env, ok := n.Get("environment"); ok {
-		for _, m := range env.Members {
-			r.env[m.Name] = m.Value.Text
-		}
+	spec, err := n.Member("specification")
+	if err != nil {
+		return nil, err
 	}
-	bound, _ := n.Get("bound_features")
+	if r.spec.Version, err = spec.String("version"); err != nil {
+		return nil, err
+	}
+	if r.spec.Revision, err = spec.String("revision"); err != nil {
+		return nil, err
+	}
+	if r.spec.ManifestDigest, err = spec.String("manifest_digest"); err != nil {
+		return nil, err
+	}
+	impl, err := n.Member("implementation")
+	if err != nil {
+		return nil, err
+	}
+	if r.impl.Name, err = impl.String("name"); err != nil {
+		return nil, err
+	}
+	if r.impl.Version, err = impl.String("version"); err != nil {
+		return nil, err
+	}
+	if r.impl.Revision, err = impl.String("revision"); err != nil {
+		return nil, err
+	}
+	env, err := n.Member("environment")
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range env.Members {
+		r.env[m.Name] = m.Value.Text
+	}
+	bound, err := n.Member("bound_features")
+	if err != nil {
+		return nil, err
+	}
 	for _, e := range bound.Elems {
 		r.bound[e.Text] = true
 	}
-	results, _ := n.Get("results")
+	results, err := n.Member("results")
+	if err != nil {
+		return nil, err
+	}
 	for _, m := range results.Members {
-		obs, _ := m.Value.Get("observed")
+		obs, err := m.Value.Member("observed")
+		if err != nil {
+			return nil, fmt.Errorf("result for %s: %w", m.Name, err)
+		}
 		o, err := suite.ParseOutcome(obs)
 		if err != nil {
 			return nil, fmt.Errorf("result for %s: %w", m.Name, err)
@@ -352,8 +384,17 @@ func parseDeclaration(t []byte) (*declaration, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &declaration{specification: text(n, "specification"), unsupported: map[string]bool{}, divergences: map[string]divergence{}}
-	profiles, _ := n.Get("profiles")
+	d := &declaration{unsupported: map[string]bool{}, divergences: map[string]divergence{}}
+	if d.implementation, err = n.String("implementation"); err != nil {
+		return nil, err
+	}
+	if d.specification, err = n.String("specification"); err != nil {
+		return nil, err
+	}
+	profiles, err := n.Member("profiles")
+	if err != nil {
+		return nil, err
+	}
 	for _, e := range profiles.Elems {
 		d.profiles = append(d.profiles, e.Text)
 	}
@@ -364,12 +405,21 @@ func parseDeclaration(t []byte) (*declaration, error) {
 	}
 	if divs, ok := n.Get("divergences"); ok {
 		for _, m := range divs.Members {
-			obs, _ := m.Value.Get("observed")
-			o, err := suite.ParseOutcome(obs)
+			var dv divergence
+			obs, err := m.Value.Member("observed")
 			if err != nil {
 				return nil, fmt.Errorf("divergence for %s: %w", m.Name, err)
 			}
-			d.divergences[m.Name] = divergence{category: text(m.Value, "category"), reason: text(m.Value, "reason"), observed: o}
+			if dv.observed, err = suite.ParseOutcome(obs); err != nil {
+				return nil, fmt.Errorf("divergence for %s: %w", m.Name, err)
+			}
+			if dv.category, err = m.Value.String("category"); err != nil {
+				return nil, fmt.Errorf("divergence for %s: %w", m.Name, err)
+			}
+			if dv.reason, err = m.Value.String("reason"); err != nil {
+				return nil, fmt.Errorf("divergence for %s: %w", m.Name, err)
+			}
+			d.divergences[m.Name] = dv
 		}
 	}
 	return d, nil

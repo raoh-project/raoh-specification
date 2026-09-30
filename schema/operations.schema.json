@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/raoh-project/raoh-specification/schema/operations.schema.json",
+  "title": "The decoder language",
+  "description": "catalog/operations.json: every constructor, field kind, operation, encoder and property kind, with its arguments, types and the issues it gives.",
+  "type": "object",
+  "required": ["constructors", "fields", "operations", "encoders", "properties"],
+  "properties": {
+    "constructors": {"$ref": "#/$defs/forms"},
+    "fields": {"$ref": "#/$defs/forms"},
+    "encoders": {"$ref": "#/$defs/forms"},
+    "properties": {"$ref": "#/$defs/forms"},
+    "operations": {
+      "type": "array",
+      "items": {
+        "allOf": [{"$ref": "#/$defs/form"}],
+        "required": ["name", "receivers", "result", "issues"]
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "type": {"type": "string", "minLength": 1},
+    "forms": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][A-Za-z]*$"},
+      "additionalProperties": {"$ref": "#/$defs/form"}
+    },
+    "form": {
+      "type": "object",
+      "required": ["doc"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][A-Za-z0-9]*$"},
+        "doc": {"type": "string", "minLength": 1},
+        "receivers": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+        "result": {"$ref": "#/$defs/type"},
+        "input": {"$ref": "#/$defs/type"},
+        "args": {"type": "array", "items": {"$ref": "#/$defs/arg"}},
+        "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}},
+        "issue_order": {"const": "input"},
+        "replaces_issues": {"type": "boolean"},
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["check", "args"],
+            "properties": {
+              "check": {"enum": ["ordered", "nonzero", "nonempty", "distinct_ascii_fold"]},
+              "args": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "arg": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][A-Za-z]*$"},
+        "kind": {"enum": ["decoder", "decoders", "fields", "variants", "value", "message", "fixture", "encoder", "properties"]},
+        "type": {"$ref": "#/$defs/type"},
+        "optional": {"type": "boolean"},
+        "default": {"description": "What an optional argument left out stands for, as an observation of its type."},
+        "one_of": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "fixture": {"enum": ["map", "refine", "flatMap", "recover", "getter"]},
+        "input": {"$ref": "#/$defs/type"},
+        "output": {"$ref": "#/$defs/type"}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"enum": ["decoder", "decoders", "variants", "value", "encoder"]}}}, "then": {"required": ["type"]}},
+        {"if": {"properties": {"kind": {"const": "fixture"}}}, "then": {"required": ["fixture", "input"]}},
+        {"if": {"required": ["default"]}, "then": {"required": ["optional"], "properties": {"optional": {"const": true}, "kind": {"const": "value"}}}}
+      ],
+      "additionalProperties": false
+    },
+    "issue": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {
+          "type": "object",
+          "required": ["key"],
+          "properties": {
+            "key": {"type": "string", "minLength": 1},
+            "omit": {"type": "array", "items": {"type": "string"}},
+            "meta": {"type": "object"}
+          },
+          "patternProperties": {"^[A-Z]$": {"$ref": "#/$defs/type"}},
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

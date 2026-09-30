@@ -12,6 +12,7 @@ import (
 
 	"github.com/raoh-project/raoh-specification/internal/artifacts"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
@@ -53,11 +54,15 @@ func Placeholders(template string) []string {
 	return names
 }
 
-// Load reads catalog/issues.json and catalog/messages/*.properties under root.
-func Load(root string) (*Catalog, error) {
+// Load reads catalog/issues.json, checked against its schema, and catalog/messages/*.properties
+// under root.
+func Load(root string, sch *schemas.Set) (*Catalog, error) {
 	text, err := os.ReadFile(filepath.Join(root, "catalog", "issues.json"))
 	if err != nil {
 		return nil, err
+	}
+	if err := sch.Validate("issues", text); err != nil {
+		return nil, fmt.Errorf("catalog/issues.json: %w", err)
 	}
 	variants, err := ParseVariants(text)
 	if err != nil {

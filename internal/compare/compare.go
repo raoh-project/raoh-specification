@@ -48,6 +48,18 @@ func Expected(c *suite.Case, observed suite.Outcome) (bool, string) {
 		})
 }
 
+// Observation checks that an outcome is one a runner could write for the case: an ok that is an
+// observation of the decoder's result type, or issues. It does not say whether it is right.
+func Observation(c *suite.Case, o suite.Outcome) error {
+	if c.Encoder || o.Failed() {
+		return nil
+	}
+	if _, err := value.Observe(c.Checked.Result, o.OK); err != nil {
+		return fmt.Errorf("its outcome is not an observation of %s: %w", c.Checked.Result, err)
+	}
+	return nil
+}
+
 // Same reports whether two observed outcomes of a case are the same: a runner's and the one a
 // divergence declares.
 func Same(c *suite.Case, declared, observed suite.Outcome) (bool, string) {

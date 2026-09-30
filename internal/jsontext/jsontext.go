@@ -61,6 +61,32 @@ func (n *Node) Get(name string) (*Node, bool) {
 	return nil, false
 }
 
+// Member returns the value of a member that has to be there, and an error when it is not. Code
+// that reads a document its schema has already checked uses it, so that a member the schema
+// requires is never read as a zero value.
+func (n *Node) Member(name string) (*Node, error) {
+	if n.Kind != Object {
+		return nil, fmt.Errorf("expected an object with %q, found %s", name, n.Kind)
+	}
+	v, ok := n.Get(name)
+	if !ok {
+		return nil, fmt.Errorf("%q is missing", name)
+	}
+	return v, nil
+}
+
+// String returns the text of a string member that has to be there.
+func (n *Node) String(name string) (string, error) {
+	v, err := n.Member(name)
+	if err != nil {
+		return "", err
+	}
+	if v.Kind != String {
+		return "", fmt.Errorf("%q must be a string, found %s", name, v.Kind)
+	}
+	return v.Text, nil
+}
+
 // Names returns the member names of an object, in order.
 func (n *Node) Names() []string {
 	names := make([]string, len(n.Members))

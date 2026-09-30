@@ -119,18 +119,22 @@ run it.
 
 ### Invalid input
 
-Before comparing anything, the verifier checks that it can trust the comparison. The run is
-invalid, and the verifier exits with status 2 without writing a report, when:
+Before comparing anything, the verifier checks that it can trust the comparison, in three phases.
+Every document is first checked against its schema; it is then read into typed values, and nothing
+the schema requires is ever read as missing or empty; last, the documents are checked against each
+other. The run is invalid, and the verifier exits with status 2 without writing a report, when:
 
 - the suite or the catalogues fail `raoh-verify check-suite`;
 - the runner result or the declaration does not match its schema;
+- the declaration's `implementation` is not the runner result's `implementation.name`;
 - the runner result's manifest digest is not the digest of the suite the verifier was given;
 - the declaration's specification version is not the suite's version;
 - the runner result or the declaration refers to a case ID or feature ID the suite does not have;
 - a divergence has a category other than `platform` or `design`;
 - a divergence refers to a case that needs a feature the runner does not bind, or to a case of a
   profile the declaration does not list;
-- a divergence declares the outcome the case expects;
+- a divergence declares an outcome that is not an observation of the case's result type, or the
+  outcome the case expects;
 - the runner result has an outcome for a case that needs a feature the runner does not bind;
 - a feature the runner binds is declared unsupported.
 

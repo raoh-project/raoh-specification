@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
@@ -23,6 +24,8 @@ type Arg struct {
 	Type value.Type
 	// Optional marks a trailing argument of an operation that may be left out.
 	Optional bool
+	// Default is what an optional value argument left out stands for, if the form says.
+	Default *value.Value
 	// OneOf restricts a string value to the values listed.
 	OneOf []string
 	// FixtureKind, FixtureInput and FixtureOutput constrain a fixture argument.
@@ -103,15 +106,21 @@ type Registry struct {
 	Fixtures     map[string]*Fixture
 }
 
-// Load reads the registry under root.
-func Load(root string) (*Registry, error) {
+// Load reads the registry under root, each file checked against its schema first.
+func Load(root string, sch *schemas.Set) (*Registry, error) {
 	ops, err := os.ReadFile(filepath.Join(root, "catalog", "operations.json"))
 	if err != nil {
 		return nil, err
 	}
+	if err := sch.Validate("operations", ops); err != nil {
+		return nil, fmt.Errorf("catalog/operations.json: %w", err)
+	}
 	fixtures, err := os.ReadFile(filepath.Join(root, "catalog", "fixtures.json"))
 	if err != nil {
 		return nil, err
+	}
+	if err := sch.Validate("fixtures", fixtures); err != nil {
+		return nil, fmt.Errorf("catalog/fixtures.json: %w", err)
 	}
 	return Parse(ops, fixtures)
 }
@@ -220,11 +229,10 @@ var argKinds = []string{"decoder", "decoders", "fields", "variants", "value", "m
 
 func parseForm(name string, n *jsontext.Node) (*Form, error) {
 	f := &Form{Name: name}
-	f.Doc, _ = str(n, "doc")
-	if f.Doc == "" {
-		return nil, fmt.Errorf("no doc")
-	}
 	var err error
+	if f.Doc, err = n.String("doc"); err != nil {
+		return nil, err
+	}
 	if s, ok := str(n, "result"); ok {
 		if s != "product" {
 			if f.Result, err = value.ParseType(s); err != nil {
@@ -306,8 +314,13 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 
 func parseArg(n *jsontext.Node) (Arg, error) {
 	var a Arg
-	a.Name, _ = str(n, "name")
-	a.Kind, _ = str(n, "kind")
+	var err error
+	if a.Name, err = n.String("name"); err != nil {
+		return a, err
+	}
+	if a.Kind, err = n.String("kind"); err != nil {
+		return a, err
+	}
 	if !slices.Contains(argKinds, a.Kind) {
 		return a, fmt.Errorf("argument %s has unknown kind %q", a.Name, a.Kind)
 	}
@@ -323,11 +336,20 @@ func parseArg(n *jsontext.Node) (Arg, error) {
 	if o, ok := n.Get("optional"); ok && o.Kind == jsontext.Bool {
 		a.Optional = o.Bool
 	}
+	if d, ok := n.Get("default"); ok {
+		v, err := value.Observe(a.Type, d)
+		if err != nil {
+			return a, fmt.Errorf("argument %s: default: %w", a.Name, err)
+		}
+		a.Default = &v
+	}
 	if a.OneOf, err = strs(n, "one_of"); err != nil {
 		return a, err
 	}
 	if a.Kind == "fixture" {
-		a.FixtureKind, _ = str(n, "fixture")
+		if a.FixtureKind, err = n.String("fixture"); err != nil {
+			return a, err
+		}
 		in, ok, err := typeOf(n, "input")
 		if err != nil || !ok {
 			return a, fmt.Errorf("fixture argument %s needs an input type", a.Name)
@@ -379,11 +401,16 @@ func parseIssueRef(n *jsontext.Node) (IssueRef, error) {
 
 func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 	f := &Fixture{Name: name}
-	f.Kind, _ = str(n, "kind")
+	var err error
+	if f.Kind, err = n.String("kind"); err != nil {
+		return nil, err
+	}
 	if !slices.Contains([]string{"map", "refine", "flatMap", "recover", "getter"}, f.Kind) {
 		return nil, fmt.Errorf("unknown kind %q", f.Kind)
 	}
-	f.Doc, _ = str(n, "doc")
+	if f.Doc, err = n.String("doc"); err != nil {
+		return nil, err
+	}
 	in, ok, err := typeOf(n, "input")
 	if err != nil || !ok {
 		return nil, fmt.Errorf("no input type")
@@ -399,9 +426,15 @@ func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 	}
 	if is, ok := n.Get("issue"); ok {
 		fi := &FixtureIssue{Meta: map[string]value.Type{}}
-		fi.Code, _ = str(is, "code")
-		fi.Key, _ = str(is, "message_key")
-		fi.Message, _ = str(is, "message")
+		if fi.Code, err = is.String("code"); err != nil {
+			return nil, err
+		}
+		if fi.Key, err = is.String("message_key"); err != nil {
+			return nil, err
+		}
+		if fi.Message, err = is.String("message"); err != nil {
+			return nil, err
+		}
 		if fi.Path, err = strs(is, "path"); err != nil {
 			return nil, err
 		}

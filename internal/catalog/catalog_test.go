@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"github.com/raoh-project/raoh-specification/internal/schemas"
 	"strings"
 	"testing"
 
@@ -8,7 +9,7 @@ import (
 )
 
 func TestTheCataloguesAgree(t *testing.T) {
-	c, err := Load("../..")
+	c, err := Load("../..", schemasFor(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +25,7 @@ func TestTheCataloguesAgree(t *testing.T) {
 }
 
 func TestInstantiateBindsNestedParameters(t *testing.T) {
-	c, err := Load("../..")
+	c, err := Load("../..", schemasFor(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,4 +105,13 @@ func TestParseProperties(t *testing.T) {
 	if _, err := ParseProperties("a=1\na=2\n"); err == nil {
 		t.Error("a repeated key accepted")
 	}
+}
+
+func schemasFor(t *testing.T) *schemas.Set {
+	t.Helper()
+	sch, err := schemas.Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sch
 }
