@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/raoh-project/raoh-specification/schema/runner-result.schema.json",
+  "title": "Runner result",
+  "description": "What an implementation's runner observed. See spec/conformance.md.",
+  "type": "object",
+  "required": ["format", "specification", "implementation", "environment", "bound_features", "results"],
+  "properties": {
+    "format": {"const": "raoh-runner-result/v1"},
+    "specification": {"$ref": "#/$defs/specification"},
+    "implementation": {"$ref": "#/$defs/implementation"},
+    "environment": {"$ref": "#/$defs/environment"},
+    "bound_features": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "results": {
+      "type": "object",
+      "description": "For each case ID the runner ran, what it observed.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["observed"],
+        "properties": {"observed": {"$ref": "#/$defs/outcome"}},
+        "additionalProperties": false
+      }
+    },
+    "catalogs": {
+      "type": "object",
+      "description": "For each locale the implementation ships, every message key and its template.",
+      "propertyNames": {"enum": ["en", "ja"]},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {"type": "string"}
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "specification": {
+      "type": "object",
+      "required": ["version", "revision", "manifest_digest"],
+      "properties": {
+        "version": {"type": "string"},
+        "revision": {"type": "string", "description": "The commit of raoh-specification the cases were read at."},
+        "manifest_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "implementation": {
+      "type": "object",
+      "required": ["name", "version", "revision"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "revision": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "language": {"type": "string"},
+        "language_version": {"type": "string"},
+        "os": {"type": "string"},
+        "arch": {"type": "string"}
+      },
+      "additionalProperties": {"type": "string"}
+    },
+    "outcome": {
+      "type": "object",
+      "oneOf": [
+        {"required": ["ok"], "properties": {"ok": true}, "additionalProperties": false},
+        {"required": ["issues"], "properties": {"issues": {"$ref": "#/$defs/issues"}}, "additionalProperties": false}
+      ]
+    },
+    "issues": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "code", "message_key", "message", "meta"],
+        "properties": {
+          "path": {"type": "string"},
+          "code": {"type": "string"},
+          "message_key": {"type": "string"},
+          "message": {"type": "string"},
+          "meta": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

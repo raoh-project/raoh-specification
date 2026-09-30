@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/raoh-project/raoh-specification/schema/conformance.schema.json",
+  "title": "Conformance declaration",
+  "description": "An implementation's conformance.json. See spec/conformance.md.",
+  "type": "object",
+  "required": ["implementation", "specification", "profiles"],
+  "properties": {
+    "implementation": {"type": "string"},
+    "specification": {"type": "string", "description": "The specification version the implementation is checked against."},
+    "profiles": {
+      "type": "array",
+      "description": "The profiles the implementation is checked against. Listing one is not a claim of conformance.",
+      "items": {"enum": ["core", "encode", "messages-en", "messages-ja"]},
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "unsupported_features": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": {"reason": {"type": "string", "minLength": 1}},
+        "additionalProperties": false
+      }
+    },
+    "divergences": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["category", "reason", "observed"],
+        "properties": {
+          "category": {"enum": ["platform", "design"]},
+          "reason": {"type": "string", "minLength": 1},
+          "observed": {"$ref": "runner-result.schema.json#/$defs/outcome"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
