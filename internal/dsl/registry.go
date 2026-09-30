@@ -54,9 +54,14 @@ type MetaSource struct {
 	// ByType is the value of a const_by_type, by the type the entry has.
 	ByType map[string]*jsontext.Node
 	// Arg is the argument an arg, sorted, ascii_lower_sorted or sorted_keys source reads, by name
-	// as the file writes it and by index once resolved.
+	// as the file writes it and resolved once the form is read.
 	ArgName string
-	Arg     int
+	Arg     ArgRef
+}
+
+// readsArg reports whether a kind of metadata source reads an argument.
+func readsArg(kind string) bool {
+	return kind == "arg" || kind == "sorted" || kind == "ascii_lower_sorted" || kind == "sorted_keys"
 }
 
 func parseMetaSource(n *jsontext.Node) (MetaSource, error) {
@@ -106,9 +111,9 @@ type Form struct {
 	Issues []IssueRef
 	// Flow is how the form gives its issues.
 	Flow Expr
-	// SymbolsFrom is the index of the argument whose strings are the alternatives of the symbol
-	// type the form gives, or -1.
-	SymbolsFrom int
+	// SymbolsFrom is the argument whose strings are the alternatives of the symbol type the form
+	// gives, or NoArg.
+	SymbolsFrom ArgRef
 	// Requires are the conditions its arguments have to meet for the form to exist at all, as
 	// raoh-java refuses to construct the decoder otherwise.
 	Requires []Require
@@ -120,7 +125,7 @@ type Require struct {
 	// nonempty (a list with an element) or distinct_ascii_fold (strings that stay distinct when
 	// A-Z are read as a-z).
 	Check string
-	Args  []int
+	Args  []ArgRef
 }
 
 var requireArity = map[string]int{"ordered": 2, "nonzero": 1, "nonempty": 1, "distinct_ascii_fold": 1}
@@ -294,7 +299,7 @@ func typeOf(n *jsontext.Node, name string) (value.Type, bool, error) {
 var argKinds = []string{"decoder", "decoders", "fields", "variants", "value", "message", "fixture", "encoder", "properties"}
 
 func parseForm(name string, n *jsontext.Node) (*Form, error) {
-	f := &Form{Name: name, SymbolsFrom: -1}
+	f := &Form{Name: name}
 	var err error
 	if f.Doc, err = n.String("doc"); err != nil {
 		return nil, err
@@ -337,7 +342,7 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 		if f.Result.Kind != value.Symbol || i < 0 || f.Args[i].Kind != "value" || f.Args[i].Type.String() != "list<string>" {
 			return nil, fmt.Errorf("symbols_from %s needs a symbol result and a list<string> value argument %s", from, from)
 		}
-		f.SymbolsFrom = i
+		f.SymbolsFrom = argRef(i)
 	}
 	for i, a := range f.Args {
 		if !a.Optional && i > 0 && f.Args[i-1].Optional {
@@ -360,7 +365,7 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 				if i < 0 || f.Args[i].Kind != "value" {
 					return nil, fmt.Errorf("requires %s of %s, which is not a value argument", r.Check, name)
 				}
-				r.Args = append(r.Args, i)
+				r.Args = append(r.Args, argRef(i))
 			}
 			f.Requires = append(f.Requires, r)
 		}
@@ -372,7 +377,7 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 				return nil, err
 			}
 			for name, src := range ref.Meta {
-				if src.ArgName == "" {
+				if !readsArg(src.Kind) {
 					continue
 				}
 				i := f.argIndex(src.ArgName)
@@ -389,7 +394,7 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 				if src.Kind == "sorted" && f.Args[i].Type.Kind != value.List {
 					return nil, fmt.Errorf("issue %s meta %s sorts %s, which is not a list", ref.Key, name, src.ArgName)
 				}
-				src.Arg = i
+				src.Arg = argRef(i)
 				ref.Meta[name] = src
 			}
 			f.Issues = append(f.Issues, ref)

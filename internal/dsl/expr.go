@@ -8,6 +8,36 @@ import (
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
+// ArgRef refers to an argument of a form: its index plus one, so that the zero ArgRef refers to
+// nothing and a reference nobody set is never taken for the first argument.
+type ArgRef int
+
+// NoArg is the zero ArgRef, which refers to no argument.
+const NoArg ArgRef = 0
+
+func argRef(index int) ArgRef { return ArgRef(index + 1) }
+
+// Index is the index of the argument; it panics for NoArg.
+func (r ArgRef) Index() int {
+	if r == NoArg {
+		panic("NoArg has no index")
+	}
+	return int(r) - 1
+}
+
+// IssueIndex refers to one of a form's own issues, as ArgRef refers to an argument.
+type IssueIndex int
+
+func issueIndex(index int) IssueIndex { return IssueIndex(index + 1) }
+
+// Index is the index of the issue.
+func (r IssueIndex) Index() int {
+	if r == 0 {
+		panic("the zero IssueIndex has no index")
+	}
+	return int(r) - 1
+}
+
 // Expr is a form's flow expression, as catalog/operations.json declares it, with every reference
 // to an argument or an issue resolved to its index when the registry is loaded. See
 // spec/issues.md for what each means.
@@ -15,19 +45,16 @@ type Expr interface{ isExpr() }
 
 // ExprOwn is the form's own issues that no other part of its expression names: at most one of
 // them, or none.
-type ExprOwn struct{ Issues []int }
+type ExprOwn struct{ Issues []IssueIndex }
 
 // ExprNone gives no issue.
 type ExprNone struct{}
 
 // ExprArg is the flow of a decoder, variants or fields argument.
-type ExprArg struct{ Arg int }
+type ExprArg struct{ Arg ArgRef }
 
 // ExprCat is its parts' issues one after the other.
 type ExprCat struct{ Items []Expr }
-
-// ExprAlt is the issues of one of its parts.
-type ExprAlt struct{ Items []Expr }
 
 // ExprChain is its parts' issues, stopping after the first part that gives any.
 type ExprChain struct{ Items []Expr }
@@ -40,38 +67,37 @@ type ExprEach struct {
 
 // ExprAt is its body at the member a string value argument names.
 type ExprAt struct {
-	Member int
+	Member ArgRef
 	Body   Expr
 }
 
 // ExprUnknown is one issue for each member of an object input the form does not know, in the
 // order of the input's members. The known members are the strings of a value argument (KnownArg)
-// or the members a fields argument reads (KnownFields); the other is -1.
+// or the members a fields argument reads (KnownFields); the other is NoArg.
 type ExprUnknown struct {
-	KnownArg    int
-	KnownFields int
-	Issue       int
+	KnownArg    ArgRef
+	KnownFields ArgRef
+	Issue       IssueIndex
 }
 
 // ExprCandidates is an issue that lists, for every decoder of a decoders argument, the issues it
 // gave.
 type ExprCandidates struct {
-	Decoders int
-	Issue    int
+	Decoders ArgRef
+	Issue    IssueIndex
 }
 
 // ExprFixture is the issue the fixture a fixture argument names declares.
-type ExprFixture struct{ Arg int }
+type ExprFixture struct{ Arg ArgRef }
 
 // ExprDiscard gives no issue, and says that the issues of the decoder arguments listed never
 // reach the form's caller.
-type ExprDiscard struct{ Args []int }
+type ExprDiscard struct{ Args []ArgRef }
 
 func (ExprOwn) isExpr()        {}
 func (ExprNone) isExpr()       {}
 func (ExprArg) isExpr()        {}
 func (ExprCat) isExpr()        {}
-func (ExprAlt) isExpr()        {}
 func (ExprChain) isExpr()      {}
 func (ExprEach) isExpr()       {}
 func (ExprAt) isExpr()         {}
@@ -86,33 +112,33 @@ type exprResolver struct {
 	// named are the own issues the expression names; flowRefs counts references to each argument
 	// whose issues flow; own counts the "own" the expression uses.
 	named    map[int]bool
-	flowRefs map[int]int
+	flowRefs map[ArgRef]int
 	own      int
 }
 
-func (r *exprResolver) arg(name string, kinds ...string) (int, error) {
+func (r *exprResolver) arg(name string, kinds ...string) (ArgRef, error) {
 	for i, a := range r.f.Args {
 		if a.Name == name {
 			if !slices.Contains(kinds, a.Kind) {
-				return -1, fmt.Errorf("argument %s is a %s argument, and the flow needs one of %v", name, a.Kind, kinds)
+				return NoArg, fmt.Errorf("argument %s is a %s argument, and the flow needs one of %v", name, a.Kind, kinds)
 			}
-			return i, nil
+			return argRef(i), nil
 		}
 	}
-	return -1, fmt.Errorf("the flow names %s, which is not an argument", name)
+	return NoArg, fmt.Errorf("the flow names %s, which is not an argument", name)
 }
 
-func (r *exprResolver) issue(key string) (int, error) {
+func (r *exprResolver) issue(key string) (IssueIndex, error) {
 	for i, ref := range r.f.Issues {
 		if ref.Key == key {
 			if r.named[i] {
-				return -1, fmt.Errorf("the flow names issue %s twice", key)
+				return 0, fmt.Errorf("the flow names issue %s twice", key)
 			}
 			r.named[i] = true
-			return i, nil
+			return issueIndex(i), nil
 		}
 	}
-	return -1, fmt.Errorf("the flow names issue %s, which is not among the form's issues", key)
+	return 0, fmt.Errorf("the flow names issue %s, which is not among the form's issues", key)
 }
 
 func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
@@ -139,7 +165,9 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		}
 		r.flowRefs[i]++
 		return ExprArg{Arg: i}, nil
-	case "cat", "alt", "chain":
+	case "cat", "chain":
+		// There is no alt: a form cannot skip a decoder it runs. What excludes each other is a
+		// form's own issues, and the variants of a variants argument.
 		var items []Expr
 		for _, e := range v.Elems {
 			x, err := r.parse(e)
@@ -148,11 +176,8 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 			}
 			items = append(items, x)
 		}
-		switch m.Name {
-		case "cat":
+		if m.Name == "cat" {
 			return ExprCat{Items: items}, nil
-		case "alt":
-			return ExprAlt{Items: items}, nil
 		}
 		return ExprChain{Items: items}, nil
 	case "each_element", "each_member":
@@ -174,8 +199,8 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if r.f.Args[i].Type.Kind != value.String {
-			return nil, fmt.Errorf("at names %s, which is a %s, not a string", member, r.f.Args[i].Type)
+		if r.f.Args[i.Index()].Type.Kind != value.String {
+			return nil, fmt.Errorf("at names %s, which is a %s, not a string", member, r.f.Args[i.Index()].Type)
 		}
 		body, err := v.Member("flow")
 		if err != nil {
@@ -187,7 +212,7 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		}
 		return ExprAt{Member: i, Body: b}, nil
 	case "unknown_members":
-		x := ExprUnknown{KnownArg: -1, KnownFields: -1}
+		x := ExprUnknown{}
 		known, err := v.Member("known")
 		if err != nil {
 			return nil, err
@@ -196,7 +221,7 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 			if x.KnownArg, err = r.arg(name.Text, "value"); err != nil {
 				return nil, err
 			}
-			if t := r.f.Args[x.KnownArg].Type; t.Kind != value.List || t.Args[0].Kind != value.String {
+			if t := r.f.Args[x.KnownArg.Index()].Type; t.Kind != value.List || t.Args[0].Kind != value.String {
 				return nil, fmt.Errorf("the known members come from %s, which is a %s, not a list<string>", name.Text, t)
 			}
 		} else if name, ok := known.Get("fields"); ok {
@@ -237,7 +262,7 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if k := r.f.Args[i].FixtureKind; k != "refine" && k != "flatMap" {
+		if k := r.f.Args[i.Index()].FixtureKind; k != "refine" && k != "flatMap" {
 			return nil, fmt.Errorf("fixture %s is a %s fixture, which gives no issue", v.Text, k)
 		}
 		return ExprFixture{Arg: i}, nil
@@ -261,20 +286,20 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 // given by exactly one part, and a metadata source that reads a member name belongs to an issue
 // given at members.
 func resolveFlow(f *Form, n *jsontext.Node) (Expr, error) {
-	r := &exprResolver{f: f, named: map[int]bool{}, flowRefs: map[int]int{}}
+	r := &exprResolver{f: f, named: map[int]bool{}, flowRefs: map[ArgRef]int{}}
 	x, err := r.parse(n)
 	if err != nil {
 		return nil, err
 	}
 	for i, a := range f.Args {
-		if slices.Contains([]string{"decoder", "decoders", "variants", "fields"}, a.Kind) && r.flowRefs[i] != 1 {
-			return nil, fmt.Errorf("the flow places the issues of argument %s %d times, not once", a.Name, r.flowRefs[i])
+		if slices.Contains([]string{"decoder", "decoders", "variants", "fields"}, a.Kind) && r.flowRefs[argRef(i)] != 1 {
+			return nil, fmt.Errorf("the flow places the issues of argument %s %d times, not once", a.Name, r.flowRefs[argRef(i)])
 		}
 	}
-	var rest []int
+	var rest []IssueIndex
 	for i := range f.Issues {
 		if !r.named[i] {
-			rest = append(rest, i)
+			rest = append(rest, issueIndex(i))
 		}
 	}
 	switch {
@@ -287,7 +312,7 @@ func resolveFlow(f *Form, n *jsontext.Node) (Expr, error) {
 	unknown := map[int]bool{}
 	walkExpr(x, func(e Expr) {
 		if u, ok := e.(ExprUnknown); ok {
-			unknown[u.Issue] = true
+			unknown[u.Issue.Index()] = true
 		}
 	})
 	for i, ref := range f.Issues {
@@ -300,15 +325,15 @@ func resolveFlow(f *Form, n *jsontext.Node) (Expr, error) {
 	return x, nil
 }
 
-func issueKeys(f *Form, idx []int) []string {
+func issueKeys(f *Form, idx []IssueIndex) []string {
 	var keys []string
 	for _, i := range idx {
-		keys = append(keys, f.Issues[i].Key)
+		keys = append(keys, f.Issues[i.Index()].Key)
 	}
 	return keys
 }
 
-func setOwn(x Expr, rest []int) {
+func setOwn(x Expr, rest []IssueIndex) {
 	walkExpr(x, func(e Expr) {
 		if o, ok := e.(*ExprOwn); ok {
 			o.Issues = rest
@@ -320,10 +345,6 @@ func walkExpr(x Expr, visit func(Expr)) {
 	visit(x)
 	switch x := x.(type) {
 	case ExprCat:
-		for _, i := range x.Items {
-			walkExpr(i, visit)
-		}
-	case ExprAlt:
 		for _, i := range x.Items {
 			walkExpr(i, visit)
 		}

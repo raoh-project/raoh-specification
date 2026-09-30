@@ -98,18 +98,20 @@ func concrete(t value.Type, what string) error {
 // checkedArgs is what checking a form's arguments gives besides the types it binds, by the
 // index of the argument.
 type checkedArgs struct {
-	values map[int]value.Value
+	values map[ArgRef]value.Value
 	// flows are the flows of a decoder argument (one), a decoders argument or a variants
 	// argument (one for each decoder).
-	flows map[int][]Flow
+	flows map[ArgRef][]Flow
 	// fields are the fields of a fields argument.
-	fields map[int][]field
+	fields map[ArgRef][]field
 	// product is the types of the fields, in order.
 	product []value.Type
 	// keys are the variant names of a variants argument.
-	keys     map[int][]string
-	fixtures map[int]*Fixture
-	message  string
+	keys     map[ArgRef][]string
+	fixtures map[ArgRef]*Fixture
+	// message is the message a message argument gives, or nil when there is none; an empty
+	// message is a message.
+	message *string
 }
 
 // field is a checked field: its flow, and the member it reads, if it names one.
@@ -141,7 +143,7 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
 	if f.Result.Kind == value.Product && len(f.Result.Args) == 0 {
 		result = value.ProductOf(ca.product...)
 	}
-	if f.SymbolsFrom >= 0 {
+	if f.SymbolsFrom != NoArg {
 		var alternatives []string
 		for _, e := range ca.values[f.SymbolsFrom].Elems {
 			alternatives = append(alternatives, e.Str)
@@ -183,7 +185,7 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 	case *ExprOwn:
 		items := []Flow{Success}
 		for _, i := range x.Issues {
-			site, err := s.site(f.Issues[i], bound, ca)
+			site, err := s.site(f.Issues[i.Index()], bound, ca)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", owner, err)
 			}
@@ -193,7 +195,7 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 	case ExprNone, ExprDiscard:
 		return Success, nil
 	case ExprArg:
-		switch f.Args[x.Arg].Kind {
+		switch f.Args[x.Arg.Index()].Kind {
 		case "decoder":
 			return ca.flows[x.Arg][0], nil
 		case "variants":
@@ -206,13 +208,10 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 			}
 			return &Cat{Items: items}, nil
 		}
-		return nil, fmt.Errorf("%s: argument %s gives no flow", owner, f.Args[x.Arg].Name)
+		return nil, fmt.Errorf("%s: argument %s gives no flow", owner, f.Args[x.Arg.Index()].Name)
 	case ExprCat:
 		items, err := all(x.Items)
 		return &Cat{Items: items}, err
-	case ExprAlt:
-		items, err := all(x.Items)
-		return &Alt{Items: items}, err
 	case ExprChain:
 		items, err := all(x.Items)
 		return &Chain{Items: items}, err
@@ -222,13 +221,13 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 	case ExprAt:
 		member, ok := ca.values[x.Member]
 		if !ok {
-			return nil, fmt.Errorf("%s: the member argument %s is left out", owner, f.Args[x.Member].Name)
+			return nil, fmt.Errorf("%s: the member argument %s is left out", owner, f.Args[x.Member.Index()].Name)
 		}
 		body, err := s.build(owner, f, x.Body, bound, ca)
 		return &At{Name: member.Str, Body: body}, err
 	case ExprUnknown:
 		var known []string
-		if x.KnownArg >= 0 {
+		if x.KnownArg != NoArg {
 			for _, e := range ca.values[x.KnownArg].Elems {
 				known = append(known, e.Str)
 			}
@@ -240,22 +239,23 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 				known = append(known, fl.member)
 			}
 		}
-		site, err := s.site(f.Issues[x.Issue], bound, ca)
+		site, err := s.site(f.Issues[x.Issue.Index()], bound, ca)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", owner, err)
 		}
 		s.unordered++
 		return &Unordered{ID: s.unordered, Known: known, Site: site}, nil
 	case ExprCandidates:
-		site, err := s.site(f.Issues[x.Issue], bound, ca)
+		site, err := s.site(f.Issues[x.Issue.Index()], bound, ca)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", owner, err)
 		}
 		site.Candidates = ca.flows[x.Decoders]
-		return &Alt{Items: []Flow{Success, site}}, nil
+		return &Candidates{Site: site}, nil
 	case ExprFixture:
 		fx := ca.fixtures[x.Arg]
-		var fl Flow = &Site{Key: fx.Issue.Key, Code: fx.Issue.Code, Meta: fx.Issue.Meta, Message: fx.Issue.Message}
+		message := fx.Issue.Message
+		var fl Flow = &Site{Key: fx.Issue.Key, Code: fx.Issue.Code, Meta: fx.Issue.Meta, Message: &message}
 		for i := len(fx.Issue.Path) - 1; i >= 0; i-- {
 			fl = &At{Name: fx.Issue.Path[i], Body: fl}
 		}
@@ -401,9 +401,9 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 // known when values are read and fixtures are matched, and then the conditions the form
 // requires of them.
 func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[string]value.Type) (checkedArgs, error) {
-	ca := checkedArgs{values: map[int]value.Value{}, flows: map[int][]Flow{}, fields: map[int][]field{},
-		keys: map[int][]string{}, fixtures: map[int]*Fixture{}}
-	decoder := func(i int, a Arg, n *jsontext.Node) error {
+	ca := checkedArgs{values: map[ArgRef]value.Value{}, flows: map[ArgRef][]Flow{}, fields: map[ArgRef][]field{},
+		keys: map[ArgRef][]string{}, fixtures: map[ArgRef]*Fixture{}}
+	decoder := func(r ArgRef, a Arg, n *jsontext.Node) error {
 		t, flow, err := s.decoder(n)
 		if err != nil {
 			return err
@@ -411,30 +411,31 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 		if !value.Unify(a.Type, t, bound) {
 			return fmt.Errorf("%s: expected a decoder of %s, found one of %s", a.Name, a.Type.Subst(bound), t)
 		}
-		ca.flows[i] = append(ca.flows[i], flow)
+		ca.flows[r] = append(ca.flows[r], flow)
 		return nil
 	}
 	for pass := 0; pass < 3; pass++ {
 		for i, a := range args {
 			v := nodes[i]
+			ref := argRef(i)
 			var err error
 			switch {
 			case pass == 0 && a.Kind == "decoder":
-				err = decoder(i, a, v)
+				err = decoder(ref, a, v)
 			case pass == 0 && a.Kind == "decoders":
 				if v.Kind != jsontext.Array || len(v.Elems) == 0 {
 					err = fmt.Errorf("%s must be a non-empty array of decoders", a.Name)
 				}
 				for j := 0; err == nil && j < len(v.Elems); j++ {
-					err = decoder(i, a, v.Elems[j])
+					err = decoder(ref, a, v.Elems[j])
 				}
 			case pass == 0 && a.Kind == "variants":
 				if v.Kind != jsontext.Object || len(v.Members) == 0 {
 					err = fmt.Errorf("%s must be a non-empty object of decoders", a.Name)
 				}
 				for j := 0; err == nil && j < len(v.Members); j++ {
-					err = decoder(i, a, v.Members[j].Value)
-					ca.keys[i] = append(ca.keys[i], v.Members[j].Name)
+					err = decoder(ref, a, v.Members[j].Value)
+					ca.keys[ref] = append(ca.keys[ref], v.Members[j].Name)
 				}
 			case pass == 0 && a.Kind == "fields":
 				if v.Kind != jsontext.Array || len(v.Elems) == 0 {
@@ -445,7 +446,7 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 					var fl field
 					if t, fl, err = s.field(v.Elems[j]); err == nil {
 						ca.product = append(ca.product, t)
-						ca.fields[i] = append(ca.fields[i], fl)
+						ca.fields[ref] = append(ca.fields[ref], fl)
 					}
 				}
 			case pass == 0 && a.Kind == "encoder":
@@ -464,14 +465,15 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 					}
 				}
 			case pass == 1 && a.Kind == "value":
-				ca.values[i], err = s.literal(a, v, bound)
+				ca.values[ref], err = s.literal(a, v, bound)
 			case pass == 1 && a.Kind == "message":
 				if v.Kind != jsontext.String {
 					err = fmt.Errorf("%s must be a string", a.Name)
 				}
-				ca.message = v.Text
+				message := v.Text
+				ca.message = &message
 			case pass == 2 && a.Kind == "fixture":
-				ca.fixtures[i], err = s.fixture(a, v, bound)
+				ca.fixtures[ref], err = s.fixture(a, v, bound)
 			}
 			if err != nil {
 				return ca, err
@@ -487,7 +489,7 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 }
 
 // meets checks a condition on argument values. An argument left out is not checked.
-func meets(f *Form, r Require, values map[int]value.Value) error {
+func meets(f *Form, r Require, values map[ArgRef]value.Value) error {
 	var vs []value.Value
 	for _, i := range r.Args {
 		v, ok := values[i]
@@ -496,7 +498,7 @@ func meets(f *Form, r Require, values map[int]value.Value) error {
 		}
 		vs = append(vs, v)
 	}
-	name := func(k int) string { return f.Args[r.Args[k]].Name }
+	name := func(k int) string { return f.Args[r.Args[k].Index()].Name }
 	switch r.Check {
 	case "ordered":
 		c, err := value.Compare(vs[0], vs[1])

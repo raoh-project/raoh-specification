@@ -10,14 +10,42 @@ import (
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
 )
 
-// Issue is an issue as a case or a runner writes it.
+// Issue is an issue as a case or a runner writes it: with a message key, which is never empty.
 type Issue struct {
 	Path string
 	Code string
 	Key  string
-	// Message is nil when a case leaves the message to be derived.
+	// Message is nil when a case leaves the message to be derived; an empty message is a message.
 	Message *string
 	Meta    *jsontext.Node
+}
+
+// NestedIssue is an issue a candidate of a oneOf reported, as one_of_failed lists it: with a
+// message, and no message key.
+type NestedIssue struct {
+	Path    string
+	Code    string
+	Message string
+	Meta    *jsontext.Node
+}
+
+// surface is what is written of an issue of either kind; key is nil for a nested issue, which has
+// none, and message nil for a case's issue whose message is derived.
+type surface struct {
+	path, code string
+	key        *string
+	message    *string
+	meta       *jsontext.Node
+}
+
+func (is Issue) surface() surface {
+	key := is.Key
+	return surface{path: is.Path, code: is.Code, key: &key, message: is.Message, meta: is.Meta}
+}
+
+func (is NestedIssue) surface() surface {
+	message := is.Message
+	return surface{path: is.Path, code: is.Code, message: &message, meta: is.Meta}
 }
 
 // Outcome is what a decoder or encoder gave: a value, or issues.
@@ -65,11 +93,11 @@ var issueMembers = []string{"path", "code", "message_key", "message", "meta"}
 
 // ParseNestedIssues reads the issues a candidate of a oneOf reported, as its one_of_failed lists
 // them: each with path, code, message and meta, and no message key.
-func ParseNestedIssues(n *jsontext.Node) ([]Issue, error) {
+func ParseNestedIssues(n *jsontext.Node) ([]NestedIssue, error) {
 	if n.Kind != jsontext.Array || len(n.Elems) == 0 {
 		return nil, fmt.Errorf("a candidate's issues must be a non-empty array")
 	}
-	var out []Issue
+	var out []NestedIssue
 	for i, e := range n.Elems {
 		if e.Kind != jsontext.Object {
 			return nil, fmt.Errorf("issue %d: expected an object", i)
@@ -79,19 +107,20 @@ func ParseNestedIssues(n *jsontext.Node) ([]Issue, error) {
 				return nil, fmt.Errorf("issue %d: unknown member %q", i, name)
 			}
 		}
-		var is Issue
+		var is NestedIssue
 		var err error
 		if is.Path, err = e.String("path"); err != nil {
 			return nil, err
 		}
-		if is.Code, err = e.String("code"); err != nil {
+		if _, err := SplitPath(is.Path); err != nil {
+			return nil, fmt.Errorf("issue %d: %w", i, err)
+		}
+		if is.Code, err = e.String("code"); err != nil || is.Code == "" {
+			return nil, fmt.Errorf("issue %d: code must be a non-empty string", i)
+		}
+		if is.Message, err = e.String("message"); err != nil {
 			return nil, err
 		}
-		m, err := e.String("message")
-		if err != nil {
-			return nil, err
-		}
-		is.Message = &m
 		if is.Meta, err = e.Member("meta"); err != nil || is.Meta.Kind != jsontext.Object {
 			return nil, fmt.Errorf("issue %d: meta must be an object", i)
 		}
@@ -124,11 +153,11 @@ func parseIssue(n *jsontext.Node) (Issue, error) {
 	if _, err := SplitPath(is.Path); err != nil {
 		return is, err
 	}
-	if is.Code, err = text("code"); err != nil {
-		return is, err
+	if is.Code, err = text("code"); err != nil || is.Code == "" {
+		return is, fmt.Errorf("code must be a non-empty string")
 	}
-	if is.Key, err = text("message_key"); err != nil {
-		return is, err
+	if is.Key, err = text("message_key"); err != nil || is.Key == "" {
+		return is, fmt.Errorf("message_key must be a non-empty string")
 	}
 	if _, ok := n.Get("message"); ok {
 		m, err := text("message")

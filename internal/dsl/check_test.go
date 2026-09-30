@@ -78,6 +78,8 @@ func issue(t *testing.T, checked *Checked, key string) *Site {
 			walk(f.Body)
 		case *Unordered:
 			walk(f.Site)
+		case *Candidates:
+			walk(f.Site)
 		}
 	}
 	walk(checked.Flow)
@@ -184,7 +186,7 @@ func TestPossibleIssuesAreInstantiated(t *testing.T) {
 		t.Errorf("got %v", p.Meta)
 	}
 	p = issue(t, decoder(t, c, `["int", ["refine", "even"]]`), "must_be_even")
-	if p.Message != "must be even" || p.Meta["actual"].String() != "int32" {
+	if p.Message == nil || *p.Message != "must be even" || p.Meta["actual"].String() != "int32" {
 		t.Errorf("got %+v", p)
 	}
 }
@@ -212,9 +214,9 @@ func TestFlowsFollowTheDeclaredExpressions(t *testing.T) {
 	for form, want := range map[string]string{
 		`["int"]`: "alt(alt(), required, type_mismatch, type_mismatch.numeric_range)",
 		`["string", ["minLength", 3], ["email"]]`: "chain(chain(alt(alt(), required, type_mismatch), alt(alt(), too_short)), alt(alt(), invalid_format.email))",
-		`["list", ["int"]]`:                       "alt(alt(alt(), required, type_mismatch), each_elements(alt(alt(), required, type_mismatch, type_mismatch.numeric_range)))",
+		`["list", ["int"]]`:                       "chain(alt(alt(), required, type_mismatch), each_elements(alt(alt(), required, type_mismatch, type_mismatch.numeric_range)))",
 		`["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a", "x"]], ["a", "y"]]`: "" +
-			"cat(cat(cat(at(a, alt(alt(alt(), type_mismatch), alt(alt(), required, type_mismatch, type_mismatch.numeric_range)))), unknown#1(except a,x: unknown_field)), unknown#2(except a,y: unknown_field))",
+			"cat(cat(cat(at(a, chain(alt(alt(), type_mismatch), alt(alt(), required, type_mismatch, type_mismatch.numeric_range)))), unknown#1(except a,x: unknown_field)), unknown#2(except a,y: unknown_field))",
 		`["recover", ["int"], 1]`: "alt()",
 	} {
 		if got := Describe(decoder(t, c, form).Flow); got != want {
@@ -419,5 +421,35 @@ func TestReferencesResolveWhenLoaded(t *testing.T) {
 		if _, err := Parse(broken, fx); err == nil || !strings.Contains(err.Error(), x.why) {
 			t.Errorf("%s: %v, want it to say %q", name, err, x.why)
 		}
+	}
+}
+
+// There is no alt in the flow language: a form cannot declare that it may skip a decoder it runs.
+func TestTheFlowLanguageHasNoAlt(t *testing.T) {
+	ops, _ := os.ReadFile("../../catalog/operations.json")
+	fx, _ := os.ReadFile("../../catalog/fixtures.json")
+	var doc map[string]any
+	if err := json.Unmarshal(ops, &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["constructors"].(map[string]any)["list"].(map[string]any)["flow"] = map[string]any{"alt": []any{"own", map[string]any{"each_element": map[string]any{"arg": "element"}}}}
+	broken, _ := json.Marshal(doc)
+	if err := schemasFor(t).Validate("operations", broken); err == nil {
+		t.Error("the schema accepts alt")
+	}
+	if _, err := Parse(broken, fx); err == nil || !strings.Contains(err.Error(), `"alt" is not a flow`) {
+		t.Errorf("the parser: %v", err)
+	}
+	if err := json.Unmarshal(ops, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range doc["operations"].([]any) {
+		if op := o.(map[string]any); op["name"] == "min" {
+			op["issues"].([]any)[0].(map[string]any)["meta"] = map[string]any{"min": map[string]any{"arg": ""}}
+		}
+	}
+	broken, _ = json.Marshal(doc)
+	if _, err := Parse(broken, fx); err == nil || !strings.Contains(err.Error(), "reads , which is not") {
+		t.Errorf("a metadata source naming the empty argument: %v", err)
 	}
 }

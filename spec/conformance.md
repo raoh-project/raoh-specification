@@ -52,9 +52,9 @@ in its order and groups; that each issue's metadata has the types its place give
 the form decides (from constants, arguments and member names); and that each message is the one
 its place gives, derived from the catalogue or given by the form.
 
-An implementation's issues go through the same reading as a case's: a list the decoder's flow
-does not give for the input is a failure before anything is compared, and so is an issue whose
-metadata is not what the form decides.
+An implementation's issues are matched against the reading of the case's, by the same reader:
+each is read at the place of the expected issue it is matched with, so an issue whose metadata is
+not what the form decides, or whose message is not the one the case's reading gives, fails there.
 
 Values that depend on running a decoder are checked for their type and their observation, not
 recomputed: the value a decoder gives, the `actual` a failed bound reports, the elements a

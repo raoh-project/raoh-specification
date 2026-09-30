@@ -216,11 +216,9 @@ func parseCase(file, profile string, n *jsontext.Node, chk *dsl.Checker) (*Case,
 	if err != nil {
 		return nil, err
 	}
-	readings, err := ReadIssues(list, c.Checked.Flow, c.Input, nil, chk.Catalog, CaseIssues)
-	if err != nil {
+	if c.Issues, err = ReadIssues(list, c.Checked.Flow, c.Input, nil, chk.Catalog, CaseIssues); err != nil {
 		return nil, err
 	}
-	c.Issues = readings[0]
 	return c, nil
 }
 

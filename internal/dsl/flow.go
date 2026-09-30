@@ -27,8 +27,8 @@ type Site struct {
 	Values     map[string]value.Value
 	MemberMeta []string
 	// Message is the message the issue is given, by a message argument or by the fixture that
-	// creates it; empty when the message is derived from the catalogue.
-	Message string
+	// creates it; nil when the message is derived from the catalogue. An empty message is given.
+	Message *string
 	// Candidates are, for an issue that lists what candidates gave, the flow of each candidate, by
 	// index.
 	Candidates []Flow
@@ -69,6 +69,13 @@ type At struct {
 	Body Flow
 }
 
+// Candidates is a oneOf: success when some candidate succeeds, or its Site, which lists for every
+// candidate a non-empty list of issues that candidate gives. Its Site's Candidates are the
+// candidates' flows.
+type Candidates struct {
+	Site *Site
+}
+
 // Unordered is exactly one issue, its Site, for each member of an object input not named in
 // Known, in any order: the order of the input's members, which the specification leaves to the
 // implementation. Each Unordered of a decoder has its own ID.
@@ -78,13 +85,14 @@ type Unordered struct {
 	Site  *Site
 }
 
-func (*Site) isFlow()      {}
-func (*Alt) isFlow()       {}
-func (*Cat) isFlow()       {}
-func (*Chain) isFlow()     {}
-func (*Repeat) isFlow()    {}
-func (*At) isFlow()        {}
-func (*Unordered) isFlow() {}
+func (*Site) isFlow()       {}
+func (*Alt) isFlow()        {}
+func (*Cat) isFlow()        {}
+func (*Chain) isFlow()      {}
+func (*Repeat) isFlow()     {}
+func (*At) isFlow()         {}
+func (*Unordered) isFlow()  {}
+func (*Candidates) isFlow() {}
 
 // Success is the flow that gives only the empty list.
 var Success Flow = &Alt{}
@@ -250,6 +258,19 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, group string, sta
 		ends = p.parse(f.Body, child, appendPath(at, f.Name), group, start)
 	case *Unordered:
 		ends = p.unordered(f, in, at, start)
+	case *Candidates:
+		for _, c := range f.Site.Candidates {
+			if len(p.parse(c, in, at, group, start)[start]) > 0 {
+				add(ends, start, partial{})
+				break
+			}
+		}
+		if start < p.n {
+			slot := Slot{Site: f.Site, Path: at, Input: in, Group: group}
+			if sig, ok := p.fit(start, slot); ok {
+				add(ends, start+1, partial{slots: Assignment{slot}, sig: sig + "\x01"})
+			}
+		}
 	}
 	p.memo[key] = ends
 	return ends
@@ -347,6 +368,8 @@ func Describe(f Flow) string {
 		return "at(" + f.Name + ", " + Describe(f.Body) + ")"
 	case *Unordered:
 		return fmt.Sprintf("unknown#%d(except %s: %s)", f.ID, strings.Join(f.Known, ","), f.Site.Key)
+	case *Candidates:
+		return "candidates(" + describeAll(f.Site.Candidates) + ": " + f.Site.Key + ")"
 	}
 	return "?"
 }
@@ -400,6 +423,8 @@ func Places(f Flow, input *jsontext.Node, path []string) []Slot {
 				child, _ = in.Get(f.Name)
 			}
 			walk(f.Body, child, appendPath(at, f.Name))
+		case *Candidates:
+			out = append(out, Slot{Site: f.Site, Path: at, Input: in})
 		case *Unordered:
 			group := fmt.Sprintf("unordered#%d at %q", f.ID, JoinPath(at))
 			if in != nil && in.Kind == jsontext.Object {

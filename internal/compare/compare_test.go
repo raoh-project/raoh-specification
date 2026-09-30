@@ -77,11 +77,11 @@ func TestPathsAreEscapedAsJSONPointers(t *testing.T) {
 		{"path": "/~0c", "code": "required", "message_key": "required", "message": "is required", "meta": {}}]}`)
 	differs(t, c, `{"issues": [
 		{"path": "/a/b", "code": "required", "message_key": "required", "message": "is required", "meta": {}},
-		{"path": "/~0c", "code": "required", "message_key": "required", "message": "is required", "meta": {}}]}`, `no required at "/a/b"`)
+		{"path": "/~0c", "code": "required", "message_key": "required", "message": "is required", "meta": {}}]}`, `observed required at "/a/b"`)
 	// Declared order matters when nothing reports in input order.
 	differs(t, c, `{"issues": [
 		{"path": "/~0c", "code": "required", "message_key": "required", "message": "is required", "meta": {}},
-		{"path": "/a~1b", "code": "required", "message_key": "required", "message": "is required", "meta": {}}]}`, "in this order")
+		{"path": "/a~1b", "code": "required", "message_key": "required", "message": "is required", "meta": {}}]}`, "issue 0")
 }
 
 func TestDerivedMessagesAndTypedMeta(t *testing.T) {
@@ -120,7 +120,7 @@ func TestInputOrderedIssuesAreAMultiset(t *testing.T) {
 	matches(t, c, `{"issues": [`+unknown("z")+`,`+unknown("y")+`]}`)
 	matches(t, c, `{"issues": [`+unknown("y")+`,`+unknown("z")+`]}`)
 	// The same number of issues, but y twice: a set comparison would accept it.
-	differs(t, c, `{"issues": [`+unknown("y")+`,`+unknown("y")+`]}`, "in this order")
+	differs(t, c, `{"issues": [`+unknown("y")+`,`+unknown("y")+`]}`, "no match")
 }
 
 // Two strict forms on the same object are two groups: the inner one's issues come before the
@@ -132,7 +132,7 @@ func TestTwoGroupsOnOneObjectKeepTheirOrder(t *testing.T) {
 			{"path": "/y", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "y"}},
 			{"path": "/x", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "x"}}]}`)
 	matches(t, c, `{"issues": [`+unknown("y")+`,`+unknown("x")+`]}`)
-	differs(t, c, `{"issues": [`+unknown("x")+`,`+unknown("y")+`]}`, "in this order")
+	differs(t, c, `{"issues": [`+unknown("x")+`,`+unknown("y")+`]}`, "issue 0")
 	// A case that puts the outer group's issue first does not fit the flow.
 	if _, problems := suiteParse(t, `{"id": "R000001", "title": "t", "decoder": ["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a", "x"]], ["a", "y"]],
 		"input": {"a": 1, "x": 1, "y": 1},
@@ -200,8 +200,8 @@ func TestUnorderedGroupsKeepTheirPlace(t *testing.T) {
 	w := `{"path": "/w", "code": "type_mismatch", "message_key": "type_mismatch", "message": "expected integer", "meta": {"expected": "integer", "actual": "string"}}`
 	matches(t, c, `{"issues": [`+w+`,`+unknown("extra")+`,`+unknown("more")+`,`+unknown("extra")+`,`+unknown("more")+`]}`)
 	matches(t, c, `{"issues": [`+w+`,`+unknown("more")+`,`+unknown("extra")+`,`+unknown("extra")+`,`+unknown("more")+`]}`)
-	differs(t, c, `{"issues": [`+unknown("extra")+`,`+w+`,`+unknown("more")+`,`+unknown("extra")+`,`+unknown("more")+`]}`, "in this order")
-	differs(t, c, `{"issues": [`+w+`,`+unknown("extra")+`,`+unknown("extra")+`,`+unknown("more")+`,`+unknown("more")+`]}`, "in this order")
+	differs(t, c, `{"issues": [`+unknown("extra")+`,`+w+`,`+unknown("more")+`,`+unknown("extra")+`,`+unknown("more")+`]}`, "issue 0")
+	differs(t, c, `{"issues": [`+w+`,`+unknown("extra")+`,`+unknown("extra")+`,`+unknown("more")+`,`+unknown("more")+`]}`, "no match")
 }
 
 // The issues a oneOf's candidates report are typed by each candidate's decoder, so a float's
@@ -240,4 +240,29 @@ func TestRunnerCandidatesAreComplete(t *testing.T) {
 	matches(t, c, obs(`{"candidate": 1, "issues": [`+nested+`]}, {"candidate": 0, "issues": [`+nested+`]}`))
 	differs(t, c, obs(`{"candidate": 0, "issues": [`+nested+`]}, {"candidate": 0, "issues": [`+nested+`]}`), "appears twice")
 	differs(t, c, obs(`{"candidate": 0, "issues": [`+nested+`]}`), "candidate 1 is missing")
+}
+
+// An implementation's issues are matched against the case's reading, never read on their own:
+// where a candidate's issue could be at several places that differ only in their message, the
+// case's message settles the place, and the implementation has to give that message.
+func TestRunnerIssuesAreMatchedAgainstTheCase(t *testing.T) {
+	decoder := `["oneOf", [["list", ["int"], ["nonempty", "first"], ["nonempty", "second"], ["nonempty", "third"]], ["list", ["int"], ["minSize", 5]]]]`
+	nested := func(message string) string {
+		return `{"path": "", "code": "too_small", "message": "` + message + `", "meta": {"min": 1, "actual": 0}}`
+	}
+	other := `{"candidate": 1, "issues": [{"path": "", "code": "too_small", "message": "must have at least 5 elements", "meta": {"min": 5, "actual": 0}}]}`
+	for _, which := range []string{"first", "second", "third"} {
+		c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": `+decoder+`, "input": [],
+			"issues": [{"path": "", "code": "one_of_failed", "message_key": "one_of_failed", "meta": {"candidates": [
+				{"candidate": 0, "issues": [`+nested(which)+`]}, `+other+`]}}]}`)
+		for _, given := range []string{"first", "second", "third"} {
+			observed := `{"issues": [{"path": "", "code": "one_of_failed", "message_key": "one_of_failed", "message": "no variant matched", "meta": {"candidates": [
+				{"candidate": 0, "issues": [` + nested(given) + `]}, ` + other + `]}}]}`
+			if given == which {
+				matches(t, c, observed)
+			} else {
+				differs(t, c, observed, "message")
+			}
+		}
+	}
 }

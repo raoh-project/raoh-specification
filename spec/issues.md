@@ -88,17 +88,22 @@ an expression over the lists of issues a decoder can give; the empty list is suc
 | `"none"` | none |
 | `{"arg": a}` | the lists of decoder argument `a`: of one of its variants, for a variants argument; of its fields one after the other, for a fields argument |
 | `{"cat": [x, y, ...]}` | a list of `x`, then a list of `y`, ... |
-| `{"alt": [x, y, ...]}` | a list of one of `x`, `y`, ... |
 | `{"chain": [x, y, ...]}` | a non-empty list of `x`; or, when `x` gives none, a list of `{"chain": [y, ...]}` |
 | `{"each_element": x}`, `{"each_member": x}` | a list of `x` for each element of an array input, or each member of an object input, in order, at its path |
 | `{"at": {"member": a, "flow": x}}` | a list of `x` at the member the string argument `a` names |
 | `{"unknown_members": {"known": ..., "issue": k}}` | issue `k` for every member of an object input not among the known names (a list argument, or the members the fields of a fields argument read), in any order, at its path |
-| `{"candidates": {"decoders": a, "issue": k}}` | none, or issue `k` listing, for every decoder of argument `a`, the issues it gave |
+| `{"candidates": {"decoders": a, "issue": k}}` | none, when some decoder of argument `a` can give none; or issue `k`, listing for every decoder of `a` a non-empty list it gives |
 | `{"fixture": a}` | none, or the issue the fixture argument `a` declares |
 | `{"discard": [a, ...]}` | none: the issues of the arguments listed never reach the caller |
 
 A decoder's operations run in order, each only if what came before succeeded: the flow of a form
 followed by operations is the chain of the form's flow and each operation's.
+
+There is no expression for a choice. What excludes each other in Raoh is a form's own issues
+(`own`) and the variants of a variants argument, and only those: a form never skips a decoder it
+runs, so an issue certain below it cannot be avoided by the form choosing another branch. Where a
+form checks something before running its decoders (`list` checks for an array, a field for an
+object, `discriminate` for its tag), the flow is a `chain`.
 
 The flow says which issues can come together and in what order; it does not say which of a form's
 own issues arise for an input, and a form may always succeed. `unknown_members` is the one part
@@ -110,9 +115,10 @@ For a case, the verifier parses the expected issues with the flow for the case's
 takes its place in the flow, where it is typed and its metadata and message are settled. A case
 whose issues the flow does not give, or give in two ways that type, word or group an issue
 differently, is rejected; so is a case that expects success where the flow cannot give the empty
-list. An implementation's issues are parsed the same way, and a list the flow does not give is a
-failure. The two readings are then compared in order, except that the consecutive issues of one
-`unknown_members` group are compared as a multiset.
+list. That reading is the only one the verifier makes of an outcome: an implementation's issues
+are matched against it, each read at the place of the expected issue it is matched with, in order,
+except that the consecutive issues of one `unknown_members` group are matched in any order. A
+divergence's issues are read as a case's are, with the messages they write.
 
 `one_of_failed` is given only when every candidate failed, and it lists every candidate exactly
 once, by index; the order of the list does not matter. Each candidate's issues are parsed with

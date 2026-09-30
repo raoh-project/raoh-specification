@@ -276,3 +276,30 @@ func TestCasesExpectOnlyWhatTheFlowGives(t *testing.T) {
 	rejected(t, "core", c(strict, `{"a": 1, "b": 1, "c": 1}`, unknown("b")), "together or in this order")
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": `+strict+`, "input": {"a": 1, "b": 1}, "ok": [1]}]`, "gives issues for this input whatever it does")
 }
+
+// A form cannot skip a decoder it runs: an issue the input makes certain below it cannot be
+// bypassed by the form succeeding, and a oneOf succeeds only if one of its candidates can.
+func TestNoFormBypassesWhatItRuns(t *testing.T) {
+	strict := `["strictObject", [["field", "a", ["int"]]]]`
+	for _, c := range []struct{ decoder, input, ok string }{
+		{`["list", ` + strict + `]`, `[{"a": 1, "extra": 1}]`, `[[1]]`},
+		{`["dict", ` + strict + `]`, `{"k": {"a": 1, "extra": 1}}`, `{"k": [1]}`},
+		{`["object", [["field", "s", ` + strict + `]]]`, `{"s": {"a": 1, "extra": 1}}`, `[[1]]`},
+		{`["discriminate", "kind", {"a": ["strict", ["object", [["field", "x", ["int"]]]], ["kind", "x"]]}]`, `{"kind": "a", "x": 1, "extra": 1}`, `[1]`},
+		{`["oneOf", [` + strict + `, ` + strict + `]]`, `{"a": 1, "extra": 1}`, `[1]`},
+	} {
+		rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": `+c.decoder+`, "input": `+c.input+`, "ok": `+c.ok+`}]`, "whatever it does")
+	}
+	accepted(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["oneOf", [`+strict+`, ["object", [["field", "a", ["int"]]]]]], "input": {"a": 1, "extra": 1}, "ok": [1]}]`)
+}
+
+// A message argument given as the empty string gives the empty message, as raoh-java's
+// message != null does; and a message key is never empty.
+func TestEmptyStringsAreValuesNotAbsence(t *testing.T) {
+	accepted(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["string", ["toInt", ""]], "input": "x",
+		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "message": "", "meta": {"expected": "integer"}}]}]`)
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["string", ["toInt", ""]], "input": "x",
+		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer"}}]}]`, `message ""`)
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": "x",
+		"issues": [{"path": "", "code": "type_mismatch", "message_key": "", "meta": {"expected": "integer", "actual": "string"}}]}]`, "message_key must be a non-empty string")
+}

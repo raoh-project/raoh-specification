@@ -433,22 +433,6 @@
         {
           "type": "object",
           "required": [
-            "alt"
-          ],
-          "properties": {
-            "alt": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/flow"
-              },
-              "minItems": 2
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
             "chain"
           ],
           "properties": {

@@ -47,14 +47,14 @@
       "args": [{"name": "element", "kind": "decoder", "type": "T"}],
       "result": "list<T>",
       "issues": ["required", {"key": "type_mismatch", "meta": {"expected": {"const": "array"}}}],
-      "flow": {"alt": ["own", {"each_element": {"arg": "element"}}]}
+      "flow": {"chain": ["own", {"each_element": {"arg": "element"}}]}
     },
     "dict": {
       "doc": "Accepts a JSON object and decodes each member's value with the value decoder at the path of its name.",
       "args": [{"name": "value", "kind": "decoder", "type": "T"}],
       "result": "map<T>",
       "issues": ["required", {"key": "type_mismatch", "meta": {"expected": {"const": "object"}}}],
-      "flow": {"alt": ["own", {"each_member": {"arg": "value"}}]}
+      "flow": {"chain": ["own", {"each_member": {"arg": "value"}}]}
     },
     "object": {
       "doc": "Decodes each field from the same input, in the order the fields are declared, and gives the product of their values. Each field checks for itself that the input is an object: a required field of a non-object input gives type_mismatch (expected \"object\") at the field's path, and an optional field reads a non-object input as not having the field. The issues of every failing field are given, in declaration order.",
@@ -117,7 +117,7 @@
       ],
       "result": "T",
       "issues": [{"key": "required"}, {"key": "type_mismatch", "meta": {"expected": {"const": "object"}}}, {"key": "not_allowed", "T": "string", "omit": ["actual"], "meta": {"allowed": {"sorted_keys": "variants"}}}],
-      "flow": {"alt": [{"at": {"member": "field", "flow": "own"}}, {"arg": "variants"}]}
+      "flow": {"chain": [{"at": {"member": "field", "flow": "own"}}, {"arg": "variants"}]}
     },
     "discriminateBy": {
       "doc": "As discriminate, except that the tag is what the tag decoder gives for the whole input; the tag decoder's issues are given as they are. A tag that names no variant gives not_allowed at the tag field's path, as discriminate does.",
@@ -128,7 +128,7 @@
       ],
       "result": "T",
       "issues": [{"key": "not_allowed", "T": "string", "omit": ["actual"], "meta": {"allowed": {"sorted_keys": "variants"}}}],
-      "flow": {"chain": [{"arg": "tag"}, {"alt": [{"at": {"member": "field", "flow": "own"}}, {"arg": "variants"}]}]}
+      "flow": {"chain": [{"arg": "tag"}, {"at": {"member": "field", "flow": "own"}}, {"arg": "variants"}]}
     },
     "oneOf": {
       "doc": "Tries each candidate in order on the same input and gives the first success. When all fail, gives one_of_failed at the input's path, whose candidates list, for each candidate by index, the issues it gave, each with its path, code, message and meta.",
@@ -177,7 +177,7 @@
         {"name": "decoder", "kind": "decoder", "type": "T"}
       ],
       "result": "T",
-      "flow": {"at": {"member": "name", "flow": {"alt": ["own", {"arg": "decoder"}]}}}
+      "flow": {"at": {"member": "name", "flow": {"chain": ["own", {"arg": "decoder"}]}}}
     },
     "optionalField": {
       "doc": "An optional field: gives empty when the member is absent or the input is not an object, and otherwise decodes the member with the decoder.",

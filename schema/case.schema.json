@@ -65,8 +65,8 @@
       "required": ["path", "code", "message_key", "meta"],
       "properties": {
         "path": {"type": "string", "pattern": "^(/([^~]|~[01])*)*$"},
-        "code": {"type": "string"},
-        "message_key": {"type": "string"},
+        "code": {"type": "string", "minLength": 1},
+        "message_key": {"type": "string", "minLength": 1},
         "message": {"type": "string", "description": "Present when the message is given rather than derived."},
         "meta": {"type": "object"}
       },
