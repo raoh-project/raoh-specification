@@ -87,7 +87,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "check-ids takes the root of the base revision and the root of the changed one")
 			return 2
 		}
-		base, err := verify.Load(args[1])
+		base, err := suite.LoadIDs(args[1])
 		if err != nil {
 			fmt.Fprintln(stderr, "base:", err)
 			return 2
@@ -97,11 +97,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
-		if err := suite.CheckIDs(base.Suite, head.Suite); err != nil {
+		if err := suite.CheckIDs(base, head.Suite); err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
-		fmt.Fprintf(stdout, "%d case IDs kept, %d retired\n", len(base.Suite.Cases), len(head.Suite.Retired))
+		fmt.Fprintf(stdout, "%d case IDs kept, %d retired\n", len(base.Cases), len(head.Suite.Retired))
 		return 0
 	case "verify":
 		return runVerify(args[1:], stdout, stderr)

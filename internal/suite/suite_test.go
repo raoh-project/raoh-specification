@@ -1,6 +1,7 @@
 package suite
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -199,25 +200,42 @@ func TestIDsAreKept(t *testing.T) {
 		}
 		return s
 	}
+	ids := func(files map[string]string) *IDs {
+		t.Helper()
+		b, err := LoadIDs(artifactstest.Copy(t, "../..", files))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
 	one := `{"id": "R000001", "title": "t", "decoder": ["int"], "input": 1, "ok": 1}`
 	two := `{"id": "R000002", "title": "t", "decoder": ["int"], "input": 2, "ok": 2}`
-	base := load(map[string]string{"suite/core/a.json": "[" + one + "," + two + "]"})
+	base := ids(map[string]string{"suite/core/a.json": "[" + one + "," + two + "]"})
 	if err := CheckIDs(base, load(map[string]string{"suite/core/a.json": "[" + one + "," + two + "]"})); err != nil {
 		t.Error(err)
 	}
 	if err := CheckIDs(base, load(map[string]string{"suite/core/a.json": "[" + one + "]"})); err == nil || !strings.Contains(err.Error(), "R000002 was removed") {
 		t.Errorf("a silently removed ID: %v", err)
 	}
-	retired := load(map[string]string{"suite/core/a.json": "[" + one + "]", "suite/retired.json": `["R000002"]`})
-	if err := CheckIDs(base, retired); err != nil {
+	if err := CheckIDs(base, load(map[string]string{"suite/core/a.json": "[" + one + "]", "suite/retired.json": `["R000002"]`})); err != nil {
 		t.Error(err)
 	}
+	retired := ids(map[string]string{"suite/core/a.json": "[" + one + "]", "suite/retired.json": `["R000002"]`})
 	if err := CheckIDs(retired, load(map[string]string{"suite/core/a.json": "[" + one + "]"})); err == nil || !strings.Contains(err.Error(), "no longer listed") {
 		t.Errorf("an unretired ID: %v", err)
 	}
 	_, err := Load(artifactstest.Copy(t, "../..", map[string]string{"suite/core/a.json": "[" + two + "]", "suite/retired.json": `["R000002"]`}), checker(t), schemasFor(t))
 	if err == nil || !strings.Contains(err.Error(), "is retired") {
 		t.Errorf("a reused ID: %v", err)
+	}
+	// The base is read for its IDs only: a case this revision's checker would refuse, or a
+	// catalogue its registry would, still gives its ID.
+	stale := ids(map[string]string{
+		"suite/core/a.json":       `[{"id": "R000003", "title": "t", "decoder": ["nosuch"], "input": 1, "ok": 1}]`,
+		"catalog/operations.json": `{"not": "a catalogue"}`,
+	})
+	if !slices.Equal(stale.Cases, []string{"R000003"}) {
+		t.Errorf("a base this revision would refuse gives %v", stale.Cases)
 	}
 }
 
