@@ -33,13 +33,13 @@ Arguments are of these kinds:
 | Kind | Written as |
 |------|------------|
 | `decoder` | a decoder form |
-| `decoders` | a JSON array of decoder forms |
-| `variants` | a JSON object whose members are tags and decoder forms |
-| `fields` | a JSON array of field forms: `[kind, name, decoder]`, or `["flat", decoder]` |
+| `decoders` | a non-empty JSON array of decoder forms |
+| `variants` | a non-empty JSON object whose members are tags and decoder forms |
+| `fields` | a non-empty JSON array of field forms: `[kind, name, decoder]`, or `["flat", decoder]` |
 | `value` | an [observation](observation.md) of the argument's type |
 | `message` | a JSON string: the message of the issues the operation gives |
 | `fixture` | the name of a [fixture](fixtures.md) |
-| `encoder`, `properties` | an encoder form, or a JSON array of property forms |
+| `encoder`, `properties` | an encoder form, or a non-empty JSON array of property forms |
 
 An encoder form has the same shape, with the encoders and properties of `catalog/operations.json`.
 
@@ -87,9 +87,11 @@ distinct as the value model compares them, the symbols of `enum` must stay disti
 read as a-z, the pattern of `pattern` must be one of [pattern.md](pattern.md), a `strictObject`
 cannot have a `flat` field, since it could not tell which members that field reads, and no two
 properties of an `object` encoder may write the same member. A form that breaks one is not a
-decoder of this language. Each is a condition on what the arguments mean, and raoh-java 0.8.0
-refuses to construct a decoder that breaks one; a restriction that only a host language's API
-imposes, such as a Java method refusing null, is not one of them.
+decoder of this language. Each is a condition on what the arguments mean, which the specification
+decides; raoh-java 0.8.0 refuses to construct a decoder that breaks one, except that it does not
+check an `object` encoder's member names (a later property replaces an earlier one's value) and
+compiles a pattern with its host's engine. A restriction that only a host language's API imposes,
+such as a Java method refusing null, is not one of them.
 
 A message writes only metadata whose type has a message form ([issues.md](issues.md#message-forms)).
 An operation on elements of any type, such as `unique` or `contains`, therefore cannot be applied

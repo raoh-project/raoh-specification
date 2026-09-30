@@ -160,9 +160,9 @@ type requirement struct {
 	text bool
 }
 
-// requirements are the kinds of condition. Each stands for something raoh-java refuses to
-// construct and the specification refuses too: a condition on what the arguments mean, never one
-// that only a host language's API imposes.
+// requirements are the kinds of condition. Each is a condition on what the arguments mean, which
+// the specification refuses whether or not an implementation checks it, and never one that only a
+// host language's API imposes (see spec/decoder-language.md).
 var requirements = map[string]requirement{
 	// ordered: the first value is not after the second, as Compare orders them.
 	"ordered": {arity: 2, kind: "value"},

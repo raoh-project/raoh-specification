@@ -139,6 +139,24 @@ func TestClassification(t *testing.T) {
 			outcomes: map[string]string{"R000002": Divergent},
 		},
 		{
+			name: "the implementation fails",
+			change: func(r *run) {
+				r.results["R000002"] = `{"error": "ArithmeticException: BigInteger would overflow supported range"}`
+			},
+			decl:     declare(v, ""),
+			statuses: map[string]string{"core": NonConformant},
+			outcomes: map[string]string{"R000002": Failed},
+		},
+		{
+			name: "a failure no divergence excuses",
+			change: func(r *run) {
+				r.results["R000002"] = `{"error": "threw"}`
+			},
+			decl:     declare(v, divergentMin),
+			statuses: map[string]string{"core": NonConformant},
+			outcomes: map[string]string{"R000002": Failed},
+		},
+		{
 			name:     "a stale divergence",
 			decl:     declare(v, divergentMin),
 			statuses: map[string]string{"core": NonConformant},

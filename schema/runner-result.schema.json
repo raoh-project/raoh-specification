@@ -71,7 +71,8 @@
       "type": "object",
       "oneOf": [
         {"required": ["ok"], "properties": {"ok": true}, "additionalProperties": false},
-        {"required": ["issues"], "properties": {"issues": {"$ref": "#/$defs/issues"}}, "additionalProperties": false}
+        {"required": ["issues"], "properties": {"issues": {"$ref": "#/$defs/issues"}}, "additionalProperties": false},
+        {"required": ["error"], "properties": {"error": {"type": "string", "minLength": 1, "description": "What happened when the implementation gave no outcome: it threw, or refused to construct the decoder."}}, "additionalProperties": false}
       ]
     },
     "issues": {
