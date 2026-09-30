@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/raoh-project/raoh-specification/internal/catalog"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
@@ -262,22 +261,31 @@ func TestFlowsAreExactLanguages(t *testing.T) {
 	}
 }
 
-// The parser keeps, for each node, path and position, where its parses end, so a decoder with
-// many alternatives over many elements is parsed quickly.
+// The parser parses each node at each path from each issue position at most once, so its work is
+// bounded by their product, never by the number of their combinations: twice the elements and
+// twice the issues is at most four times the parses. The work is counted, not timed, so the test
+// means the same on every machine.
 func TestParsingDoesNotExplode(t *testing.T) {
 	c := checker(t)
-	var elems, issues []string
-	for i := 0; i < 200; i++ {
-		elems = append(elems, "0")
-		issues = append(issues, "/"+strconv.Itoa(i)+" out_of_range.minimum")
+	d := decoder(t, c, `["list", ["int", ["min", 1], ["max", 5], ["multipleOf", 2]]]`)
+	work := func(n int) int {
+		var elems, issues []string
+		for i := 0; i < n; i++ {
+			elems = append(elems, "0")
+			issues = append(issues, "/"+strconv.Itoa(i)+" out_of_range.minimum")
+		}
+		fit := func(i int, slot Slot) (string, bool) { return "", issues[i] == JoinPath(slot.Path)+" "+slot.Key }
+		out, parses := parseIssues(d.Flow, jsontext.MustParse("["+strings.Join(elems, ",")+"]"), nil, n, fit)
+		if len(out) != 1 {
+			t.Fatalf("%d failing elements give %d parses of the list", n, len(out))
+		}
+		return parses
 	}
-	start := time.Now()
-	if !gives(t, c, `["list", ["int", ["min", 1], ["max", 5], ["multipleOf", 2]]]`, "["+strings.Join(elems, ",")+"]", issues...) {
-		t.Error("200 failing elements are not a list the decoder gives")
+	small, large := work(100), work(200)
+	if large > 4*small {
+		t.Errorf("100 elements take %d parses and 200 take %d; the work grows faster than elements times issues", small, large)
 	}
-	if d := time.Since(start); d > 2*time.Second {
-		t.Errorf("took %v", d)
-	}
+	t.Logf("100 elements: %d parses, 200: %d", small, large)
 }
 
 func TestEncoders(t *testing.T) {

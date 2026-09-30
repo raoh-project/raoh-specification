@@ -2,8 +2,6 @@ package dsl
 
 import (
 	"fmt"
-	"iter"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -147,15 +145,23 @@ const parseLimit = 2
 // ParseIssues parses n issues against a flow for an input at a path. It gives every parse whose
 // signature differs from the others, up to two: none means the issues are not a list the flow
 // gives, two that they fit it in two ways that differ. The parser keeps, for each node, path and
-// issue position, the positions its parses can end at, so the work grows with the flow, the input
-// and the issues, not with the number of their combinations.
+// issue position, the positions its parses can end at, so it parses each of them once: the work is
+// bounded by the product of the flow's nodes, the input's paths and the issues, never by the number
+// of their combinations.
 func ParseIssues(f Flow, input *jsontext.Node, path []string, n int, fit Fit) []Assignment {
-	p := &parser{n: n, fit: fit, memo: map[memoKey]map[int][]partial{}, groups: groups{}}
+	out, _ := parseIssues(f, input, path, n, fit)
+	return out
+}
+
+// parseIssues is ParseIssues, and the number of node, path and position parses it made: the work
+// it did.
+func parseIssues(f Flow, input *jsontext.Node, path []string, n int, fit Fit) ([]Assignment, int) {
+	p := &parser{n: n, fit: fit, memo: map[memoKey]endSet{}, groups: groups{}}
 	var out []Assignment
-	for _, pp := range p.parse(f, input, path, 0)[n] {
+	for _, pp := range p.parse(f, input, path, 0).at(n) {
 		out = append(out, pp.slots)
 	}
-	return out
+	return out, len(p.memo)
 }
 
 type partial struct {
@@ -172,7 +178,7 @@ type memoKey struct {
 type parser struct {
 	n      int
 	fit    Fit
-	memo   map[memoKey]map[int][]partial
+	memo   map[memoKey]endSet
 	groups groups
 }
 
@@ -188,28 +194,43 @@ func (gs groups) of(f *Unordered, at []string) *Group {
 	return &g
 }
 
-// inOrder gives the ends of partial parses by position, so that which parses a node keeps, and so
-// every reading and message built from them, does not depend on map order.
-func inOrder(ends map[int][]partial) iter.Seq2[int, []partial] {
-	return func(yield func(int, []partial) bool) {
-		for _, end := range slices.Sorted(maps.Keys(ends)) {
-			if !yield(end, ends[end]) {
-				return
-			}
-		}
+// endSet is the partial parses of a node from one position, by the position they end at, in
+// increasing order: the order is the structure's, so what a node keeps, and every reading and
+// message built from it, never depends on the order of a map.
+type endSet []endParses
+
+type endParses struct {
+	end    int
+	parses []partial
+}
+
+func (es endSet) find(end int) (int, bool) {
+	return slices.BinarySearchFunc(es, end, func(e endParses, end int) int { return e.end - end })
+}
+
+// at gives the partial parses that end at end.
+func (es endSet) at(end int) []partial {
+	if i, ok := es.find(end); ok {
+		return es[i].parses
 	}
+	return nil
 }
 
 // add records a partial parse ending at end, unless one with the same signature is there or the
 // limit is reached.
-func add(ends map[int][]partial, end int, pp partial) {
-	for _, q := range ends[end] {
+func (es *endSet) add(end int, pp partial) {
+	i, ok := es.find(end)
+	if !ok {
+		*es = slices.Insert(*es, i, endParses{end: end})
+	}
+	e := &(*es)[i]
+	for _, q := range e.parses {
 		if q.sig == pp.sig {
 			return
 		}
 	}
-	if len(ends[end]) < parseLimit {
-		ends[end] = append(ends[end], pp)
+	if len(e.parses) < parseLimit {
+		e.parses = append(e.parses, pp)
 	}
 }
 
@@ -218,41 +239,44 @@ func join(a, b partial) partial {
 }
 
 // parse gives, for each end position, the partial parses of issues start..end by the flow.
-func (p *parser) parse(f Flow, in *jsontext.Node, at []string, start int) map[int][]partial {
+func (p *parser) parse(f Flow, in *jsontext.Node, at []string, start int) endSet {
 	// Every node is a pointer, so a node is its own identity in the memo.
 	key := memoKey{node: f, path: JoinPath(at), start: start}
 	if r, ok := p.memo[key]; ok {
 		return r
 	}
-	ends := map[int][]partial{}
+	var ends endSet
 	switch f := f.(type) {
 	case *Site:
 		if start < p.n {
 			slot := Slot{Site: f, Path: at, Input: in}
 			if sig, ok := p.fit(start, slot); ok {
-				add(ends, start+1, partial{slots: Assignment{slot}, sig: sig + "\x01"})
+				ends.add(start+1, partial{slots: Assignment{slot}, sig: sig + "\x01"})
 			}
 		}
 	case *Alt:
 		if len(f.Items) == 0 {
-			add(ends, start, partial{})
+			ends.add(start, partial{})
 		}
 		for _, item := range f.Items {
-			for end, pps := range inOrder(p.parse(item, in, at, start)) {
+			for _, ep := range p.parse(item, in, at, start) {
+				end, pps := ep.end, ep.parses
 				for _, pp := range pps {
-					add(ends, end, pp)
+					ends.add(end, pp)
 				}
 			}
 		}
 	case *Cat:
-		ends[start] = []partial{{}}
+		ends = endSet{{end: start, parses: []partial{{}}}}
 		for _, item := range f.Items {
-			next := map[int][]partial{}
-			for mid, heads := range inOrder(ends) {
-				for end, tails := range inOrder(p.parse(item, in, at, mid)) {
+			var next endSet
+			for _, ep := range ends {
+				mid, heads := ep.end, ep.parses
+				for _, ep := range p.parse(item, in, at, mid) {
+					end, tails := ep.end, ep.parses
 					for _, h := range heads {
 						for _, t := range tails {
-							add(next, end, join(h, t))
+							next.add(end, join(h, t))
 						}
 					}
 				}
@@ -277,14 +301,16 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, start int) map[in
 				}
 			}
 		}
-		ends[start] = []partial{{}}
+		ends = endSet{{end: start, parses: []partial{{}}}}
 		for k, item := range items {
-			next := map[int][]partial{}
-			for mid, heads := range inOrder(ends) {
-				for end, tails := range inOrder(p.parse(item, inputs[k], ats[k], mid)) {
+			var next endSet
+			for _, ep := range ends {
+				mid, heads := ep.end, ep.parses
+				for _, ep := range p.parse(item, inputs[k], ats[k], mid) {
+					end, tails := ep.end, ep.parses
 					for _, h := range heads {
 						for _, t := range tails {
-							add(next, end, join(h, t))
+							next.add(end, join(h, t))
 						}
 					}
 				}
@@ -301,15 +327,15 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, start int) map[in
 		ends = p.unordered(f, in, at, start)
 	case *Candidates:
 		for _, c := range f.Site.Candidates.Flows {
-			if len(p.parse(c, in, at, start)[start]) > 0 {
-				add(ends, start, partial{})
+			if len(p.parse(c, in, at, start).at(start)) > 0 {
+				ends.add(start, partial{})
 				break
 			}
 		}
 		if start < p.n {
 			slot := Slot{Site: f.Site, Path: at, Input: in}
 			if sig, ok := p.fit(start, slot); ok {
-				add(ends, start+1, partial{slots: Assignment{slot}, sig: sig + "\x01"})
+				ends.add(start+1, partial{slots: Assignment{slot}, sig: sig + "\x01"})
 			}
 		}
 	}
@@ -319,24 +345,26 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, start int) map[in
 
 // chain parses items as a Chain: the first item's non-empty parses end the chain; its empty parse
 // goes on with the rest.
-func (p *parser) chain(items []Flow, in *jsontext.Node, at []string, start int) map[int][]partial {
-	ends := map[int][]partial{}
+func (p *parser) chain(items []Flow, in *jsontext.Node, at []string, start int) endSet {
+	var ends endSet
 	if len(items) == 0 {
-		add(ends, start, partial{})
+		ends.add(start, partial{})
 		return ends
 	}
-	for end, pps := range inOrder(p.parse(items[0], in, at, start)) {
+	for _, ep := range p.parse(items[0], in, at, start) {
+		end, pps := ep.end, ep.parses
 		if end == start {
 			continue
 		}
 		for _, pp := range pps {
-			add(ends, end, pp)
+			ends.add(end, pp)
 		}
 	}
-	for _, empty := range p.parse(items[0], in, at, start)[start] {
-		for end, pps := range inOrder(p.chain(items[1:], in, at, start)) {
+	for _, empty := range p.parse(items[0], in, at, start).at(start) {
+		for _, ep := range p.chain(items[1:], in, at, start) {
+			end, pps := ep.end, ep.parses
 			for _, pp := range pps {
-				add(ends, end, join(empty, pp))
+				ends.add(end, join(empty, pp))
 			}
 		}
 	}
@@ -344,8 +372,8 @@ func (p *parser) chain(items []Flow, in *jsontext.Node, at []string, start int) 
 }
 
 // unordered parses one issue for each unknown member, in any order.
-func (p *parser) unordered(f *Unordered, in *jsontext.Node, at []string, start int) map[int][]partial {
-	ends := map[int][]partial{}
+func (p *parser) unordered(f *Unordered, in *jsontext.Node, at []string, start int) endSet {
+	var ends endSet
 	var slots []Slot
 	group := p.groups.of(f, at)
 	if in != nil && in.Kind == jsontext.Object {
@@ -380,7 +408,7 @@ func (p *parser) unordered(f *Unordered, in *jsontext.Node, at []string, start i
 			return ends
 		}
 	}
-	add(ends, start+k, pp)
+	ends.add(start+k, pp)
 	return ends
 }
 

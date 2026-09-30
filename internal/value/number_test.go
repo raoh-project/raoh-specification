@@ -1,8 +1,8 @@
 package value
 
 import (
+	"runtime"
 	"testing"
-	"time"
 )
 
 func TestNumbersEqualByValue(t *testing.T) {
@@ -41,21 +41,34 @@ func TestNumbersEqualByValue(t *testing.T) {
 }
 
 // The work a comparison takes depends on the length of the text, never on the size of the
-// exponent: 10^exponent is never built.
-func TestComparingHugeExponentsTakesNoTime(t *testing.T) {
-	start := time.Now()
+// exponent: 10^exponent is never built. The allocations are counted, not the time, so the test
+// means the same on every machine.
+func TestComparingHugeExponentsBuildsNoPower(t *testing.T) {
+	one, _ := ParseNumber("1")
 	for _, s := range []string{"1e999999999999999999999999999999", "1e-999999999999999999999999999999", "9e2147483648"} {
-		n, err := ParseNumber(s)
-		if err != nil {
-			t.Fatal(err)
-		}
-		one, _ := ParseNumber("1")
-		if n.Equal(one) {
-			t.Errorf("%s equals 1", s)
+		var n Number
+		allocs := testing.AllocsPerRun(10, func() {
+			var err error
+			if n, err = ParseNumber(s); err != nil {
+				t.Fatal(err)
+			}
+			if n.Equal(one) {
+				t.Errorf("%s equals 1", s)
+			}
+			if n.Cmp(one) == 0 {
+				t.Errorf("%s compares equal to 1", s)
+			}
+		})
+		if allocs > 64 {
+			t.Errorf("comparing %s allocates %v times", s, allocs)
 		}
 	}
+	var bytes uint64
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
 	invalid(t, "float64", "1e-99999999999", "rounds to")
-	if d := time.Since(start); d > time.Second {
-		t.Errorf("took %v", d)
+	runtime.ReadMemStats(&after)
+	if bytes = after.TotalAlloc - before.TotalAlloc; bytes > 1<<20 {
+		t.Errorf("observing 1e-99999999999 as a float64 allocates %d bytes", bytes)
 	}
 }

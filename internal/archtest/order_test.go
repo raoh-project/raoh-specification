@@ -175,3 +175,33 @@ func TestValueTypesAreInstantiated(t *testing.T) {
 		}
 	}
 }
+
+// A test never judges by the clock: how long something takes depends on the machine, so a test
+// counts the work or the allocations instead, and means the same everywhere.
+func TestNoTestReadsTheClock(t *testing.T) {
+	root := "../.."
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return err
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if x, ok := sel.X.(*ast.Ident); ok && x.Name == "time" && (sel.Sel.Name == "Now" || sel.Sel.Name == "Since") {
+				t.Errorf("%s: a test reads the clock with time.%s; count the work instead", fset.Position(sel.Pos()), sel.Sel.Name)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
