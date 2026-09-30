@@ -318,6 +318,19 @@ func (t Type) Instantiate(bound map[string]Type) (Type, error) {
 	return u, u.Concrete()
 }
 
+// HasMessageForm reports whether a message can write a value of the type: the scalars, the
+// temporal types, and lists of such (see spec/issues.md, Message forms).
+func (t Type) HasMessageForm() bool {
+	switch t.Kind {
+	case Bool, Int32, Int64, Float32, Float64, Decimal, String, Symbol, UUID, URI,
+		Date, Time, DateTime, OffsetDateTime, Instant:
+		return true
+	case List:
+		return t.Args[0].HasMessageForm()
+	}
+	return false
+}
+
 // Concrete checks that a type is one values have: it mentions no type parameter and is well
 // formed. A type built by substituting parameters is checked again, since a parameter may stand for
 // a type that makes it ill-formed, such as nullable<string> in optional<T>.

@@ -699,3 +699,37 @@ func TestInstantiatedTypesAreWellFormed(t *testing.T) {
 		doc{"probe": doc{"code": "probe", "params": []any{"T"}, "meta": doc{"x": "optional<T>"}}})
 	rejected(t, c, `["string", ["probe"]]`, "optional<nullable<string>> cannot tell its own null")
 }
+
+// A message writes only values that have a message form: an issue whose template writes a
+// metadata entry of another type cannot be given, where a case gives that type and where the
+// catalogue fixes it.
+func TestMessagesWriteOnlyWhatHasAMessageForm(t *testing.T) {
+	c := checker(t)
+	rejected(t, c, `["list", ["dict", ["int"]], ["unique"]]`, "a message cannot write a list<map<int32>>")
+	rejected(t, c, `["list", ["nullable", ["int"]], ["contains", null]]`, "a message cannot write a nullable<int32>")
+	decoder(t, c, `["list", ["int"], ["unique"]]`)
+
+	ops := readDoc(t, "../../catalog/operations.json")
+	ops["operations"] = append(ops["operations"].([]any), doc{"name": "probe", "doc": "x", "receivers": []any{"string"}, "result": "R",
+		"issues": []any{doc{"key": "probe", "T": "map<R>"}}, "flow": "own"})
+	fx, _ := os.ReadFile("../../catalog/fixtures.json")
+	reg, err := Parse(encode(t, ops), fx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat, err := catalog.Load("../..", schemasFor(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	is := readDoc(t, "../../catalog/issues.json")
+	is["probe"] = doc{"code": "probe", "params": []any{"T"}, "meta": doc{"x": "T"}}
+	if cat.Variants, err = catalog.ParseVariants(encode(t, is)); err != nil {
+		t.Fatal(err)
+	}
+	for _, locale := range catalog.Locales {
+		cat.Messages[locale]["probe"] = "is {x}"
+	}
+	if _, err := NewChecker(reg, cat); err == nil || !strings.Contains(err.Error(), "writes meta x, a map<string>, into its message") {
+		t.Errorf("a template writing a map: %v", err)
+	}
+}

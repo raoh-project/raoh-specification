@@ -209,6 +209,21 @@ func ParseVariant(key string, n *jsontext.Node, allowed []string) (*Variant, err
 	return v, nil
 }
 
+// Written are the metadata entries of a variant that some locale's template writes into its
+// message, sorted.
+func (c *Catalog) Written(key string) []string {
+	var names []string
+	for _, locale := range Locales {
+		for _, name := range Placeholders(c.Messages[locale][key]) {
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
 // Check checks that every variant has a template in every locale, that every template belongs to
 // a variant, and that a template refers only to metadata its variant always has.
 func (c *Catalog) Check() error {

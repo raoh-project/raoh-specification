@@ -792,6 +792,11 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) 
 	if err != nil {
 		return nil, fmt.Errorf("issue %s: %w", ref.Key, err)
 	}
+	for _, name := range s.catalog.Written(ref.Key) {
+		if t, ok := meta[name]; ok && !t.HasMessageForm() {
+			return nil, fmt.Errorf("issue %s writes %s, a %s, into its message, and a message cannot write a %s", ref.Key, name, t, t)
+		}
+	}
 	site := &Site{Key: v.Key, Code: v.Code, Meta: meta, Values: map[string]value.Value{}, Message: ca.message}
 	for _, o := range ref.Omit {
 		delete(meta, o)
@@ -952,6 +957,9 @@ func checkSources(owner string, f *Form, c *catalog.Catalog, contexts []context)
 					if err := t.Concrete(); err != nil {
 						bad("meta %s is a %s: %v", name, t, err)
 						continue
+					}
+					if slices.Contains(c.Written(ref.Key), name) && !t.HasMessageForm() {
+						bad("writes meta %s, a %s, into its message, and a message cannot write a %s", name, t, t)
 					}
 				}
 				src, ok := ref.Meta[name]
