@@ -14,16 +14,14 @@ import (
 // allowed are the comparisons of a struct field with "" that do not use the empty string to mean
 // that something is absent, with why.
 var allowed = map[string]string{
-	"internal/value/number.go n.Digits":          "no digits is the number zero, a value, not an absence",
-	"internal/catalog/catalog.go code.Text":      "rejects an empty code while validating the catalogue",
-	"internal/dsl/registry.go ref.Key":           "rejects an issue reference without a key while reading",
-	"internal/dsl/registry.go fi.Code":           "rejects a fixture issue without a code while reading",
-	"internal/dsl/registry.go fi.Key":            "rejects a fixture issue without a message key while reading",
-	"internal/dsl/registry.go fi.Message":        "rejects a fixture issue without a message while reading",
-	"internal/suite/outcome.go is.Code":          "rejects an issue without a code while reading",
-	"internal/suite/outcome.go is.Key":           "rejects an issue without a message key while reading",
-	"internal/verify/spec.go s.Version":          "rejects a specification without a version while reading",
-	"internal/suite/expect.go expected[i].Group": "a group is an ID the verifier makes, never empty; empty means the issue is in none",
+	"internal/value/number.go n.Digits":     "no digits is the number zero, a value, not an absence",
+	"internal/catalog/catalog.go code.Text": "rejects an empty code, which no issue has",
+	"internal/dsl/registry.go ref.Key":      "rejects an empty message key, which no issue has",
+	"internal/dsl/registry.go fi.Code":      "rejects an empty code, which no issue has",
+	"internal/dsl/registry.go fi.Key":       "rejects an empty message key, which no issue has",
+	"internal/suite/outcome.go is.Code":     "rejects an empty code, which no issue has",
+	"internal/suite/outcome.go is.Key":      "rejects an empty message key, which no issue has",
+	"internal/verify/spec.go s.Version":     "rejects an empty version, which no specification has",
 }
 
 // A struct field compared with "" is usually a presence encoded in a value that a real value can

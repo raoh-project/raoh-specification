@@ -52,6 +52,20 @@ order. An operation applies to the receiver types it lists and gives the result 
 operation name can apply to several receiver types (`min` applies to every numeric type) and mean
 the same thing for each.
 
+A receiver pattern is `*`, for every type, or a type whose outer kind is not a parameter, and it
+never mentions `R`. An operation has at most one pattern for each outer kind, and one that applies
+to every type has no other: the receiver's kind alone decides which pattern, and so which form, an
+operation means, whatever order `catalog/operations.json` lists them in. That is also what an
+operation's feature names, so a feature ID determines the form and the pattern.
+
+A type parameter a form mentions is bound by what a case gives: the receiver of an operation (`R`,
+and the parameters of its pattern), the types of the decoders, encoders and properties it takes,
+and the types of the fixtures it names. Its result, the types of its value arguments, the types its
+issues bind and the type an encoder encodes or a property reads only use parameters, so every
+parameter they mention has to appear where one is bound; the registry is rejected otherwise.
+Whether a case gives enough to bind them is the case's matter: a form that leaves a type unknown,
+such as a generic fixture where nothing fixes its input, does not type-check.
+
 A value argument is read as an observation of the type the argument has where it is used. In
 `["float", ["min", 0.1]]` the bound is the float32 nearest 0.1; in `["decimal", ["min", "0.5"]]` it
 is the decimal 0.5 with scale 1; `["int", ["min", 0.5]]` does not type-check.
@@ -64,7 +78,8 @@ tell which members that field reads. raoh-java refuses to construct a decoder th
 them, so such a form is not a decoder of this language either.
 
 A form's result type follows from its arguments; `enum` gives `symbol<...>` of the names it lists
-(`symbols_from` in `catalog/operations.json`).
+(`symbols_from` in `catalog/operations.json`). A form whose result is `symbol` without alternatives
+says where they come from with `symbols_from`.
 
 A form that does not type-check, or whose arguments do not meet what it requires, is not a
 decoder, and a case that contains one is rejected.

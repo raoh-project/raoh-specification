@@ -41,9 +41,8 @@ type TypedIssue struct {
 	// Message is the message the issue is expected to have: the one its place gives, or, for a
 	// divergence, the one written.
 	Message string
-	// Group identifies the unordered group instance the issue belongs to; empty when it is
-	// ordered.
-	Group string
+	// Group is the unordered group instance the issue belongs to; nil when it is in order.
+	Group *dsl.Group
 	// Candidates holds, for an issue that lists candidates, by candidate index, the issues each
 	// gave, read from the metadata entry its slot names; nil otherwise.
 	Candidates map[int][]TypedIssue
@@ -98,7 +97,7 @@ type reader struct {
 }
 
 func (r *reader) key(i int, slot dsl.Slot) string {
-	return fmt.Sprintf("%d|%p|%s|%s", i, slot.Site, dsl.JoinPath(slot.Path), slot.Group)
+	return fmt.Sprintf("%d|%p|%s|%p", i, slot.Site, dsl.JoinPath(slot.Path), slot.Group)
 }
 
 // fit reads issue i at a slot, once per slot.
@@ -110,7 +109,7 @@ func (r *reader) fit(i int, slot dsl.Slot) (string, bool) {
 		if fits(is, slot) {
 			res.issue, res.err = instance(is, slot, r.cat, r.mode, nil)
 			if res.err == nil {
-				res.sig = res.issue.Group + "\x00" + res.issue.Message + "\x00" + typesOf(res.issue.Meta)
+				res.sig = fmt.Sprintf("%p", res.issue.Group) + "\x00" + res.issue.Message + "\x00" + typesOf(res.issue.Meta)
 			}
 		} else {
 			res.err = fmt.Errorf("not here")
@@ -342,7 +341,7 @@ func match(expected []TypedIssue, observed []surface, cat *catalog.Catalog) ([]T
 	out := make([]TypedIssue, len(observed))
 	for i := 0; i < len(expected); {
 		k := i + 1
-		if expected[i].Group != "" {
+		if expected[i].Group != nil {
 			for k < len(expected) && expected[k].Group == expected[i].Group {
 				k++
 			}

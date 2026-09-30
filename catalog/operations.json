@@ -472,13 +472,14 @@
     },
     "object": {
       "doc": "Encodes the value as a JSON object with one member per property, in declaration order.",
-      "args": [{"name": "properties", "kind": "properties"}],
+      "args": [{"name": "properties", "kind": "properties", "type": "T"}],
       "input": "T"
     }
   },
   "properties": {
     "propertyWithDefault": {
       "doc": "A member whose value is the getter's result encoded, or the default when the getter gives null.",
+      "input": "T",
       "args": [
         {"name": "name", "kind": "value", "type": "string"},
         {"name": "getter", "kind": "fixture", "fixture": "getter", "input": "T", "output": "nullable<P>"},

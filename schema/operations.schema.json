@@ -212,7 +212,8 @@
           }
         ],
         "required": [
-          "args"
+          "args",
+          "input"
         ],
         "not": {
           "anyOf": [
@@ -244,11 +245,6 @@
             {
               "required": [
                 "symbols_from"
-              ]
-            },
-            {
-              "required": [
-                "input"
               ]
             }
           ]
@@ -369,7 +365,8 @@
           ]
         },
         "type": {
-          "$ref": "#/$defs/type"
+          "$ref": "#/$defs/type",
+          "description": "The type of a value, the result type of a decoder, the type an encoder encodes, or the type the properties read; it may mention type parameters."
         },
         "optional": {
           "type": "boolean",
@@ -412,7 +409,8 @@
                   "decoders",
                   "variants",
                   "value",
-                  "encoder"
+                  "encoder",
+                  "properties"
                 ]
               }
             }
@@ -528,8 +526,7 @@
                 "enum": [
                   "fields",
                   "message",
-                  "fixture",
-                  "properties"
+                  "fixture"
                 ]
               }
             }

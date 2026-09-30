@@ -126,10 +126,17 @@ type checkedArgs struct {
 	product []value.Type
 	// keys are the variant names of a variants argument.
 	keys     map[ArgRef][]string
-	fixtures map[ArgRef]*Fixture
+	fixtures map[ArgRef]checkedFixture
 	// message is the message the form's message argument gives, or nil when the form has none or
 	// it is left out; an empty message is a message.
 	message *string
+}
+
+// checkedFixture is the fixture a fixture argument names, with the types its parameters take where
+// it is used.
+type checkedFixture struct {
+	*Fixture
+	bound map[string]value.Type
 }
 
 // field is a checked field: its flow, and the member it reads, if it names one.
@@ -268,8 +275,15 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 		return &Candidates{Site: site}, nil
 	case ExprFixture:
 		fx := ca.fixtures[x.Arg]
+		meta := map[string]value.Type{}
+		for name, t := range fx.Issue.Meta {
+			meta[name] = t.Subst(fx.bound)
+			if err := concrete(meta[name], "fixture "+fx.Name+" meta "+name); err != nil {
+				return nil, fmt.Errorf("%s: %w", owner, err)
+			}
+		}
 		message := fx.Issue.Message
-		var fl Flow = &Site{Key: fx.Issue.Key, Code: fx.Issue.Code, Meta: fx.Issue.Meta, Message: &message}
+		var fl Flow = &Site{Key: fx.Issue.Key, Code: fx.Issue.Code, Meta: meta, Message: &message}
 		for i := len(fx.Issue.Path) - 1; i >= 0; i-- {
 			fl = &At{Name: fx.Issue.Path[i], Body: fl}
 		}
@@ -317,29 +331,21 @@ func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, Fl
 	if err != nil {
 		return value.Type{}, nil, err
 	}
-	forms, ok := s.registry.Operations[name]
+	overloads, ok := s.registry.Operations[name]
 	if !ok {
 		return value.Type{}, nil, fmt.Errorf("unknown operation %q", name)
 	}
-	var f *Form
-	var pattern string
-	bound := map[string]value.Type{}
-	for _, cand := range forms {
-		for _, rc := range cand.Receivers {
-			b := map[string]value.Type{}
-			if rc == "*" || value.Unify(value.MustParseType(rc), receiver, b) {
-				f, pattern, bound = cand, rc, b
-				break
-			}
-		}
-		if f != nil {
-			break
-		}
+	// An operation applies to every type, or has at most one overload for the receiver's kind.
+	o, ok := overloads[AnyReceiver]
+	if !ok {
+		o, ok = overloads[ReceiverKey(value.Type{Kind: receiver.Kind}.String())]
 	}
-	if f == nil {
+	bound := map[string]value.Type{}
+	if !ok || (o.Receiver.Pattern != nil && !value.Unify(*o.Receiver.Pattern, receiver, bound)) {
 		return value.Type{}, nil, fmt.Errorf("operation %s does not apply to %s", name, receiver)
 	}
-	s.features[operationFeature(pattern, name)] = true
+	f := o.Form
+	s.features[operationFeature(o.Receiver.Key, name)] = true
 	bound["R"] = receiver
 	given := n.Elems[1:]
 	required := 0
@@ -404,11 +410,8 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 	if _, err := s.args(f, n.Elems[1:], bound); err != nil {
 		return value.Type{}, fmt.Errorf("%s: %w", name, err)
 	}
-	t, ok := bound["T"]
-	if !ok {
-		return value.Type{}, fmt.Errorf("%s: cannot tell what the property reads", name)
-	}
-	return t, nil
+	input := f.Input.Subst(bound)
+	return input, concrete(input, name)
 }
 
 // args checks the arguments given, the first of the form's, in three passes, so that the types
@@ -418,7 +421,7 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 // gives no message.
 func (s *state) args(f *Form, nodes []*jsontext.Node, bound map[string]value.Type) (checkedArgs, error) {
 	ca := checkedArgs{values: map[ArgRef]value.Value{}, flows: map[ArgRef][]Flow{}, fields: map[ArgRef][]field{},
-		keys: map[ArgRef][]string{}, fixtures: map[ArgRef]*Fixture{}}
+		keys: map[ArgRef][]string{}, fixtures: map[ArgRef]checkedFixture{}}
 	decoder := func(r ArgRef, a Arg, n *jsontext.Node) error {
 		t, flow, err := s.decoder(n)
 		if err != nil {
@@ -482,8 +485,8 @@ func (s *state) args(f *Form, nodes []*jsontext.Node, bound map[string]value.Typ
 				}
 				for j := 0; err == nil && j < len(v.Elems); j++ {
 					var t value.Type
-					if t, err = s.property(v.Elems[j]); err == nil && !value.Unify(value.Type{Kind: value.Param, Name: "T"}, t, bound) {
-						err = fmt.Errorf("the properties read values of different types: %s and %s", bound["T"], t)
+					if t, err = s.property(v.Elems[j]); err == nil && !value.Unify(a.Type, t, bound) {
+						err = fmt.Errorf("%s: expected properties that read %s, found one that reads %s", a.Name, a.Type.Subst(bound), t)
 					}
 				}
 			case pass == 1 && a.Kind == "value":
@@ -571,50 +574,51 @@ func (s *state) literal(a Arg, n *jsontext.Node, bound map[string]value.Type) (v
 	return v, nil
 }
 
-func (s *state) fixture(a Arg, n *jsontext.Node, bound map[string]value.Type) (*Fixture, error) {
+// fixture checks a fixture argument: the fixture it names, and the types its parameters take there.
+func (s *state) fixture(a Arg, n *jsontext.Node, bound map[string]value.Type) (checkedFixture, error) {
 	if n.Kind != jsontext.String {
-		return nil, fmt.Errorf("%s must name a fixture", a.Name)
+		return checkedFixture{}, fmt.Errorf("%s must name a fixture", a.Name)
 	}
 	fx, ok := s.registry.Fixtures[n.Text]
 	if !ok {
-		return nil, fmt.Errorf("unknown fixture %q", n.Text)
+		return checkedFixture{}, fmt.Errorf("unknown fixture %q", n.Text)
 	}
 	if fx.Kind != a.FixtureKind {
-		return nil, fmt.Errorf("%s needs a %s fixture, and %s is a %s fixture", a.Name, a.FixtureKind, fx.Name, fx.Kind)
+		return checkedFixture{}, fmt.Errorf("%s needs a %s fixture, and %s is a %s fixture", a.Name, a.FixtureKind, fx.Name, fx.Kind)
 	}
 	s.features["fixture."+fx.Name] = true
 	fb := map[string]value.Type{}
 	in := a.FixtureInput.Subst(bound)
 	inKnown := len(in.Params()) == 0
 	if inKnown && !value.Unify(fx.Input, in, fb) {
-		return nil, fmt.Errorf("fixture %s takes %s, not %s", fx.Name, fx.Input, in)
+		return checkedFixture{}, fmt.Errorf("fixture %s takes %s, not %s", fx.Name, fx.Input, in)
 	}
 	if a.FixtureOutput != nil {
 		out := a.FixtureOutput.Subst(bound)
 		if len(out.Params()) == 0 {
 			if !value.Unify(*fx.Output, out, fb) {
-				return nil, fmt.Errorf("fixture %s gives %s, not %s", fx.Name, *fx.Output, out)
+				return checkedFixture{}, fmt.Errorf("fixture %s gives %s, not %s", fx.Name, *fx.Output, out)
 			}
 		} else {
 			o := fx.Output.Subst(fb)
 			if err := concrete(o, "fixture "+fx.Name); err != nil {
-				return nil, err
+				return checkedFixture{}, err
 			}
 			if !value.Unify(out, o, bound) {
-				return nil, fmt.Errorf("fixture %s gives %s, not %s", fx.Name, o, out)
+				return checkedFixture{}, fmt.Errorf("fixture %s gives %s, not %s", fx.Name, o, out)
 			}
 		}
 	}
 	if !inKnown {
 		i := fx.Input.Subst(fb)
 		if err := concrete(i, "fixture "+fx.Name); err != nil {
-			return nil, err
+			return checkedFixture{}, err
 		}
 		if !value.Unify(in, i, bound) {
-			return nil, fmt.Errorf("fixture %s takes %s, not %s", fx.Name, i, in)
+			return checkedFixture{}, fmt.Errorf("fixture %s takes %s, not %s", fx.Name, i, in)
 		}
 	}
-	return fx, nil
+	return checkedFixture{Fixture: fx, bound: fb}, nil
 }
 
 // site instantiates an issue reference with the types bound gives the form's parameters and the
@@ -728,9 +732,13 @@ func Validate(r *Registry, c *catalog.Catalog) error {
 	for name, f := range r.Fields {
 		check("field "+name, f)
 	}
-	for name, forms := range r.Operations {
-		for _, f := range forms {
-			check("operation "+name, f)
+	for name, overloads := range r.Operations {
+		seen := map[*Form]bool{}
+		for _, o := range overloads {
+			if !seen[o.Form] {
+				seen[o.Form] = true
+				check("operation "+name, o.Form)
+			}
 		}
 	}
 	if len(problems) > 0 {

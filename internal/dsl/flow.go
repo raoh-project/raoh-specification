@@ -105,12 +105,20 @@ func (*Candidates) isFlow() {}
 var Success Flow = &Alt{}
 
 // Slot is an issue's place in a parse: the site, the concrete path, the input there, and, for an
-// issue of an Unordered, the group instance.
+// issue of an Unordered, the group instance; nil for an issue in order.
 type Slot struct {
 	*Site
 	Path  []string
 	Input *jsontext.Node
-	Group string
+	Group *Group
+}
+
+// Group is one instance of an Unordered: the issues it gives for the unknown members of the object
+// at Path, which come in any order. A parse gives every slot of an instance the same *Group, so a
+// slot is in a group by pointer identity.
+type Group struct {
+	Unordered int
+	Path      string
 }
 
 // JoinPath writes path segments as a JSON Pointer.
@@ -140,9 +148,9 @@ const parseLimit = 2
 // issue position, the positions its parses can end at, so the work grows with the flow, the input
 // and the issues, not with the number of their combinations.
 func ParseIssues(f Flow, input *jsontext.Node, path []string, n int, fit Fit) []Assignment {
-	p := &parser{n: n, fit: fit, memo: map[memoKey]map[int][]partial{}}
+	p := &parser{n: n, fit: fit, memo: map[memoKey]map[int][]partial{}, groups: groups{}}
 	var out []Assignment
-	for _, pp := range p.parse(f, input, path, "", 0)[n] {
+	for _, pp := range p.parse(f, input, path, 0)[n] {
 		out = append(out, pp.slots)
 	}
 	return out
@@ -156,14 +164,26 @@ type partial struct {
 type memoKey struct {
 	node  Flow
 	path  string
-	group string
 	start int
 }
 
 type parser struct {
-	n    int
-	fit  Fit
-	memo map[memoKey]map[int][]partial
+	n      int
+	fit    Fit
+	memo   map[memoKey]map[int][]partial
+	groups groups
+}
+
+// groups gives each instance of an Unordered one *Group.
+type groups map[Group]*Group
+
+func (gs groups) of(f *Unordered, at []string) *Group {
+	g := Group{Unordered: f.ID, Path: JoinPath(at)}
+	if p, ok := gs[g]; ok {
+		return p
+	}
+	gs[g] = &g
+	return &g
 }
 
 // add records a partial parse ending at end, unless one with the same signature is there or the
@@ -184,9 +204,9 @@ func join(a, b partial) partial {
 }
 
 // parse gives, for each end position, the partial parses of issues start..end by the flow.
-func (p *parser) parse(f Flow, in *jsontext.Node, at []string, group string, start int) map[int][]partial {
+func (p *parser) parse(f Flow, in *jsontext.Node, at []string, start int) map[int][]partial {
 	// Every node is a pointer, so a node is its own identity in the memo.
-	key := memoKey{node: f, path: JoinPath(at), group: group, start: start}
+	key := memoKey{node: f, path: JoinPath(at), start: start}
 	if r, ok := p.memo[key]; ok {
 		return r
 	}
@@ -194,7 +214,7 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, group string, sta
 	switch f := f.(type) {
 	case *Site:
 		if start < p.n {
-			slot := Slot{Site: f, Path: at, Input: in, Group: group}
+			slot := Slot{Site: f, Path: at, Input: in}
 			if sig, ok := p.fit(start, slot); ok {
 				add(ends, start+1, partial{slots: Assignment{slot}, sig: sig + "\x01"})
 			}
@@ -204,7 +224,7 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, group string, sta
 			add(ends, start, partial{})
 		}
 		for _, item := range f.Items {
-			for end, pps := range p.parse(item, in, at, group, start) {
+			for end, pps := range p.parse(item, in, at, start) {
 				for _, pp := range pps {
 					add(ends, end, pp)
 				}
@@ -215,7 +235,7 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, group string, sta
 		for _, item := range f.Items {
 			next := map[int][]partial{}
 			for mid, heads := range ends {
-				for end, tails := range p.parse(item, in, at, group, mid) {
+				for end, tails := range p.parse(item, in, at, mid) {
 					for _, h := range heads {
 						for _, t := range tails {
 							add(next, end, join(h, t))
@@ -226,7 +246,7 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, group string, sta
 			ends = next
 		}
 	case *Chain:
-		ends = p.chain(f.Items, in, at, group, start)
+		ends = p.chain(f.Items, in, at, start)
 	case *Repeat:
 		var items []Flow
 		var ats [][]string
@@ -247,7 +267,7 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, group string, sta
 		for k, item := range items {
 			next := map[int][]partial{}
 			for mid, heads := range ends {
-				for end, tails := range p.parse(item, inputs[k], ats[k], group, mid) {
+				for end, tails := range p.parse(item, inputs[k], ats[k], mid) {
 					for _, h := range heads {
 						for _, t := range tails {
 							add(next, end, join(h, t))
@@ -262,18 +282,18 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, group string, sta
 		if in != nil && in.Kind == jsontext.Object {
 			child, _ = in.Get(f.Name)
 		}
-		ends = p.parse(f.Body, child, appendPath(at, f.Name), group, start)
+		ends = p.parse(f.Body, child, appendPath(at, f.Name), start)
 	case *Unordered:
 		ends = p.unordered(f, in, at, start)
 	case *Candidates:
 		for _, c := range f.Site.Candidates.Flows {
-			if len(p.parse(c, in, at, group, start)[start]) > 0 {
+			if len(p.parse(c, in, at, start)[start]) > 0 {
 				add(ends, start, partial{})
 				break
 			}
 		}
 		if start < p.n {
-			slot := Slot{Site: f.Site, Path: at, Input: in, Group: group}
+			slot := Slot{Site: f.Site, Path: at, Input: in}
 			if sig, ok := p.fit(start, slot); ok {
 				add(ends, start+1, partial{slots: Assignment{slot}, sig: sig + "\x01"})
 			}
@@ -285,13 +305,13 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, group string, sta
 
 // chain parses items as a Chain: the first item's non-empty parses end the chain; its empty parse
 // goes on with the rest.
-func (p *parser) chain(items []Flow, in *jsontext.Node, at []string, group string, start int) map[int][]partial {
+func (p *parser) chain(items []Flow, in *jsontext.Node, at []string, start int) map[int][]partial {
 	ends := map[int][]partial{}
 	if len(items) == 0 {
 		add(ends, start, partial{})
 		return ends
 	}
-	for end, pps := range p.parse(items[0], in, at, group, start) {
+	for end, pps := range p.parse(items[0], in, at, start) {
 		if end == start {
 			continue
 		}
@@ -299,8 +319,8 @@ func (p *parser) chain(items []Flow, in *jsontext.Node, at []string, group strin
 			add(ends, end, pp)
 		}
 	}
-	for _, empty := range p.parse(items[0], in, at, group, start)[start] {
-		for end, pps := range p.chain(items[1:], in, at, group, start) {
+	for _, empty := range p.parse(items[0], in, at, start)[start] {
+		for end, pps := range p.chain(items[1:], in, at, start) {
 			for _, pp := range pps {
 				add(ends, end, join(empty, pp))
 			}
@@ -313,7 +333,7 @@ func (p *parser) chain(items []Flow, in *jsontext.Node, at []string, group strin
 func (p *parser) unordered(f *Unordered, in *jsontext.Node, at []string, start int) map[int][]partial {
 	ends := map[int][]partial{}
 	var slots []Slot
-	group := fmt.Sprintf("unordered#%d at %q", f.ID, JoinPath(at))
+	group := p.groups.of(f, at)
 	if in != nil && in.Kind == jsontext.Object {
 		for _, m := range in.Members {
 			if !slices.Contains(f.Known, m.Name) {
@@ -394,6 +414,7 @@ func describeAll(items []Flow) string {
 // list of issues is not one the flow gives.
 func Places(f Flow, input *jsontext.Node, path []string) []Slot {
 	var out []Slot
+	gs := groups{}
 	var walk func(f Flow, in *jsontext.Node, at []string)
 	walk = func(f Flow, in *jsontext.Node, at []string) {
 		switch f := f.(type) {
@@ -433,7 +454,7 @@ func Places(f Flow, input *jsontext.Node, path []string) []Slot {
 		case *Candidates:
 			out = append(out, Slot{Site: f.Site, Path: at, Input: in})
 		case *Unordered:
-			group := fmt.Sprintf("unordered#%d at %q", f.ID, JoinPath(at))
+			group := gs.of(f, at)
 			if in != nil && in.Kind == jsontext.Object {
 				for _, m := range in.Members {
 					if !slices.Contains(f.Known, m.Name) {

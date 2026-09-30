@@ -51,6 +51,15 @@ func section(ops doc, sec, name string) doc { return ops[sec].(doc)[name].(doc) 
 
 func arg(form doc, i int) doc { return form["args"].([]any)[i].(doc) }
 
+// probe is an operation with the receivers given.
+func probe(receivers ...string) doc {
+	var rs []any
+	for _, r := range receivers {
+		rs = append(rs, r)
+	}
+	return doc{"name": "probe", "doc": "x", "receivers": rs, "result": "R", "issues": []any{}, "flow": "none"}
+}
+
 // catalogs are the three files a mutation may edit.
 type catalogs struct{ ops, fixtures, issues doc }
 
@@ -156,15 +165,67 @@ func TestRegistryInvariants(t *testing.T) {
 		{"a cat of one flow", func(c catalogs) {
 			section(c.ops, "constructors", "strict")["flow"] = doc{"cat": []any{doc{"arg": "inner"}}}
 		}, true, false, "two flows or more"},
+		{"any type and string in two forms", func(c catalogs) {
+			c.ops["operations"] = append(c.ops["operations"].([]any), probe("*"), probe("string"))
+		}, false, false, "applies to every type, and to some types again"},
+		{"any type and string in one form", func(c catalogs) {
+			c.ops["operations"] = append(c.ops["operations"].([]any), probe("*", "string"))
+		}, false, false, "applies to every type, and to some types again"},
+		{"two patterns of one kind", func(c catalogs) {
+			c.ops["operations"] = append(c.ops["operations"].([]any), probe("list<E>"), probe("list<string>"))
+		}, false, false, "applies to list twice"},
+		{"a parameter as the receiver", func(c catalogs) {
+			c.ops["operations"] = append(c.ops["operations"].([]any), probe("E"))
+		}, false, false, "is a parameter"},
+		{"R inside a receiver", func(c catalogs) {
+			c.ops["operations"] = append(c.ops["operations"].([]any), probe("list<R>"))
+		}, false, false, "mentions R"},
+		{"a result nothing binds", func(c catalogs) {
+			operation(c.ops, "minLength")["result"] = "list<U>"
+		}, false, false, "the result mentions U"},
+		{"a value argument nothing binds", func(c catalogs) {
+			arg(operation(c.ops, "minLength"), 0)["type"] = "U"
+		}, false, false, "argument min mentions U"},
+		{"an issue binding nothing binds", func(c catalogs) {
+			operation(c.ops, "min")["issues"].([]any)[0].(doc)["T"] = "U"
+		}, false, false, "binding T mentions U"},
+		{"R outside an operation", func(c catalogs) {
+			arg(section(c.ops, "properties", "propertyWithDefault"), 3)["type"] = "R"
+		}, false, false, "argument default mentions R"},
+		{"a symbol without alternatives", func(c catalogs) {
+			delete(section(c.ops, "constructors", "enum"), "symbols_from")
+		}, false, false, "does not say its alternatives"},
+		{"symbols_from for a symbol with alternatives", func(c catalogs) {
+			section(c.ops, "constructors", "enum")["result"] = `symbol<"A">`
+		}, false, false, "symbols_from symbols needs"},
+		{"properties without a type", func(c catalogs) {
+			delete(arg(section(c.ops, "encoders", "object"), 0), "type")
+		}, true, false, "needs a type"},
+		{"a property without an input", func(c catalogs) {
+			delete(section(c.ops, "properties", "propertyWithDefault"), "input")
+		}, true, false, "no input type"},
+		{"a fixture output nothing binds", func(c catalogs) {
+			c.fixtures["unbound"] = doc{"kind": "map", "doc": "x", "input": "int32", "output": "U"}
+		}, false, false, "the output mentions U"},
+		{"a fixture issue metadata nothing binds", func(c catalogs) {
+			c.fixtures["unbound"] = doc{"kind": "refine", "doc": "x", "input": "T", "issue": doc{"code": "c", "message_key": "c", "message": "m", "meta": doc{"x": "list<U>"}}}
+		}, false, false, "meta x mentions U"},
+		{name: "a fixture issue with an empty message", edit: func(c catalogs) {
+			c.fixtures["even"].(doc)["issue"].(doc)["message"] = ""
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := catalogs{readDoc(t, "../../catalog/operations.json"), readDoc(t, "../../catalog/fixtures.json"), readDoc(t, "../../catalog/issues.json")}
 			tc.edit(c)
 			ops, fixtures, issues := encode(t, c.ops), encode(t, c.fixtures), encode(t, c.issues)
-			if err := sch.Validate("operations", ops); (err != nil) != tc.schema {
-				t.Errorf("the schema rejects it: %v, want %v (%v)", err != nil, tc.schema, err)
+			err := sch.Validate("operations", ops)
+			if err == nil {
+				err = sch.Validate("fixtures", fixtures)
 			}
-			err := read(t, ops, fixtures, issues)
+			if (err != nil) != tc.schema {
+				t.Errorf("the schemas reject it: %v, want %v (%v)", err != nil, tc.schema, err)
+			}
+			err = read(t, ops, fixtures, issues)
 			switch {
 			case tc.reason == "" && err != nil:
 				t.Fatalf("rejected: %v", err)

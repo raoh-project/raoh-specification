@@ -4,6 +4,7 @@ package dsl
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -107,9 +108,9 @@ type Form struct {
 	// Result is the result type of a constructor, field or operation; the product type of an
 	// object is computed from its fields.
 	Result value.Type
-	// Receivers are the types an operation applies to; "*" is any type.
-	Receivers []string
-	// Input is the input type of an encoder.
+	// Receivers are the receivers an operation applies to.
+	Receivers []Receiver
+	// Input is the type an encoder encodes, or a property reads.
 	Input  value.Type
 	Issues []IssueRef
 	// Flow is how the form gives its issues.
@@ -120,6 +121,27 @@ type Form struct {
 	// Requires are the conditions its arguments have to meet for the form to exist at all, as
 	// raoh-java refuses to construct the decoder otherwise.
 	Requires []Require
+}
+
+// ReceiverKey identifies the receivers an overload of an operation applies to: AnyReceiver, or
+// the name of the outer kind of the receiver's type. It is what an operation's feature ID names, and
+// an operation has at most one overload for each.
+type ReceiverKey string
+
+// AnyReceiver is the key of an operation that applies to every type; it has no other overload.
+const AnyReceiver ReceiverKey = "*"
+
+// Receiver is a receiver pattern of an operation: the key it applies under and, but for
+// AnyReceiver, the type a receiver of that kind unifies with.
+type Receiver struct {
+	Key     ReceiverKey
+	Pattern *value.Type
+}
+
+// Overload is the form an operation has for a receiver key, and its receiver pattern.
+type Overload struct {
+	Form     *Form
+	Receiver Receiver
 }
 
 // Require is a condition on the values of some of a form's arguments.
@@ -162,10 +184,11 @@ var fixtureKinds = []string{"map", "refine", "flatMap", "recover", "getter"}
 type Registry struct {
 	Constructors map[string]*Form
 	Fields       map[string]*Form
-	Operations   map[string][]*Form
-	Encoders     map[string]*Form
-	Properties   map[string]*Form
-	Fixtures     map[string]*Fixture
+	// Operations are the overloads of each operation, by receiver key.
+	Operations map[string]map[ReceiverKey]Overload
+	Encoders   map[string]*Form
+	Properties map[string]*Form
+	Fixtures   map[string]*Fixture
 }
 
 // Load reads the registry under root, each file checked against its schema first.
@@ -193,14 +216,14 @@ var sectionMembers = map[string][]string{
 	"field":       {"doc", "result", "args", "issues", "requires", "symbols_from", "flow"},
 	"operation":   {"name", "doc", "receivers", "result", "args", "issues", "requires", "symbols_from", "flow"},
 	"encoder":     {"doc", "input", "args"},
-	"property":    {"doc", "args"},
+	"property":    {"doc", "input", "args"},
 }
 
 // Parse reads a registry from the text of operations.json and fixtures.json. It does not rely on
 // the schemas: what it accepts without them means what it means with them.
 func Parse(operations, fixtures []byte) (*Registry, error) {
 	r := &Registry{
-		Constructors: map[string]*Form{}, Fields: map[string]*Form{}, Operations: map[string][]*Form{},
+		Constructors: map[string]*Form{}, Fields: map[string]*Form{}, Operations: map[string]map[ReceiverKey]Overload{},
 		Encoders: map[string]*Form{}, Properties: map[string]*Form{}, Fixtures: map[string]*Fixture{},
 	}
 	root, err := jsontext.Parse(operations)
@@ -242,14 +265,20 @@ func Parse(operations, fixtures []byte) (*Registry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("operations.json: operation %s: %w", name, err)
 		}
-		for _, other := range r.Operations[f.Name] {
-			for _, rc := range f.Receivers {
-				if slices.Contains(other.Receivers, rc) {
-					return nil, fmt.Errorf("operations.json: operation %s is defined twice for %s", f.Name, rc)
-				}
-			}
+		overloads := r.Operations[f.Name]
+		if overloads == nil {
+			overloads = map[ReceiverKey]Overload{}
+			r.Operations[f.Name] = overloads
 		}
-		r.Operations[f.Name] = append(r.Operations[f.Name], f)
+		for _, rc := range f.Receivers {
+			if _, dup := overloads[rc.Key]; dup {
+				return nil, fmt.Errorf("operations.json: operation %s applies to %s twice", f.Name, rc.Key)
+			}
+			overloads[rc.Key] = Overload{Form: f, Receiver: rc}
+		}
+		if _, any := overloads[AnyReceiver]; any && len(overloads) > 1 {
+			return nil, fmt.Errorf("operations.json: operation %s applies to every type, and to some types again", f.Name)
+		}
 	}
 	fx, err := jsontext.Parse(fixtures)
 	if err != nil {
@@ -334,7 +363,7 @@ func typeOf(n *jsontext.Node, name string) (value.Type, bool, error) {
 var argKinds = []string{"decoder", "decoders", "fields", "variants", "value", "message", "fixture", "encoder", "properties"}
 
 // typedKinds are the argument kinds that have a type, and only they.
-var typedKinds = []string{"decoder", "decoders", "variants", "value", "encoder"}
+var typedKinds = []string{"decoder", "decoders", "variants", "value", "encoder", "properties"}
 
 func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 	if err := object(n, section, sectionMembers[section]...); err != nil {
@@ -359,15 +388,16 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 	} else if ok {
 		f.Input = t
 	}
-	if f.Receivers, err = strs(n, "receivers"); err != nil {
+	receivers, err := strs(n, "receivers")
+	if err != nil {
 		return nil, err
 	}
-	for _, rc := range f.Receivers {
-		if rc != "*" {
-			if _, err := value.ParseType(rc); err != nil {
-				return nil, err
-			}
+	for _, rc := range receivers {
+		r, err := parseReceiver(rc)
+		if err != nil {
+			return nil, err
 		}
+		f.Receivers = append(f.Receivers, r)
 	}
 	if err := f.parseArgs(section, n); err != nil {
 		return nil, err
@@ -376,10 +406,12 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 		return nil, err
 	} else if ok {
 		i, found := f.arg(from)
-		if f.Result.Kind != value.Symbol || !found || f.Args[i.Index()].Kind != "value" || f.Args[i.Index()].Type.String() != "list<string>" {
+		if f.Result.Kind != value.Symbol || f.Result.Symbols != nil || !found || f.Args[i.Index()].Kind != "value" || f.Args[i.Index()].Type.String() != "list<string>" {
 			return nil, fmt.Errorf("symbols_from %s needs a symbol result and a list<string> value argument %s", from, from)
 		}
 		f.SymbolsFrom = i
+	} else if f.Result.Kind == value.Symbol && f.Result.Symbols == nil {
+		return nil, fmt.Errorf("its result is a symbol, and symbols_from does not say its alternatives")
 	}
 	reqs, err := elems(n, "requires")
 	if err != nil {
@@ -425,7 +457,7 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 		if f.Flow == nil {
 			return nil, fmt.Errorf("it has no flow")
 		}
-	case "encoder":
+	case "encoder", "property":
 		if f.Input.Kind == value.Invalid {
 			return nil, fmt.Errorf("it has no input type")
 		}
@@ -433,7 +465,92 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 	if section == "operation" && len(f.Receivers) == 0 {
 		return nil, fmt.Errorf("it has no receivers")
 	}
+	if err := f.checkBindings(section); err != nil {
+		return nil, err
+	}
 	return f, nil
+}
+
+// parseReceiver reads a receiver pattern: "*", or a type whose outer kind is not a parameter and
+// that does not mention R, which an operation binds to its receiver.
+func parseReceiver(s string) (Receiver, error) {
+	if s == string(AnyReceiver) {
+		return Receiver{Key: AnyReceiver}, nil
+	}
+	t, err := value.ParseType(s)
+	if err != nil {
+		return Receiver{}, err
+	}
+	if t.Kind == value.Param {
+		return Receiver{}, fmt.Errorf("receiver %s is a parameter, which has no kind to apply to", s)
+	}
+	if slices.Contains(t.Params(), "R") {
+		return Receiver{}, fmt.Errorf("receiver %s mentions R, which stands for the whole receiver", s)
+	}
+	return Receiver{Key: ReceiverKey(value.Type{Kind: t.Kind}.String()), Pattern: &t}, nil
+}
+
+// checkBindings checks that every type parameter a form uses has a place where the types a case
+// gives can bind it: the receiver of an operation (R, and the parameters of its pattern), the type
+// of a decoder, decoders, variants, encoder or properties argument, and the input or output of a
+// fixture argument. The result, the type of a value argument, the types an issue binds and the
+// input of an encoder or a property use parameters; a parameter only they mention is one no case
+// could ever bind. Whether a case binds a parameter it could is the case's matter.
+func (f *Form) checkBindings(section string) error {
+	bindable := map[string]bool{}
+	bind := func(t value.Type) {
+		for _, p := range t.Params() {
+			bindable[p] = true
+		}
+	}
+	if section == "operation" {
+		bindable["R"] = true
+		for _, rc := range f.Receivers {
+			if rc.Pattern != nil {
+				bind(*rc.Pattern)
+			}
+		}
+	}
+	for _, a := range f.Args {
+		switch a.Kind {
+		case "decoder", "decoders", "variants", "encoder", "properties":
+			bind(a.Type)
+		case "fixture":
+			bind(a.FixtureInput)
+			if a.FixtureOutput != nil {
+				bind(*a.FixtureOutput)
+			}
+		}
+	}
+	use := func(what string, t value.Type) error {
+		for _, p := range t.Params() {
+			if !bindable[p] {
+				return fmt.Errorf("%s mentions %s, which nothing a case gives can bind", what, p)
+			}
+		}
+		return nil
+	}
+	if err := use("the result", f.Result); err != nil {
+		return err
+	}
+	if err := use("the input", f.Input); err != nil {
+		return err
+	}
+	for _, a := range f.Args {
+		if a.Kind == "value" {
+			if err := use("argument "+a.Name, a.Type); err != nil {
+				return err
+			}
+		}
+	}
+	for _, ref := range f.Issues {
+		for _, p := range slices.Sorted(maps.Keys(ref.Bind)) {
+			if err := use("issue "+ref.Key+" binding "+p, ref.Bind[p]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // parseArgs reads a form's arguments: each name once, at most one message argument, and optional
@@ -625,6 +742,9 @@ func parseIssueRef(n *jsontext.Node) (IssueRef, error) {
 	case jsontext.String:
 		ref.Key = n.Text
 	case jsontext.Object:
+		if _, ok := n.Get("key"); !ok {
+			return ref, fmt.Errorf("an issue reference has no key")
+		}
 	default:
 		return ref, fmt.Errorf("an issue reference is a key or an object")
 	}
@@ -667,7 +787,7 @@ func parseIssueRef(n *jsontext.Node) (IssueRef, error) {
 		}
 	}
 	if ref.Key == "" {
-		return ref, fmt.Errorf("an issue reference has no key")
+		return ref, fmt.Errorf("an issue reference has an empty key")
 	}
 	return ref, nil
 }
@@ -699,6 +819,11 @@ func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 		return nil, err
 	} else if ok {
 		f.Output = &out
+	}
+	if f.Output != nil {
+		if err := fixtureParams("the output", *f.Output, in); err != nil {
+			return nil, err
+		}
 	}
 	if (f.Output == nil) != (f.Kind == "refine") {
 		return nil, fmt.Errorf("a %s fixture %s an output type", f.Kind, map[bool]string{true: "has no", false: "has"}[f.Kind == "refine"])
@@ -732,11 +857,14 @@ func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 				if err != nil {
 					return nil, err
 				}
+				if err := fixtureParams("meta "+m.Name, t, in); err != nil {
+					return nil, err
+				}
 				fi.Meta[m.Name] = t
 			}
 		}
-		if fi.Code == "" || fi.Key == "" || fi.Message == "" {
-			return nil, fmt.Errorf("the issue needs a code, a message_key and a message")
+		if fi.Code == "" || fi.Key == "" {
+			return nil, fmt.Errorf("the issue needs a non-empty code and message_key")
 		}
 		if values, ok := is.Get("values"); ok {
 			if values.Kind != jsontext.Object {
@@ -762,6 +890,17 @@ func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 	return f, nil
 }
 
+// fixtureParams checks that a type of a fixture mentions only parameters of its input: a fixture
+// takes one value, so once its input is known, its output and its issue's metadata are too.
+func fixtureParams(what string, t, input value.Type) error {
+	for _, p := range t.Params() {
+		if !slices.Contains(input.Params(), p) {
+			return fmt.Errorf("%s mentions %s, which the input does not", what, p)
+		}
+	}
+	return nil
+}
+
 // Features returns every feature ID the registry defines, sorted.
 func (r *Registry) Features() []string {
 	var ids []string
@@ -771,11 +910,9 @@ func (r *Registry) Features() []string {
 	for name := range r.Fields {
 		ids = append(ids, "field."+name)
 	}
-	for name, forms := range r.Operations {
-		for _, f := range forms {
-			for _, rc := range f.Receivers {
-				ids = append(ids, operationFeature(rc, name))
-			}
+	for name, overloads := range r.Operations {
+		for key := range overloads {
+			ids = append(ids, operationFeature(key, name))
 		}
 	}
 	for name := range r.Encoders {
@@ -791,11 +928,10 @@ func (r *Registry) Features() []string {
 	return ids
 }
 
-// operationFeature names the feature of an operation on receivers of a pattern.
-func operationFeature(receiver, name string) string {
-	if receiver == "*" {
+// operationFeature names the feature of an operation's overload for a receiver key.
+func operationFeature(key ReceiverKey, name string) string {
+	if key == AnyReceiver {
 		return "operation.any." + name
 	}
-	t := value.MustParseType(receiver)
-	return "operation." + value.Type{Kind: t.Kind}.String() + "." + name
+	return "operation." + string(key) + "." + name
 }

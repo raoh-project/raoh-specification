@@ -9,7 +9,10 @@ Fixtures are part of the suite, not of Raoh. A Raoh implementation has no fixtur
 each one out of the implementation's own functions and passes it where the case names it.
 
 Each fixture has a kind, which says where it may be used, an input type and, except for `refine`, an
-output type. Types may have parameters: `first` takes a `product<T>` for any `T`.
+output type. Types may have parameters: `first` takes a `product<T>` for any `T`. A fixture takes one
+value, so its output type and the metadata types of its issue mention only parameters of its input:
+once the input is known, so are they. Where a case uses a generic fixture, its issue's metadata has
+the types its parameters take there.
 
 | Kind | Used by | Meaning |
 |------|---------|---------|
@@ -24,7 +27,8 @@ output type. Types may have parameters: `first` takes a `product<T>` for any `T`
 A `refine` or `flatMap` fixture declares the issue it gives: its code, message key, message and
 metadata types, and for `flatMap` the path, relative to the path the decoder runs at, where it gives
 it. `values` says where each metadata value comes from: `"input"` is the value the fixture was
-given. The message is given, not derived (see [issues.md](issues.md#messages)).
+given. The message is given, not derived (see [issues.md](issues.md#messages)); the empty string is
+a message like any other.
 
 A runner implements such a fixture as a user of the implementation would write it, with whatever
 the implementation offers for a custom issue, so that the issue has exactly the declared parts.

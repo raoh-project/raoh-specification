@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"slices"
 	"strconv"
@@ -97,7 +98,7 @@ func gives(t *testing.T, c *Checker, form, input string, issues ...string) bool 
 	d := decoder(t, c, form)
 	fit := func(i int, slot Slot) (string, bool) {
 		want := JoinPath(slot.Path) + " " + slot.Key
-		return slot.Group, issues[i] == want
+		return fmt.Sprintf("%p", slot.Group), issues[i] == want
 	}
 	return len(ParseIssues(d.Flow, jsontext.MustParse(input), nil, len(issues), fit)) > 0
 }
@@ -459,7 +460,7 @@ func TestTheFlowLanguageHasNoAlt(t *testing.T) {
 // default, a message argument left out gives no message, and nothing else can be left out.
 func TestLeftOutArgumentsHaveMeanings(t *testing.T) {
 	c := checker(t)
-	f := c.Registry().Operations["normalize"][0]
+	f := c.Registry().Operations["normalize"]["string"].Form
 	ca, err := c.newState().args(f, nil, map[string]value.Type{"R": value.Of(value.String)})
 	if err != nil {
 		t.Fatal(err)
@@ -467,11 +468,83 @@ func TestLeftOutArgumentsHaveMeanings(t *testing.T) {
 	if v, ok := ca.values[argRef(0)]; !ok || v.Str != "NFC" {
 		t.Errorf("normalize without a form reads %v (%v)", v, ok)
 	}
-	f = c.Registry().Operations["toInt"][0]
+	f = c.Registry().Operations["toInt"]["string"].Form
 	ca, err = c.newState().args(f, nil, map[string]value.Type{"R": value.Of(value.String)})
 	if err != nil || ca.message != nil {
 		t.Errorf("toInt without a message gives the message %v (%v)", ca.message, err)
 	}
 	decoder(t, c, `["string", ["normalize"]]`)
 	rejected(t, c, `["int", ["refine"]]`, "refine takes 1 to 1 argument(s), found 0")
+}
+
+// checkerWith is the checker for the catalogues with fixtures added.
+func checkerWith(t *testing.T, fixtures doc) *Checker {
+	t.Helper()
+	fx := readDoc(t, "../../catalog/fixtures.json")
+	for name, f := range fixtures {
+		fx[name] = f
+	}
+	ops, _ := os.ReadFile("../../catalog/operations.json")
+	reg, err := Parse(ops, encode(t, fx))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat, err := catalog.Load("../..", schemasFor(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := NewChecker(reg, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// A generic fixture's issue has the types its parameters take where it is used.
+func TestFixtureIssuesAreInstantiated(t *testing.T) {
+	c := checkerWith(t, doc{
+		"nonzero_any": doc{"kind": "refine", "doc": "x", "input": "T",
+			"issue": doc{"code": "invalid_value", "message_key": "invalid_value", "message": "", "meta": doc{"actual": "list<T>"}}},
+	})
+	for form, want := range map[string]string{
+		`["int", ["refine", "nonzero_any"]]`:              "list<int32>",
+		`["list", ["string"], ["refine", "nonzero_any"]]`: "list<list<string>>",
+	} {
+		site := issue(t, decoder(t, c, form), "invalid_value")
+		if got := site.Meta["actual"].String(); got != want {
+			t.Errorf("%s: actual is a %s, want %s", form, got, want)
+		}
+		if site.Message == nil || *site.Message != "" {
+			t.Errorf("%s: the fixture gives the empty message, not %v", form, site.Message)
+		}
+	}
+}
+
+// A property reads the type its declared input takes, and the properties of an object encoder
+// the type of their argument: no parameter name means anything by itself.
+func TestPropertiesReadTheirDeclaredInput(t *testing.T) {
+	checked, err := checker(t).CheckEncoder(jsontext.MustParse(`["object", [["propertyWithDefault", "value", "identity", ["string"], "default"]]]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := checked.Result.String(); got != "nullable<string>" {
+		t.Errorf("the object encodes a %s", got)
+	}
+}
+
+// The overload of an operation is the one for the receiver's kind, whatever order
+// operations.json lists them in, and the feature is that overload's.
+func TestOverloadsAreChosenByKind(t *testing.T) {
+	c := checker(t)
+	for form, feature := range map[string]string{
+		`["int", ["min", 1]]`:               "operation.int32.min",
+		`["decimal", ["min", "1"]]`:         "operation.decimal.min",
+		`["list", ["int"], ["minSize", 1]]`: "operation.list.minSize",
+		`["string", ["minLength", 1]]`:      "operation.string.minLength",
+		`["int", ["refine", "even"]]`:       "operation.any.refine",
+	} {
+		if d := decoder(t, c, form); !slices.Contains(d.Features, feature) {
+			t.Errorf("%s needs %v, not %s", form, d.Features, feature)
+		}
+	}
 }
