@@ -218,29 +218,69 @@ func parseCase(file, profile string, n *jsontext.Node, chk *dsl.Checker) (*Case,
 }
 
 // Expect finds the possible issue an issue is an instance of, types its metadata, and settles its
-// message.
+// message. An issue that more than one possible issue fits, with different types or messages, is
+// ambiguous: which one a runner gives depends on where in the decoder it arises, which the case
+// does not say.
 func Expect(is Issue, checked *dsl.Checked, cat *catalog.Catalog) (ExpectedIssue, error) {
+	var fits []ExpectedIssue
 	var tried []string
 	for _, p := range checked.Issues {
 		if p.Key != is.Key {
 			continue
 		}
 		e, err := instance(is, p, cat)
-		if err == nil {
-			return e, nil
+		if err != nil {
+			tried = append(tried, err.Error())
+			continue
 		}
-		tried = append(tried, err.Error())
+		fits = append(fits, e)
 	}
-	if len(tried) == 0 {
-		return ExpectedIssue{}, fmt.Errorf("the decoder cannot give %s", is.Key)
+	if len(fits) == 0 {
+		if len(tried) == 0 {
+			return ExpectedIssue{}, fmt.Errorf("the decoder cannot give %s", is.Key)
+		}
+		return ExpectedIssue{}, fmt.Errorf("%s", strings.Join(tried, "; "))
 	}
-	return ExpectedIssue{}, fmt.Errorf("%s", strings.Join(tried, "; "))
+	for _, other := range fits[1:] {
+		if other.Message != fits[0].Message || !sameTypes(other.Meta, fits[0].Meta) {
+			return ExpectedIssue{}, fmt.Errorf("%s is ambiguous: the decoder can give it with metadata typed %s or %s; write the case so that only one fits", is.Key, typesOf(fits[0].Meta), typesOf(other.Meta))
+		}
+	}
+	return fits[0], nil
+}
+
+func sameTypes(a, b map[string]value.Value) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		w, ok := b[k]
+		if !ok || !v.Type.Same(w.Type) {
+			return false
+		}
+	}
+	return true
+}
+
+func typesOf(m map[string]value.Value) string {
+	var parts []string
+	for k, v := range m {
+		parts = append(parts, k+":"+v.Type.String())
+	}
+	sort.Strings(parts)
+	return "{" + strings.Join(parts, ",") + "}"
 }
 
 func instance(is Issue, p dsl.Possible, cat *catalog.Catalog) (ExpectedIssue, error) {
 	e := ExpectedIssue{Issue: is, Possible: p, Meta: map[string]value.Value{}}
 	if is.Code != p.Code {
 		return e, fmt.Errorf("%s has code %s, not %s", is.Key, p.Code, is.Code)
+	}
+	if len(p.Path) > 0 {
+		segs, _ := SplitPath(is.Path)
+		if len(segs) < len(p.Path) || !slices.Equal(segs[len(segs)-len(p.Path):], p.Path) {
+			return e, fmt.Errorf("%s is given at %s below the decoder, and %q does not end so", is.Key, JoinPath(p.Path), is.Path)
+		}
 	}
 	for _, m := range is.Meta.Members {
 		t, ok := p.Meta[m.Name]
@@ -253,16 +293,25 @@ func instance(is Issue, p dsl.Possible, cat *catalog.Catalog) (ExpectedIssue, er
 		}
 		e.Meta[m.Name] = v
 	}
+	for name, want := range p.Fixed {
+		got, ok := is.Meta.Get(name)
+		if !ok || !value.EqualJSON(want, got) {
+			return e, fmt.Errorf("%s from this form always has %s %s", is.Key, name, want.Raw)
+		}
+	}
 	for name := range p.Meta {
 		if _, ok := e.Meta[name]; !ok && !slices.Contains(p.Optional, name) {
 			return e, fmt.Errorf("%s needs metadata %s", is.Key, name)
 		}
 	}
 	switch {
-	case is.Message != nil:
-		e.Message = *is.Message
 	case p.Message != "":
-		return e, fmt.Errorf("%s is given by a fixture, whose message the case has to write", is.Key)
+		if is.Message == nil || *is.Message != p.Message {
+			return e, fmt.Errorf("%s is given the message %q, which the case has to write", is.Key, p.Message)
+		}
+		e.Message = p.Message
+	case is.Message != nil:
+		return e, fmt.Errorf("the message of %s is derived from the catalogue; leave it out", is.Key)
 	default:
 		m, err := Derive(is.Key, is.Code, e.Meta, cat)
 		if err != nil {

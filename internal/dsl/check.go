@@ -19,9 +19,13 @@ type Possible struct {
 	Meta map[string]value.Type
 	// Optional are the entries it may leave out.
 	Optional []string
-	// Message is the message a fixture gives its issue; empty when the message is derived or given
-	// by a message argument.
+	// Message is the message the issue is given, by a message argument or by the fixture that
+	// creates it; empty when the message is derived.
 	Message string
+	// Path is where a flatMap fixture gives its issue, relative to where the decoder runs.
+	Path []string
+	// Fixed are metadata values the form always gives.
+	Fixed map[string]*jsontext.Node
 }
 
 // Checked is what type-checking a decoder or encoder form finds.
@@ -153,7 +157,7 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, error) {
 	if err := concrete(result, name); err != nil {
 		return value.Type{}, err
 	}
-	if err := s.addIssues(name, f.Issues, bound); err != nil {
+	if err := s.addIssues(name, f.Issues, bound, ""); err != nil {
 		return value.Type{}, err
 	}
 	for _, step := range n.Elems[1+len(f.Args):] {
@@ -227,11 +231,17 @@ func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, er
 	if err := s.args(name, f.Args[:len(given)], given, bound, nil); err != nil {
 		return value.Type{}, fmt.Errorf("%s: %w", name, err)
 	}
+	message := ""
+	for i, a := range f.Args[:len(given)] {
+		if a.Kind == "message" {
+			message = given[i].Text
+		}
+	}
 	result := f.Result.Subst(bound)
 	if err := concrete(result, name); err != nil {
 		return value.Type{}, err
 	}
-	if err := s.addIssues(name, f.Issues, bound); err != nil {
+	if err := s.addIssues(name, f.Issues, bound, message); err != nil {
 		return value.Type{}, err
 	}
 	return result, nil
@@ -418,17 +428,22 @@ func (s *state) fixture(a Arg, n *jsontext.Node, bound map[string]value.Type) er
 		}
 	}
 	if fx.Issue != nil {
-		s.add(Possible{Key: fx.Issue.Key, Code: fx.Issue.Code, Meta: fx.Issue.Meta, Message: fx.Issue.Message})
+		p := Possible{Key: fx.Issue.Key, Code: fx.Issue.Code, Meta: fx.Issue.Meta, Message: fx.Issue.Message}
+		if fx.Kind == "flatMap" {
+			p.Path = fx.Issue.Path
+		}
+		s.add(p)
 	}
 	return nil
 }
 
-func (s *state) addIssues(owner string, refs []IssueRef, bound map[string]value.Type) error {
+func (s *state) addIssues(owner string, refs []IssueRef, bound map[string]value.Type, message string) error {
 	for _, ref := range refs {
 		p, err := s.Possible(ref, bound)
 		if err != nil {
 			return fmt.Errorf("%s: %w", owner, err)
 		}
+		p.Message = message
 		s.add(p)
 	}
 	return nil
@@ -455,7 +470,16 @@ func (c *Checker) Possible(ref IssueRef, bound map[string]value.Type) (Possible,
 	if err != nil {
 		return Possible{}, err
 	}
-	p := Possible{Key: v.Key, Code: v.Code, Meta: meta}
+	p := Possible{Key: v.Key, Code: v.Code, Meta: meta, Fixed: ref.Fixed}
+	for name, n := range ref.Fixed {
+		t, ok := meta[name]
+		if !ok {
+			return Possible{}, fmt.Errorf("issue %s has no metadata %s to fix", ref.Key, name)
+		}
+		if _, err := value.Observe(t, n); err != nil {
+			return Possible{}, fmt.Errorf("issue %s: fixed %s: %w", ref.Key, name, err)
+		}
+	}
 	for _, o := range ref.Omit {
 		if _, ok := meta[o]; !ok {
 			return Possible{}, fmt.Errorf("issue %s has no metadata %s to omit", ref.Key, o)
@@ -472,11 +496,24 @@ func (c *Checker) Possible(ref IssueRef, bound map[string]value.Type) (Possible,
 
 func (s *state) add(p Possible) {
 	for _, q := range s.issues {
-		if q.Key == p.Key && q.Message == p.Message && sameMeta(q.Meta, p.Meta) && slices.Equal(q.Optional, p.Optional) {
+		if q.Key == p.Key && q.Message == p.Message && sameMeta(q.Meta, p.Meta) && slices.Equal(q.Optional, p.Optional) && slices.Equal(q.Path, p.Path) && sameFixed(q.Fixed, p.Fixed) {
 			return
 		}
 	}
 	s.issues = append(s.issues, p)
+}
+
+func sameFixed(a, b map[string]*jsontext.Node) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, n := range a {
+		m, ok := b[k]
+		if !ok || !value.EqualJSON(n, m) {
+			return false
+		}
+	}
+	return true
 }
 
 func sameMeta(a, b map[string]value.Type) bool {

@@ -14,8 +14,9 @@ The message key identifies the variant. `catalog/issues.json` lists every varian
 the decoder language produce, with its code and the type of each metadata entry. A variant may
 have type parameters: `out_of_range.minimum` has `min` and `actual` of type `T`, and `T` is the
 type of the value being checked (`int32` for `int().min(1)`, `float64` for `double().min(0.5)`).
-`catalog/operations.json` says, for each operation, which variants it produces and what their type
-parameters are. Some variants leave some metadata out in some contexts; `optional_meta` lists those
+`catalog/operations.json` says, for each operation, which variants it produces, what their type
+parameters are, and which metadata values it always gives (the `expected` of the type mismatch
+`int` gives is always `"integer"`). Some variants leave some metadata out in some contexts; `optional_meta` lists those
 entries. Every other entry is always present.
 
 An issue's metadata has exactly the entries of its variant, and each is compared as a value of its
@@ -35,8 +36,10 @@ A given message is one the user of the library supplied, such as the `"bad"` of
 the catalogue says. An implementation's message resolver, applied later by its user, leaves a given
 message alone.
 
-A case writes an issue without `message` when the message is derived, and with it when the message
-is given. A runner always writes the message its implementation gave. The verifier derives the
+A case writes an issue without `message` when the message is derived, and with it, exactly as it is
+given, when the message is given. `raoh-verify check-suite` rejects a case that writes a derived
+message, or that leaves out or changes a given one. An issue that two parts of a decoder could give
+with different types or messages is ambiguous, and a case that expects one is rejected too. A runner always writes the message its implementation gave. The verifier derives the
 message the case leaves out and compares it with what the runner wrote.
 
 ### Message forms

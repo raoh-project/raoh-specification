@@ -37,6 +37,8 @@ type IssueRef struct {
 	Key  string
 	Bind map[string]value.Type
 	Omit []string
+	// Fixed are metadata values the form always gives, such as the expected of a type mismatch.
+	Fixed map[string]*jsontext.Node
 }
 
 // Form describes a constructor, field, operation, encoder or property.
@@ -319,6 +321,14 @@ func parseIssueRef(n *jsontext.Node) (IssueRef, error) {
 			for _, e := range m.Value.Elems {
 				ref.Omit = append(ref.Omit, e.Text)
 			}
+		case m.Name == "meta":
+			if m.Value.Kind != jsontext.Object {
+				return ref, fmt.Errorf("meta must be an object")
+			}
+			ref.Fixed = map[string]*jsontext.Node{}
+			for _, f := range m.Value.Members {
+				ref.Fixed[f.Name] = f.Value
+			}
 		default:
 			t, err := value.ParseType(m.Value.Text)
 			if err != nil {
@@ -372,6 +382,19 @@ func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 		}
 		if fi.Code == "" || fi.Key == "" || fi.Message == "" {
 			return nil, fmt.Errorf("the issue needs a code, a message_key and a message")
+		}
+		if values, ok := is.Get("values"); ok {
+			for _, m := range values.Members {
+				if _, ok := fi.Meta[m.Name]; !ok {
+					return nil, fmt.Errorf("values gives %s, which meta does not have", m.Name)
+				}
+				if m.Value.Kind != jsontext.String || m.Value.Text != "input" {
+					return nil, fmt.Errorf(`values: the only source of a value is "input"`)
+				}
+			}
+		}
+		if len(fi.Path) > 0 && f.Kind != "flatMap" {
+			return nil, fmt.Errorf("only a flatMap fixture gives its issue a path")
 		}
 		f.Issue = fi
 	}

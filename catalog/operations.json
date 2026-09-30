@@ -3,61 +3,61 @@
     "string": {
       "doc": "Accepts a JSON string. Null or an absent value gives required; any other kind gives type_mismatch with expected \"string\".",
       "result": "string",
-      "issues": ["required", "type_mismatch"]
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "string"}}]
     },
     "int": {
       "doc": "Accepts a JSON number written as an integer (no fraction, no exponent) within the int32 range. Null or absent gives required; another kind, or a number with a fraction or an exponent, gives type_mismatch with expected \"integer\"; an integer outside the range gives type_mismatch.numeric_range.",
       "result": "int32",
-      "issues": ["required", "type_mismatch", "type_mismatch.numeric_range"]
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "integer"}}, {"key": "type_mismatch.numeric_range", "meta": {"expected": "integer"}}]
     },
     "long": {
-      "doc": "As int, within the int64 range, with expected \"long\" for the range.",
+      "doc": "As int, within the int64 range, with expected \"long\".",
       "result": "int64",
-      "issues": ["required", "type_mismatch", "type_mismatch.numeric_range"]
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "long"}}, {"key": "type_mismatch.numeric_range", "meta": {"expected": "long"}}]
     },
     "float": {
-      "doc": "Accepts any JSON number and rounds it to the nearest float32; a number whose magnitude rounds beyond the float32 range gives type_mismatch.numeric_range. The number -0 written without a fraction or an exponent is the integer zero and gives +0.",
+      "doc": "Accepts any JSON number and rounds it to the nearest float32; a number whose magnitude rounds beyond the float32 range gives type_mismatch.numeric_range; both type mismatches have expected \"float\". The number -0 written without a fraction or an exponent is the integer zero and gives +0.",
       "result": "float32",
-      "issues": ["required", "type_mismatch", "type_mismatch.numeric_range"]
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "float"}}, {"key": "type_mismatch.numeric_range", "meta": {"expected": "float"}}]
     },
     "double": {
-      "doc": "As float, with float64.",
+      "doc": "As float, with float64 and expected \"double\".",
       "result": "float64",
-      "issues": ["required", "type_mismatch", "type_mismatch.numeric_range"]
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "double"}}, {"key": "type_mismatch.numeric_range", "meta": {"expected": "double"}}]
     },
     "decimal": {
-      "doc": "Accepts any JSON number, keeping the scale its lexeme gives.",
+      "doc": "Accepts any JSON number, keeping the scale its lexeme gives. Another kind gives type_mismatch with expected \"number\".",
       "result": "decimal",
-      "issues": ["required", "type_mismatch"]
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "number"}}]
     },
     "bool": {
       "doc": "Accepts a JSON boolean.",
       "result": "bool",
-      "issues": ["required", "type_mismatch"]
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "boolean"}}]
     },
     "list": {
       "doc": "Accepts a JSON array and decodes each element with the element decoder at the path of its index. The issues of every failing element are given, in index order.",
       "args": [{"name": "element", "kind": "decoder", "type": "T"}],
       "result": "list<T>",
-      "issues": ["required", "type_mismatch"]
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "array"}}]
     },
     "dict": {
       "doc": "Accepts a JSON object and decodes each member's value with the value decoder at the path of its name.",
       "args": [{"name": "value", "kind": "decoder", "type": "T"}],
       "result": "map<T>",
-      "issues": ["required", "type_mismatch"]
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "object"}}]
     },
     "object": {
       "doc": "Decodes each field from the same input, in the order the fields are declared, and gives the product of their values. Each field checks for itself that the input is an object: a required field of a non-object input gives type_mismatch (expected \"object\") at the field's path, and an optional field reads a non-object input as not having the field. The issues of every failing field are given, in declaration order.",
       "args": [{"name": "fields", "kind": "fields"}],
       "result": "product",
-      "issues": ["required", "type_mismatch"]
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "object"}}]
     },
     "strictObject": {
       "doc": "As object, and in addition gives unknown_field, at the member's path, for every member of an object input that no field names, in the order of the input's members.",
       "args": [{"name": "fields", "kind": "fields"}],
       "result": "product",
-      "issues": ["required", "type_mismatch", "unknown_field"],
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "object"}}, "unknown_field"],
       "issue_order": "input"
     },
     "strict": {
@@ -101,7 +101,7 @@
         {"name": "variants", "kind": "variants", "type": "T"}
       ],
       "result": "T",
-      "issues": ["required", "type_mismatch", {"key": "not_allowed", "T": "string", "omit": ["actual"]}]
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "object"}}, {"key": "not_allowed", "T": "string", "omit": ["actual"]}]
     },
     "discriminateBy": {
       "doc": "As discriminate, except that the tag is what the tag decoder gives for the whole input; the tag decoder's issues are given as they are. A tag that names no variant gives not_allowed at the tag field's path, as discriminate does.",
@@ -223,16 +223,16 @@
     {"name": "uuid", "receivers": ["string"], "result": "uuid", "issues": ["invalid_format.uuid"], "doc": "Reads a UUID."},
     {"name": "url", "receivers": ["string"], "result": "uri", "issues": ["invalid_format.url"], "doc": "Reads an absolute URL."},
     {"name": "uri", "receivers": ["string"], "result": "uri", "issues": ["invalid_format.uri"], "doc": "Reads a URI reference."},
-    {"name": "toInt", "receivers": ["string"], "result": "int32", "issues": ["type_mismatch", "type_mismatch.numeric_range"],
+    {"name": "toInt", "receivers": ["string"], "result": "int32", "issues": [{"key": "type_mismatch", "meta": {"expected": "integer"}}, {"key": "type_mismatch.numeric_range", "meta": {"expected": "integer"}}],
      "args": [{"name": "message", "kind": "message", "optional": true}],
      "doc": "Reads an optional sign (+ or -) followed by one or more ASCII digits, leading zeros allowed, with nothing else. Anything else gives type_mismatch with expected \"integer\"; an integer outside int32 gives type_mismatch.numeric_range. A message, when given, is the message of either issue."},
-    {"name": "toLong", "receivers": ["string"], "result": "int64", "issues": ["type_mismatch", "type_mismatch.numeric_range"],
+    {"name": "toLong", "receivers": ["string"], "result": "int64", "issues": [{"key": "type_mismatch", "meta": {"expected": "long"}}, {"key": "type_mismatch.numeric_range", "meta": {"expected": "long"}}],
      "args": [{"name": "message", "kind": "message", "optional": true}],
      "doc": "As toInt, for int64, with expected \"long\"."},
-    {"name": "toDecimal", "receivers": ["string"], "result": "decimal", "issues": ["type_mismatch"],
+    {"name": "toDecimal", "receivers": ["string"], "result": "decimal", "issues": [{"key": "type_mismatch", "meta": {"expected": "decimal"}}],
      "args": [{"name": "message", "kind": "message", "optional": true}],
      "doc": "Reads a decimal number matching [+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?, keeping the scale it is written with; anything else, and an exponent the scale cannot hold, gives type_mismatch with expected \"decimal\"."},
-    {"name": "toBool", "receivers": ["string"], "result": "bool", "issues": ["type_mismatch"],
+    {"name": "toBool", "receivers": ["string"], "result": "bool", "issues": [{"key": "type_mismatch", "meta": {"expected": "boolean"}}],
      "args": [{"name": "message", "kind": "message", "optional": true}],
      "doc": "Reads true, 1, yes or on as true and false, 0, no or off as false, ASCII case-insensitively; anything else gives type_mismatch with expected \"boolean\"."},
     {"name": "iso8601", "receivers": ["string"], "result": "instant", "issues": ["invalid_format.instant"], "doc": "Reads an instant."},

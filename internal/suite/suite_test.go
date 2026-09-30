@@ -144,3 +144,27 @@ func TestPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestMessagesMustBeWhereTheyAreGiven(t *testing.T) {
+	rejected(t, "core", `[{"id": "a.b", "decoder": ["int", ["min", 1]], "input": 0,
+		"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "message": "anything", "meta": {"min": 1, "actual": 0}}]}]`, "derived")
+	rejected(t, "core", `[{"id": "a.b", "decoder": ["string", ["toInt", "bad"]], "input": "x",
+		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer"}}]}]`, `"bad"`)
+	rejected(t, "core", `[{"id": "a.b", "decoder": ["string", ["toInt", "bad"]], "input": "x",
+		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "message": "worse", "meta": {"expected": "integer"}}]}]`, `"bad"`)
+	rejected(t, "core", `[{"id": "a.b", "decoder": ["int", ["refine", "even"]], "input": 3,
+		"issues": [{"path": "", "code": "must_be_even", "message_key": "must_be_even", "message": "totally different", "meta": {"actual": 3}}]}]`, `"must be even"`)
+	rejected(t, "core", `[{"id": "a.b", "decoder": ["object", [["field", "start", ["int"]], ["field", "end", ["int"]]], ["flatMap", "ordered_period"]],
+		"input": {"start": 3, "end": 2},
+		"issues": [{"path": "/zzz", "code": "invalid_value", "message_key": "invalid_value", "message": "end is before start", "meta": {}}]}]`, "/end")
+	accepted(t, "core", `[{"id": "a.b", "decoder": ["object", [["field", "id", ["int"]], ["field", "period",
+		["object", [["field", "start", ["int"]], ["field", "end", ["int"]]], ["flatMap", "ordered_period"]]]]],
+		"input": {"id": 1, "period": {"start": 3, "end": 2}},
+		"issues": [{"path": "/period/end", "code": "invalid_value", "message_key": "invalid_value", "message": "end is before start", "meta": {}}]}]`)
+}
+
+func TestAnIssueThatFitsTwoTypingsIsRejected(t *testing.T) {
+	rejected(t, "core", `[{"id": "a.b", "decoder": ["object", [["field", "a", ["int", ["oneOf", [1, 2]]]], ["field", "b", ["double", ["oneOf", [1, 2]]]]]],
+		"input": {"a": 1, "b": 3},
+		"issues": [{"path": "/b", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": [1, 2], "actual": 3}}]}]`, "ambiguous")
+}
