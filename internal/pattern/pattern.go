@@ -67,6 +67,16 @@ type reader struct {
 	at        int
 	depth     int
 	construct int
+	// past is the first limit met in the text, which is the answer only once the whole of it has
+	// been read and found to be a pattern.
+	past *refusal
+}
+
+// beyond notes a limit met in the text, keeping the first.
+func (r *reader) beyond(why string, from, to int) {
+	if r.past == nil {
+		r.past = &refusal{why, string(r.text[from:min(to, len(r.text))])}
+	}
 }
 
 // Read reports whether text is an admissible pattern, and if it is not, why: it is no pattern, or
@@ -92,6 +102,10 @@ func Read(text string) (err error) {
 	}
 	if !placed(w, yes, yes) {
 		return refusal{"an anchor whose answer would turn on the string matched", text}
+	}
+	// A limit is about a pattern, so it is the answer only now that the text is known to be one.
+	if r.past != nil {
+		return *r.past
 	}
 	if plus(1, states(w)) > MostStates {
 		return refusal{fmt.Sprintf("more than %d states once its repetitions are written out", MostStates), text}
@@ -222,20 +236,23 @@ func (r *reader) quantified() written {
 		least, most = 1, noCeiling
 	case '{':
 		r.take()
-		least = r.count()
-		most = least
+		floor := r.count()
+		least, most = floor.held, floor.held
 		if r.peek() == ',' {
 			r.take()
 			if r.peek() == '}' {
 				most = noCeiling
 			} else {
-				most = r.count()
+				ceiling := r.count()
+				// Compared as written, since either may be past what a count is held at.
+				if ceiling.below(floor) {
+					r.expect('}')
+					r.refuse("a count this cannot read", r.at)
+				}
+				most = ceiling.held
 			}
 		}
 		r.expect('}')
-		if most != noCeiling && most < least {
-			r.refuse("a count this cannot read", r.at)
-		}
 	default:
 		return one
 	}
@@ -293,7 +310,7 @@ func (r *reader) group() written {
 		r.take()
 	}
 	if r.depth++; r.depth > Deepest {
-		panic(refusal{fmt.Sprintf("groups nest deeper than %d", Deepest), string(r.text)})
+		r.beyond(fmt.Sprintf("groups nest deeper than %d", Deepest), r.construct, r.at)
 	}
 	inside := r.alternation()
 	r.depth--
@@ -486,19 +503,38 @@ func hexDigit(c rune) int {
 	return -1
 }
 
-func (r *reader) count() int {
-	value, digits := 0, 0
+func (r *reader) count() count {
+	from := r.at
+	value := 0
 	for !r.done() && r.peek() >= '0' && r.peek() <= '9' {
 		value = min(MostCount+1, value*10+int(r.take()-'0'))
-		digits++
 	}
-	if digits == 0 {
+	if r.at == from {
 		r.refuse("a count this cannot read", r.at)
 	}
 	if value > MostCount {
-		r.refuse(fmt.Sprintf("a count past the limit of %d", MostCount), r.at)
+		r.beyond(fmt.Sprintf("a count past the limit of %d", MostCount), from, r.at)
 	}
-	return value
+	digits := strings.TrimLeft(string(r.text[from:r.at]), "0")
+	if digits == "" {
+		digits = "0"
+	}
+	return count{digits, value}
+}
+
+// count is a count as written, its digits without leading zeros, and the value it is held at: one
+// past MostCount where it is past that.
+type count struct {
+	digits string
+	held   int
+}
+
+// below reports whether c is a smaller number than other, compared as written.
+func (c count) below(other count) bool {
+	if len(c.digits) != len(other.digits) {
+		return len(c.digits) < len(other.digits)
+	}
+	return c.digits < other.digits
 }
 
 // where is whether an anchor stands at the end it asks about, as far as the pattern's shape says.
