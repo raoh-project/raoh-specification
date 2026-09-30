@@ -480,11 +480,21 @@ func TestLeftOutArgumentsHaveMeanings(t *testing.T) {
 // checkerWith is the checker for the catalogues with fixtures added.
 func checkerWith(t *testing.T, fixtures doc) *Checker {
 	t.Helper()
+	return checkerWithOps(t, nil, fixtures)
+}
+
+// checkerWithOps is the checker for the catalogues with operations and fixtures added.
+func checkerWithOps(t *testing.T, operations []doc, fixtures doc) *Checker {
+	t.Helper()
 	fx := readDoc(t, "../../catalog/fixtures.json")
 	for name, f := range fixtures {
 		fx[name] = f
 	}
-	ops, _ := os.ReadFile("../../catalog/operations.json")
+	od := readDoc(t, "../../catalog/operations.json")
+	for _, o := range operations {
+		od["operations"] = append(od["operations"].([]any), o)
+	}
+	ops := encode(t, od)
 	reg, err := Parse(ops, encode(t, fx))
 	if err != nil {
 		t.Fatal(err)
@@ -546,5 +556,43 @@ func TestOverloadsAreChosenByKind(t *testing.T) {
 		if d := decoder(t, c, form); !slices.Contains(d.Features, feature) {
 			t.Errorf("%s needs %v, not %s", form, d.Features, feature)
 		}
+	}
+}
+
+// A fixture binds the types it takes and gives before the values of a form are read, and fixtures
+// bind each other's types whatever order the form lists them in.
+func TestFixturesBindTypesInAnyOrder(t *testing.T) {
+	mapArg := func(name, in, out string) doc {
+		return doc{"name": name, "kind": "fixture", "fixture": "map", "input": in, "output": out}
+	}
+	value := func(name, typ string) doc { return doc{"name": name, "kind": "value", "type": typ} }
+	op := func(name, result string, args ...doc) doc {
+		as := []any{}
+		for _, a := range args {
+			as = append(as, a)
+		}
+		return doc{"name": name, "doc": "x", "receivers": []any{"*"}, "result": result, "args": as, "issues": []any{}, "flow": "none"}
+	}
+	c := checkerWithOps(t, []doc{
+		op("expectOutput", "R", mapArg("function", "R", "U"), value("expected", "U")),
+		op("pipeAB", "Z", mapArg("a", "X", "Y"), mapArg("b", "Y", "Z"), value("x", "X")),
+		op("pipeBA", "Z", mapArg("b", "Y", "Z"), mapArg("a", "X", "Y"), value("x", "X")),
+	}, doc{
+		"same":   doc{"kind": "map", "doc": "x", "input": "T", "output": "T"},
+		"length": doc{"kind": "map", "doc": "x", "input": "string", "output": "int32"},
+	})
+	decoder(t, c, `["int", ["expectOutput", "decimal_string", "123"]]`)
+	rejected(t, c, `["int", ["expectOutput", "decimal_string", 123]]`, "expected")
+	for _, form := range []string{
+		`["int", ["pipeAB", "same", "length", "abc"]]`,
+		`["int", ["pipeBA", "length", "same", "abc"]]`,
+	} {
+		if got := decoder(t, c, form).Result.String(); got != "int32" {
+			t.Errorf("%s gives %s", form, got)
+		}
+	}
+	rejected(t, c, `["int", ["pipeAB", "same", "same", "abc"]]`, "cannot tell the types of fixture")
+	if got := decoder(t, c, `["enum", ["A", "B"], ["string"], ["map", "same"]]`).Result.String(); got != `symbol<"A","B">` {
+		t.Errorf("a generic fixture gives %s for a symbol", got)
 	}
 }

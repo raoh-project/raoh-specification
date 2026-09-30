@@ -91,7 +91,7 @@ type ExprCandidates struct {
 // ExprFixture is the issue the fixture a fixture argument names declares.
 type ExprFixture struct{ Arg ArgRef }
 
-// ExprDiscard gives no issue, and says that the issues of the decoder arguments listed never
+// ExprDiscard gives no issue, and says that the issues of the arguments listed never
 // reach the form's caller.
 type ExprDiscard struct{ Args []ArgRef }
 
@@ -293,9 +293,10 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		if err != nil {
 			return nil, err
 		}
-		if k := r.f.Args[i.Index()].FixtureKind; k != "refine" && k != "flatMap" {
-			return nil, fmt.Errorf("fixture %s is a %s fixture, which gives no issue", v.Text, k)
+		if a := r.f.Args[i.Index()]; !producesIssues(a) {
+			return nil, fmt.Errorf("fixture %s is a %s fixture, which gives no issue", a.Name, a.FixtureKind)
 		}
+		r.flowRefs[i]++
 		return ExprFixture{Arg: i}, nil
 	case "discard":
 		if v.Kind != jsontext.Array || len(v.Elems) == 0 {
@@ -303,9 +304,12 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		}
 		x := ExprDiscard{}
 		for _, e := range v.Elems {
-			i, err := r.arg(e, "decoder", "decoders", "variants", "fields")
+			i, err := r.arg(e, "decoder", "decoders", "variants", "fields", "fixture")
 			if err != nil {
 				return nil, err
+			}
+			if a := r.f.Args[i.Index()]; !producesIssues(a) {
+				return nil, fmt.Errorf("discard names %s, which gives no issue", a.Name)
 			}
 			r.flowRefs[i]++
 			x.Args = append(x.Args, i)
@@ -315,8 +319,21 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 	return nil, fmt.Errorf("%q is not a flow", m.Name)
 }
 
+// producesIssues reports whether an argument gives issues the form has to place or discard: the
+// decoders of a decoder, decoders, variants or fields argument, and a fixture whose kind gives an
+// issue.
+func producesIssues(a Arg) bool {
+	switch a.Kind {
+	case "decoder", "decoders", "variants", "fields":
+		return true
+	case "fixture":
+		return fixtureSignatures[a.FixtureKind].Issue
+	}
+	return false
+}
+
 // resolveFlow reads a form's flow expression and checks that it accounts for the form: every
-// argument whose decoders give issues is placed or discarded exactly once, every own issue is
+// argument that gives issues is placed or discarded exactly once, every own issue is
 // given by exactly one part, and a metadata source that reads a member name belongs to an issue
 // given at members.
 func resolveFlow(f *Form, n *jsontext.Node) (Expr, error) {
@@ -326,7 +343,7 @@ func resolveFlow(f *Form, n *jsontext.Node) (Expr, error) {
 		return nil, err
 	}
 	for i, a := range f.Args {
-		if slices.Contains([]string{"decoder", "decoders", "variants", "fields"}, a.Kind) && r.flowRefs[argRef(i)] != 1 {
+		if producesIssues(a) && r.flowRefs[argRef(i)] != 1 {
 			return nil, fmt.Errorf("the flow places the issues of argument %s %d times, not once", a.Name, r.flowRefs[argRef(i)])
 		}
 	}

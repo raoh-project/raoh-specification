@@ -76,8 +76,7 @@ type Type struct {
 	Fields []string
 	// Name is the name of a Param.
 	Name string
-	// Symbols are the alternatives of a Symbol. A Symbol with no alternatives stands for one whose
-	// alternatives a form gives from its arguments; it is not a concrete type.
+	// Symbols are the alternatives of a Symbol; a well-formed Symbol has at least one.
 	Symbols []string
 }
 
@@ -98,6 +97,9 @@ func ListOf(elem Type) Type { return Type{Kind: List, Args: []Type{elem}} }
 // ProductOf returns product<elems...>.
 func ProductOf(elems ...Type) Type { return Type{Kind: Product, Args: elems} }
 
+// String is the name of a kind, as a type is written: int32, list, symbol.
+func (k Kind) String() string { return kindNames[k] }
+
 func (t Type) String() string {
 	if t.Kind == Invalid {
 		return "<invalid>"
@@ -106,7 +108,7 @@ func (t Type) String() string {
 		return t.Name
 	}
 	name := kindNames[t.Kind]
-	if t.Kind == Symbol && t.Symbols != nil {
+	if t.Kind == Symbol {
 		quoted := make([]string, len(t.Symbols))
 		for i, s := range t.Symbols {
 			quoted[i] = strconv.Quote(s)
@@ -148,11 +150,11 @@ func (t Type) IsTemporal() bool {
 	return false
 }
 
-// symbols reads the alternatives of a symbol type, <"A","B">, or none.
+// symbols reads the alternatives of a symbol type, <"A","B">; a symbol type always lists them.
 func (p *typeParser) symbols() (Type, error) {
 	t := Type{Kind: Symbol}
 	if p.pos >= len(p.s) || p.s[p.pos] != '<' {
-		return t, nil
+		return Type{}, fmt.Errorf(`a symbol type lists its alternatives, as symbol<"A","B">`)
 	}
 	p.pos++
 	t.Symbols = []string{}
@@ -228,7 +230,7 @@ func Unify(pattern, t Type, bound map[string]Type) bool {
 	if pattern.Kind != t.Kind || len(pattern.Args) != len(t.Args) {
 		return false
 	}
-	if pattern.Kind == Symbol && pattern.Symbols != nil && !pattern.Same(t) {
+	if pattern.Kind == Symbol && !pattern.Same(t) {
 		return false
 	}
 	for i := range pattern.Args {
@@ -269,6 +271,16 @@ func nullObservable(t Type) bool {
 	return false
 }
 
+// Concrete checks that a type is one values have: it mentions no type parameter and is well
+// formed. A type built by substituting parameters is checked again, since a parameter may stand for
+// a type that makes it ill-formed, such as nullable<string> in optional<T>.
+func (t Type) Concrete() error {
+	if ps := t.Params(); len(ps) > 0 {
+		return fmt.Errorf("cannot tell what %s is", strings.Join(ps, ", "))
+	}
+	return WellFormed(t)
+}
+
 // WellFormed checks that every value of the type has an observation no other value has. An
 // optional or nullable value observes its absence as null, so what it holds must not observe
 // anything as null: optional<nullable<T>> could not tell an empty optional from a null in it.
@@ -278,7 +290,7 @@ func WellFormed(t Type) error {
 	if t.Kind == Invalid {
 		return fmt.Errorf("the type is missing")
 	}
-	if t.Kind == Symbol && t.Symbols != nil {
+	if t.Kind == Symbol {
 		if len(t.Symbols) == 0 {
 			return fmt.Errorf("a symbol type has at least one alternative")
 		}

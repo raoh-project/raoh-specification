@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -99,15 +100,11 @@ func abbreviate(n *jsontext.Node) string {
 	return s
 }
 
+// concrete checks that a type, with the bindings substituted, is one values have (see
+// value.Type.Concrete).
 func concrete(t value.Type, what string) error {
-	if ps := t.Params(); len(ps) > 0 {
-		return fmt.Errorf("%s: cannot tell what %s is", what, strings.Join(ps, ", "))
-	}
-	if err := value.WellFormed(t); err != nil {
+	if err := t.Concrete(); err != nil {
 		return fmt.Errorf("%s: %w", what, err)
-	}
-	if t.Kind == value.Symbol && t.Symbols == nil {
-		return fmt.Errorf("%s: cannot tell the alternatives of the symbol", what)
 	}
 	return nil
 }
@@ -122,8 +119,6 @@ type checkedArgs struct {
 	flows map[ArgRef][]Flow
 	// fields are the fields of a fields argument.
 	fields map[ArgRef][]field
-	// product is the types of the fields, in order.
-	product []value.Type
 	// keys are the variant names of a variants argument.
 	keys     map[ArgRef][]string
 	fixtures map[ArgRef]checkedFixture
@@ -139,8 +134,9 @@ type checkedFixture struct {
 	bound map[string]value.Type
 }
 
-// field is a checked field: its flow, and the member it reads, if it names one.
+// field is a checked field: its type, its flow, and the member it reads, if it names one.
 type field struct {
+	typ    value.Type
 	flow   Flow
 	member string
 	named  bool
@@ -164,18 +160,8 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
 	if err != nil {
 		return value.Type{}, nil, fmt.Errorf("%s: %w", name, err)
 	}
-	result := f.Result.Subst(bound)
-	if f.Result.Kind == value.Product && len(f.Result.Args) == 0 {
-		result = value.ProductOf(ca.product...)
-	}
-	if f.SymbolsFrom != NoArg {
-		var alternatives []string
-		for _, e := range ca.values[f.SymbolsFrom].Elems {
-			alternatives = append(alternatives, e.Str)
-		}
-		result = value.SymbolOf(alternatives...)
-	}
-	if err := concrete(result, name); err != nil {
+	result, err := resultOf(name, f.Result, bound, ca)
+	if err != nil {
 		return value.Type{}, nil, err
 	}
 	flow, err := s.build(name, f, f.Flow, bound, ca)
@@ -293,37 +279,59 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 }
 
 // field checks a field form. A field whose flow is at a member reads that member.
-func (s *state) field(n *jsontext.Node) (value.Type, field, error) {
+func (s *state) field(n *jsontext.Node) (field, error) {
 	name, err := head(n, "field")
 	if err != nil {
-		return value.Type{}, field{}, err
+		return field{}, err
 	}
 	f, ok := s.registry.Fields[name]
 	if !ok {
-		return value.Type{}, field{}, fmt.Errorf("unknown field kind %q", name)
+		return field{}, fmt.Errorf("unknown field kind %q", name)
 	}
 	s.features["field."+name] = true
 	if len(n.Elems)-1 != len(f.Args) {
-		return value.Type{}, field{}, fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
+		return field{}, fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
 	}
 	bound := map[string]value.Type{}
 	ca, err := s.args(f, n.Elems[1:], bound)
 	if err != nil {
-		return value.Type{}, field{}, fmt.Errorf("%s: %w", name, err)
+		return field{}, fmt.Errorf("%s: %w", name, err)
 	}
-	result := f.Result.Subst(bound)
-	if err := concrete(result, name); err != nil {
-		return value.Type{}, field{}, err
+	result, err := resultOf(name, f.Result, bound, ca)
+	if err != nil {
+		return field{}, err
 	}
 	flow, err := s.build(name, f, f.Flow, bound, ca)
 	if err != nil {
-		return value.Type{}, field{}, err
+		return field{}, err
 	}
-	out := field{flow: flow}
+	out := field{typ: result, flow: flow}
 	if at, ok := f.Flow.(ExprAt); ok {
 		out.member, out.named = ca.values[at.Member].Str, true
 	}
-	return result, out, nil
+	return out, nil
+}
+
+// resultOf is a form's result type for the types and values its arguments gave.
+func resultOf(name string, r Result, bound map[string]value.Type, ca checkedArgs) (value.Type, error) {
+	var t value.Type
+	switch r := r.(type) {
+	case ResultType:
+		t = r.Type.Subst(bound)
+	case ResultProduct:
+		var types []value.Type
+		for _, fl := range ca.fields[r.Fields] {
+			types = append(types, fl.typ)
+		}
+		t = value.ProductOf(types...)
+	case ResultSymbols:
+		var alternatives []string
+		for _, e := range ca.values[r.Symbols].Elems {
+			alternatives = append(alternatives, e.Str)
+		}
+		t = value.SymbolOf(alternatives...)
+	}
+	return t, concrete(t, name)
 }
 
 func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, Flow, error) {
@@ -338,7 +346,7 @@ func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, Fl
 	// An operation applies to every type, or has at most one overload for the receiver's kind.
 	o, ok := overloads[AnyReceiver]
 	if !ok {
-		o, ok = overloads[ReceiverKey(value.Type{Kind: receiver.Kind}.String())]
+		o, ok = overloads[ReceiverKey(receiver.Kind.String())]
 	}
 	bound := map[string]value.Type{}
 	if !ok || (o.Receiver.Pattern != nil && !value.Unify(*o.Receiver.Pattern, receiver, bound)) {
@@ -361,8 +369,8 @@ func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, Fl
 	if err != nil {
 		return value.Type{}, nil, fmt.Errorf("%s: %w", name, err)
 	}
-	result := f.Result.Subst(bound)
-	if err := concrete(result, name); err != nil {
+	result, err := resultOf(name, f.Result, bound, ca)
+	if err != nil {
 		return value.Type{}, nil, err
 	}
 	flow, err := s.build(name, f, f.Flow, bound, ca)
@@ -414,95 +422,44 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 	return input, concrete(input, name)
 }
 
-// args checks the arguments given, the first of the form's, in three passes, so that the types
-// that decoders and encoders fix are known when values are read and fixtures are matched, and
-// then the conditions the form requires of them. A value argument left out stands for its
-// default, so every value argument has a value in what args gives; a message argument left out
-// gives no message.
+// args checks the arguments given, the first of the form's, in the order their types are bound:
+// first the arguments whose types a case's forms bind (decoders, fields, encoders, properties),
+// then the fixtures, which bind each other's types until none is left to bind, then the values and
+// the message, whose types have to be known by then, and last the conditions the form requires of
+// them. A value argument left out stands for its default, so every value argument has a value in
+// what args gives; a message argument left out gives no message.
 func (s *state) args(f *Form, nodes []*jsontext.Node, bound map[string]value.Type) (checkedArgs, error) {
 	ca := checkedArgs{values: map[ArgRef]value.Value{}, flows: map[ArgRef][]Flow{}, fields: map[ArgRef][]field{},
 		keys: map[ArgRef][]string{}, fixtures: map[ArgRef]checkedFixture{}}
-	decoder := func(r ArgRef, a Arg, n *jsontext.Node) error {
-		t, flow, err := s.decoder(n)
-		if err != nil {
-			return err
+	given := func(i int) bool { return i < len(nodes) }
+	for i, a := range f.Args {
+		if !given(i) {
+			continue
 		}
-		if !value.Unify(a.Type, t, bound) {
-			return fmt.Errorf("%s: expected a decoder of %s, found one of %s", a.Name, a.Type.Subst(bound), t)
+		if err := s.binder(a, argRef(i), nodes[i], bound, &ca); err != nil {
+			return ca, err
 		}
-		ca.flows[r] = append(ca.flows[r], flow)
-		return nil
 	}
-	for pass := 0; pass < 3; pass++ {
-		for i, a := range f.Args {
-			ref := argRef(i)
-			if i >= len(nodes) {
-				if pass == 1 && a.Kind == "value" {
-					ca.values[ref] = *a.Default
-				}
-				continue
-			}
-			v := nodes[i]
-			var err error
-			switch {
-			case pass == 0 && a.Kind == "decoder":
-				err = decoder(ref, a, v)
-			case pass == 0 && a.Kind == "decoders":
-				if v.Kind != jsontext.Array || len(v.Elems) == 0 {
-					err = fmt.Errorf("%s must be a non-empty array of decoders", a.Name)
-				}
-				for j := 0; err == nil && j < len(v.Elems); j++ {
-					err = decoder(ref, a, v.Elems[j])
-				}
-			case pass == 0 && a.Kind == "variants":
-				if v.Kind != jsontext.Object || len(v.Members) == 0 {
-					err = fmt.Errorf("%s must be a non-empty object of decoders", a.Name)
-				}
-				for j := 0; err == nil && j < len(v.Members); j++ {
-					err = decoder(ref, a, v.Members[j].Value)
-					ca.keys[ref] = append(ca.keys[ref], v.Members[j].Name)
-				}
-			case pass == 0 && a.Kind == "fields":
-				if v.Kind != jsontext.Array || len(v.Elems) == 0 {
-					err = fmt.Errorf("fields must be a non-empty array")
-				}
-				for j := 0; err == nil && j < len(v.Elems); j++ {
-					var t value.Type
-					var fl field
-					if t, fl, err = s.field(v.Elems[j]); err == nil {
-						ca.product = append(ca.product, t)
-						ca.fields[ref] = append(ca.fields[ref], fl)
-					}
-				}
-			case pass == 0 && a.Kind == "encoder":
-				var t value.Type
-				if t, err = s.encoder(v); err == nil && !value.Unify(a.Type, t, bound) {
-					err = fmt.Errorf("%s: expected an encoder of %s, found one of %s", a.Name, a.Type.Subst(bound), t)
-				}
-			case pass == 0 && a.Kind == "properties":
-				if v.Kind != jsontext.Array || len(v.Elems) == 0 {
-					err = fmt.Errorf("properties must be a non-empty array")
-				}
-				for j := 0; err == nil && j < len(v.Elems); j++ {
-					var t value.Type
-					if t, err = s.property(v.Elems[j]); err == nil && !value.Unify(a.Type, t, bound) {
-						err = fmt.Errorf("%s: expected properties that read %s, found one that reads %s", a.Name, a.Type.Subst(bound), t)
-					}
-				}
-			case pass == 1 && a.Kind == "value":
-				ca.values[ref], err = s.literal(a, v, bound)
-			case pass == 1 && ref == f.Message:
-				if v.Kind != jsontext.String {
-					err = fmt.Errorf("%s must be a string", a.Name)
-				}
-				message := v.Text
-				ca.message = &message
-			case pass == 2 && a.Kind == "fixture":
-				ca.fixtures[ref], err = s.fixture(a, v, bound)
-			}
+	if err := s.fixtures(f, nodes, bound, &ca); err != nil {
+		return ca, err
+	}
+	for i, a := range f.Args {
+		ref := argRef(i)
+		switch {
+		case a.Kind == "value" && !given(i):
+			ca.values[ref] = *a.Default
+		case a.Kind == "value":
+			v, err := s.literal(a, nodes[i], bound)
 			if err != nil {
 				return ca, err
 			}
+			ca.values[ref] = v
+		case ref == f.Message && given(i):
+			if nodes[i].Kind != jsontext.String {
+				return ca, fmt.Errorf("%s must be a string", a.Name)
+			}
+			message := nodes[i].Text
+			ca.message = &message
 		}
 	}
 	for _, r := range f.Requires {
@@ -511,6 +468,112 @@ func (s *state) args(f *Form, nodes []*jsontext.Node, bound map[string]value.Typ
 		}
 	}
 	return ca, nil
+}
+
+// binder checks an argument whose type a case's forms bind: a decoder, decoders, variants,
+// fields, encoder or properties argument. Other arguments bind nothing here.
+func (s *state) binder(a Arg, ref ArgRef, v *jsontext.Node, bound map[string]value.Type, ca *checkedArgs) error {
+	decoder := func(n *jsontext.Node) error {
+		t, flow, err := s.decoder(n)
+		if err != nil {
+			return err
+		}
+		if !value.Unify(a.Type, t, bound) {
+			return fmt.Errorf("%s: expected a decoder of %s, found one of %s", a.Name, a.Type.Subst(bound), t)
+		}
+		ca.flows[ref] = append(ca.flows[ref], flow)
+		return nil
+	}
+	switch a.Kind {
+	case "decoder":
+		return decoder(v)
+	case "decoders":
+		if v.Kind != jsontext.Array || len(v.Elems) == 0 {
+			return fmt.Errorf("%s must be a non-empty array of decoders", a.Name)
+		}
+		for _, e := range v.Elems {
+			if err := decoder(e); err != nil {
+				return err
+			}
+		}
+	case "variants":
+		if v.Kind != jsontext.Object || len(v.Members) == 0 {
+			return fmt.Errorf("%s must be a non-empty object of decoders", a.Name)
+		}
+		for _, m := range v.Members {
+			if err := decoder(m.Value); err != nil {
+				return err
+			}
+			ca.keys[ref] = append(ca.keys[ref], m.Name)
+		}
+	case "fields":
+		if v.Kind != jsontext.Array || len(v.Elems) == 0 {
+			return fmt.Errorf("fields must be a non-empty array")
+		}
+		for _, e := range v.Elems {
+			fl, err := s.field(e)
+			if err != nil {
+				return err
+			}
+			ca.fields[ref] = append(ca.fields[ref], fl)
+		}
+	case "encoder":
+		t, err := s.encoder(v)
+		if err != nil {
+			return err
+		}
+		if !value.Unify(a.Type, t, bound) {
+			return fmt.Errorf("%s: expected an encoder of %s, found one of %s", a.Name, a.Type.Subst(bound), t)
+		}
+	case "properties":
+		if v.Kind != jsontext.Array || len(v.Elems) == 0 {
+			return fmt.Errorf("properties must be a non-empty array")
+		}
+		for _, e := range v.Elems {
+			t, err := s.property(e)
+			if err != nil {
+				return err
+			}
+			if !value.Unify(a.Type, t, bound) {
+				return fmt.Errorf("%s: expected properties that read %s, found one that reads %s", a.Name, a.Type.Subst(bound), t)
+			}
+		}
+	}
+	return nil
+}
+
+// fixtures resolves the fixture arguments given, whatever order they come in. Each try works on a
+// copy of the bindings and commits them only when it binds every type the fixture and the argument
+// mention; a fixture that cannot yet tell its types waits for another to bind them, and the round
+// repeats until every fixture is resolved or a round resolves none.
+func (s *state) fixtures(f *Form, nodes []*jsontext.Node, bound map[string]value.Type, ca *checkedArgs) error {
+	var pending []int
+	for i, a := range f.Args {
+		if a.Kind == "fixture" && i < len(nodes) {
+			pending = append(pending, i)
+		}
+	}
+	for len(pending) > 0 {
+		var waiting []int
+		for _, i := range pending {
+			cf, trial, err := s.fixture(f.Args[i], nodes[i], bound)
+			if err != nil {
+				return err
+			}
+			if trial == nil {
+				waiting = append(waiting, i)
+				continue
+			}
+			maps.Copy(bound, trial)
+			ca.fixtures[argRef(i)] = cf
+		}
+		if len(waiting) == len(pending) {
+			a := f.Args[waiting[0]]
+			return fmt.Errorf("%s: cannot tell the types of fixture %s", a.Name, nodes[waiting[0]].Text)
+		}
+		pending = waiting
+	}
+	return nil
 }
 
 // meets checks a condition on argument values.
@@ -574,51 +637,65 @@ func (s *state) literal(a Arg, n *jsontext.Node, bound map[string]value.Type) (v
 	return v, nil
 }
 
-// fixture checks a fixture argument: the fixture it names, and the types its parameters take there.
-func (s *state) fixture(a Arg, n *jsontext.Node, bound map[string]value.Type) (checkedFixture, error) {
+// fixture tries to resolve a fixture argument against the bindings so far: it matches the types
+// the argument declares with the fixture's own, each side binding the other's parameters, until
+// every type on both sides is concrete. It returns the bindings to commit, a copy, or nil when the
+// types are not yet known; it changes nothing it was given.
+func (s *state) fixture(a Arg, n *jsontext.Node, bound map[string]value.Type) (checkedFixture, map[string]value.Type, error) {
 	if n.Kind != jsontext.String {
-		return checkedFixture{}, fmt.Errorf("%s must name a fixture", a.Name)
+		return checkedFixture{}, nil, fmt.Errorf("%s must name a fixture", a.Name)
 	}
 	fx, ok := s.registry.Fixtures[n.Text]
 	if !ok {
-		return checkedFixture{}, fmt.Errorf("unknown fixture %q", n.Text)
+		return checkedFixture{}, nil, fmt.Errorf("unknown fixture %q", n.Text)
 	}
 	if fx.Kind != a.FixtureKind {
-		return checkedFixture{}, fmt.Errorf("%s needs a %s fixture, and %s is a %s fixture", a.Name, a.FixtureKind, fx.Name, fx.Kind)
+		return checkedFixture{}, nil, fmt.Errorf("%s needs a %s fixture, and %s is a %s fixture", a.Name, a.FixtureKind, fx.Name, fx.Kind)
 	}
 	s.features["fixture."+fx.Name] = true
-	fb := map[string]value.Type{}
-	in := a.FixtureInput.Subst(bound)
-	inKnown := len(in.Params()) == 0
-	if inKnown && !value.Unify(fx.Input, in, fb) {
-		return checkedFixture{}, fmt.Errorf("fixture %s takes %s, not %s", fx.Name, fx.Input, in)
+	// A fixture argument and the fixture have the same signature (see fixtureSignatures).
+	type port struct {
+		what      string
+		form, fix value.Type
 	}
+	ports := []port{{"takes", a.FixtureInput, fx.Input}}
 	if a.FixtureOutput != nil {
-		out := a.FixtureOutput.Subst(bound)
-		if len(out.Params()) == 0 {
-			if !value.Unify(*fx.Output, out, fb) {
-				return checkedFixture{}, fmt.Errorf("fixture %s gives %s, not %s", fx.Name, *fx.Output, out)
-			}
-		} else {
-			o := fx.Output.Subst(fb)
-			if err := concrete(o, "fixture "+fx.Name); err != nil {
-				return checkedFixture{}, err
-			}
-			if !value.Unify(out, o, bound) {
-				return checkedFixture{}, fmt.Errorf("fixture %s gives %s, not %s", fx.Name, o, out)
+		ports = append(ports, port{"gives", *a.FixtureOutput, *fx.Output})
+	}
+	trial, fb := maps.Clone(bound), map[string]value.Type{}
+	known := func(t value.Type) bool { return len(t.Params()) == 0 }
+	for changed := true; changed; {
+		changed = false
+		for _, p := range ports {
+			formT, fixT := p.form.Subst(trial), p.fix.Subst(fb)
+			switch {
+			case known(formT) && known(fixT):
+				if !formT.Same(fixT) {
+					return checkedFixture{}, nil, fmt.Errorf("fixture %s %s %s, not %s", fx.Name, p.what, fixT, formT)
+				}
+			case known(formT):
+				if !value.Unify(p.fix, formT, fb) {
+					return checkedFixture{}, nil, fmt.Errorf("fixture %s %s %s, not %s", fx.Name, p.what, p.fix, formT)
+				}
+				changed = true
+			case known(fixT):
+				if !value.Unify(p.form, fixT, trial) {
+					return checkedFixture{}, nil, fmt.Errorf("fixture %s %s %s, not %s", fx.Name, p.what, fixT, p.form.Subst(trial))
+				}
+				changed = true
 			}
 		}
 	}
-	if !inKnown {
-		i := fx.Input.Subst(fb)
-		if err := concrete(i, "fixture "+fx.Name); err != nil {
-			return checkedFixture{}, err
+	for _, p := range ports {
+		formT, fixT := p.form.Subst(trial), p.fix.Subst(fb)
+		if !known(formT) || !known(fixT) {
+			return checkedFixture{}, nil, nil
 		}
-		if !value.Unify(in, i, bound) {
-			return checkedFixture{}, fmt.Errorf("fixture %s takes %s, not %s", fx.Name, i, in)
+		if err := concrete(formT, "fixture "+fx.Name); err != nil {
+			return checkedFixture{}, nil, err
 		}
 	}
-	return checkedFixture{Fixture: fx, bound: fb}, nil
+	return checkedFixture{Fixture: fx, bound: fb}, trial, nil
 }
 
 // site instantiates an issue reference with the types bound gives the form's parameters and the

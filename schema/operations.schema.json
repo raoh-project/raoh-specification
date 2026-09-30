@@ -570,6 +570,46 @@
               ]
             }
           }
+        },
+        {
+          "if": {
+            "required": [
+              "kind",
+              "fixture"
+            ],
+            "properties": {
+              "kind": {
+                "const": "fixture"
+              },
+              "fixture": {
+                "const": "refine"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "output"
+              ]
+            }
+          },
+          "else": {
+            "if": {
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "fixture"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "output"
+              ]
+            }
+          }
         }
       ],
       "additionalProperties": false

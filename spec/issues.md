@@ -94,7 +94,7 @@ an expression over the lists of issues a decoder can give; the empty list is suc
 | `{"unknown_members": {"known": ..., "issue": k}}` | issue `k` for every member of an object input not among the known names (a list argument, or the members the fields of a fields argument read), in any order, at its path |
 | `{"candidates": {"decoders": a, "issue": k, "meta": m}}` | none, when some decoder of argument `a` can give none; or issue `k`, listing in its metadata entry `m` for every decoder of `a` a non-empty list it gives |
 | `{"fixture": a}` | none, or the issue the fixture argument `a` declares |
-| `{"discard": [a, ...]}` | none: the issues of the arguments listed never reach the caller |
+| `{"discard": [a, ...]}` | none: the issues of the arguments listed, decoders or fixtures that give issues, never reach the caller |
 
 A decoder's operations run in order, each only if what came before succeeded: the flow of a form
 followed by operations is the chain of the form's flow and each operation's.

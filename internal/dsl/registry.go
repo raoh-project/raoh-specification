@@ -105,9 +105,8 @@ type Form struct {
 	Args []Arg
 	// Message is the form's message argument, or NoArg; a form has at most one.
 	Message ArgRef
-	// Result is the result type of a constructor, field or operation; the product type of an
-	// object is computed from its fields.
-	Result value.Type
+	// Result is how the result type of a constructor, field or operation is found.
+	Result Result
 	// Receivers are the receivers an operation applies to.
 	Receivers []Receiver
 	// Input is the type an encoder encodes, or a property reads.
@@ -115,9 +114,6 @@ type Form struct {
 	Issues []IssueRef
 	// Flow is how the form gives its issues.
 	Flow Expr
-	// SymbolsFrom is the argument whose strings are the alternatives of the symbol type the form
-	// gives, or NoArg.
-	SymbolsFrom ArgRef
 	// Requires are the conditions its arguments have to meet for the form to exist at all, as
 	// raoh-java refuses to construct the decoder otherwise.
 	Requires []Require
@@ -174,7 +170,39 @@ type Fixture struct {
 	Issue  *FixtureIssue
 }
 
-var fixtureKinds = []string{"map", "refine", "flatMap", "recover", "getter"}
+// fixtureSignature is the shape every fixture of a kind has, and every fixture argument of that
+// kind declares: whether it has an output type, whether it gives an issue, and whether that issue
+// may be at a path of its own.
+type fixtureSignature struct {
+	Output, Issue, Path bool
+}
+
+// fixtureSignatures are the fixture kinds; fixtures, fixture arguments and flows read what a kind
+// is from here alone.
+var fixtureSignatures = map[string]fixtureSignature{
+	"map":     {Output: true},
+	"refine":  {Issue: true},
+	"flatMap": {Output: true, Issue: true, Path: true},
+	"recover": {Output: true},
+	"getter":  {Output: true},
+}
+
+// Result is how a form's result type is found: ResultType, ResultProduct or ResultSymbols.
+type Result interface{ isResult() }
+
+// ResultType is a result type the form declares, which may mention its type parameters.
+type ResultType struct{ Type value.Type }
+
+// ResultProduct is the product of the types of the fields a fields argument reads, in order.
+type ResultProduct struct{ Fields ArgRef }
+
+// ResultSymbols is the symbol type whose alternatives are the strings of a list<string> value
+// argument.
+type ResultSymbols struct{ Symbols ArgRef }
+
+func (ResultType) isResult()    {}
+func (ResultProduct) isResult() {}
+func (ResultSymbols) isResult() {}
 
 // Registry is catalog/operations.json and catalog/fixtures.json. A Registry that Parse returns
 // meets every condition the checker relies on: its argument names are unambiguous, every argument
@@ -374,14 +402,9 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 	if f.Doc, err = n.String("doc"); err != nil {
 		return nil, err
 	}
-	if s, ok, err := text(n, "result"); err != nil {
+	result, hasResult, err := text(n, "result")
+	if err != nil {
 		return nil, err
-	} else if ok && s == "product" {
-		f.Result = value.Type{Kind: value.Product}
-	} else if ok {
-		if f.Result, err = value.ParseType(s); err != nil {
-			return nil, err
-		}
 	}
 	if t, ok, err := typeOf(n, "input"); err != nil {
 		return nil, err
@@ -402,16 +425,12 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 	if err := f.parseArgs(section, n); err != nil {
 		return nil, err
 	}
-	if from, ok, err := text(n, "symbols_from"); err != nil {
-		return nil, err
-	} else if ok {
-		i, found := f.arg(from)
-		if f.Result.Kind != value.Symbol || f.Result.Symbols != nil || !found || f.Args[i.Index()].Kind != "value" || f.Args[i.Index()].Type.String() != "list<string>" {
-			return nil, fmt.Errorf("symbols_from %s needs a symbol result and a list<string> value argument %s", from, from)
+	if hasResult {
+		if f.Result, err = f.parseResult(result, n); err != nil {
+			return nil, err
 		}
-		f.SymbolsFrom = i
-	} else if f.Result.Kind == value.Symbol && f.Result.Symbols == nil {
-		return nil, fmt.Errorf("its result is a symbol, and symbols_from does not say its alternatives")
+	} else if _, ok := n.Get("symbols_from"); ok {
+		return nil, fmt.Errorf("symbols_from says the alternatives of a symbol result, and it has no result")
 	}
 	reqs, err := elems(n, "requires")
 	if err != nil {
@@ -451,7 +470,7 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 	}
 	switch section {
 	case "constructor", "field", "operation":
-		if f.Result.Kind == value.Invalid {
+		if f.Result == nil {
 			return nil, fmt.Errorf("it has no result type")
 		}
 		if f.Flow == nil {
@@ -471,6 +490,52 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 	return f, nil
 }
 
+// parseResult reads a form's result once its arguments are known: "product" is the product of its
+// one fields argument, "symbol" the symbol whose alternatives symbols_from names, and anything
+// else a type.
+func (f *Form) parseResult(result string, n *jsontext.Node) (Result, error) {
+	from, hasFrom, err := text(n, "symbols_from")
+	if err != nil {
+		return nil, err
+	}
+	switch result {
+	case "product":
+		fields := NoArg
+		for i, a := range f.Args {
+			if a.Kind == "fields" {
+				if fields != NoArg {
+					return nil, fmt.Errorf("its result is the product of its fields, and it has two fields arguments")
+				}
+				fields = argRef(i)
+			}
+		}
+		if fields == NoArg {
+			return nil, fmt.Errorf("its result is the product of its fields, and it has no fields argument")
+		}
+		if hasFrom {
+			return nil, fmt.Errorf("symbols_from says the alternatives of a symbol result, and its result is a product")
+		}
+		return ResultProduct{Fields: fields}, nil
+	case "symbol":
+		if !hasFrom {
+			return nil, fmt.Errorf("its result is a symbol, and symbols_from does not say its alternatives")
+		}
+		i, ok := f.arg(from)
+		if !ok || f.Args[i.Index()].Kind != "value" || f.Args[i.Index()].Type.String() != "list<string>" {
+			return nil, fmt.Errorf("symbols_from %s is not a list<string> value argument", from)
+		}
+		return ResultSymbols{Symbols: i}, nil
+	}
+	if hasFrom {
+		return nil, fmt.Errorf("symbols_from says the alternatives of a symbol result, and its result is %s", result)
+	}
+	t, err := value.ParseType(result)
+	if err != nil {
+		return nil, err
+	}
+	return ResultType{Type: t}, nil
+}
+
 // parseReceiver reads a receiver pattern: "*", or a type whose outer kind is not a parameter and
 // that does not mention R, which an operation binds to its receiver.
 func parseReceiver(s string) (Receiver, error) {
@@ -487,7 +552,7 @@ func parseReceiver(s string) (Receiver, error) {
 	if slices.Contains(t.Params(), "R") {
 		return Receiver{}, fmt.Errorf("receiver %s mentions R, which stands for the whole receiver", s)
 	}
-	return Receiver{Key: ReceiverKey(value.Type{Kind: t.Kind}.String()), Pattern: &t}, nil
+	return Receiver{Key: ReceiverKey(t.Kind.String()), Pattern: &t}, nil
 }
 
 // checkBindings checks that every type parameter a form uses has a place where the types a case
@@ -530,8 +595,10 @@ func (f *Form) checkBindings(section string) error {
 		}
 		return nil
 	}
-	if err := use("the result", f.Result); err != nil {
-		return err
+	if r, ok := f.Result.(ResultType); ok {
+		if err := use("the result", r.Type); err != nil {
+			return err
+		}
 	}
 	if err := use("the input", f.Input); err != nil {
 		return err
@@ -717,7 +784,8 @@ func parseArg(section string, n *jsontext.Node) (Arg, error) {
 	if a.FixtureKind, err = n.String("fixture"); err != nil {
 		return a, err
 	}
-	if !slices.Contains(fixtureKinds, a.FixtureKind) {
+	sig, ok := fixtureSignatures[a.FixtureKind]
+	if !ok {
 		return a, fmt.Errorf("fixture argument %s has unknown fixture kind %q", a.Name, a.FixtureKind)
 	}
 	in, ok, err := typeOf(n, "input")
@@ -733,7 +801,18 @@ func parseArg(section string, n *jsontext.Node) (Arg, error) {
 	} else if ok {
 		a.FixtureOutput = &out
 	}
+	if (a.FixtureOutput != nil) != sig.Output {
+		return a, fmt.Errorf("fixture argument %s: %s", a.Name, sig.outputRule(a.FixtureKind))
+	}
 	return a, nil
+}
+
+// outputRule says whether fixtures of a kind have an output type.
+func (sig fixtureSignature) outputRule(kind string) string {
+	if sig.Output {
+		return "a " + kind + " fixture has an output type"
+	}
+	return "a " + kind + " fixture has no output type"
 }
 
 func parseIssueRef(n *jsontext.Node) (IssueRef, error) {
@@ -801,7 +880,8 @@ func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 	if f.Kind, err = n.String("kind"); err != nil {
 		return nil, err
 	}
-	if !slices.Contains(fixtureKinds, f.Kind) {
+	sig, ok := fixtureSignatures[f.Kind]
+	if !ok {
 		return nil, fmt.Errorf("unknown kind %q", f.Kind)
 	}
 	if f.Doc, err = n.String("doc"); err != nil {
@@ -825,8 +905,8 @@ func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 			return nil, err
 		}
 	}
-	if (f.Output == nil) != (f.Kind == "refine") {
-		return nil, fmt.Errorf("a %s fixture %s an output type", f.Kind, map[bool]string{true: "has no", false: "has"}[f.Kind == "refine"])
+	if (f.Output != nil) != sig.Output {
+		return nil, fmt.Errorf("%s", sig.outputRule(f.Kind))
 	}
 	if is, ok := n.Get("issue"); ok {
 		if err := object(is, "the issue", "code", "message_key", "message", "path", "meta", "values"); err != nil {
@@ -879,13 +959,13 @@ func parseFixture(name string, n *jsontext.Node) (*Fixture, error) {
 				}
 			}
 		}
-		if len(fi.Path) > 0 && f.Kind != "flatMap" {
-			return nil, fmt.Errorf("only a flatMap fixture gives its issue a path")
+		if len(fi.Path) > 0 && !sig.Path {
+			return nil, fmt.Errorf("a %s fixture gives its issue at the path it runs at", f.Kind)
 		}
 		f.Issue = fi
 	}
-	if (f.Issue != nil) != (f.Kind == "refine" || f.Kind == "flatMap") {
-		return nil, fmt.Errorf("only refine and flatMap fixtures declare an issue, and they must")
+	if (f.Issue != nil) != sig.Issue {
+		return nil, fmt.Errorf("a %s fixture %s", f.Kind, map[bool]string{true: "declares the issue it gives", false: "gives no issue"}[sig.Issue])
 	}
 	return f, nil
 }

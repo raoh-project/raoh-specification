@@ -66,6 +66,12 @@ parameter they mention has to appear where one is bound; the registry is rejecte
 Whether a case gives enough to bind them is the case's matter: a form that leaves a type unknown,
 such as a generic fixture where nothing fixes its input, does not type-check.
 
+The types are bound in that order. The decoders, fields, encoders and properties a case gives bind
+theirs first. Then the fixtures: each is matched with the types its argument declares, and a
+fixture whose types are not yet known waits until another fixture binds them, so the order in which
+a form lists its fixtures does not matter. Only then are the value arguments read, as observations
+of types that are known by now.
+
 A value argument is read as an observation of the type the argument has where it is used. In
 `["float", ["min", 0.1]]` the bound is the float32 nearest 0.1; in `["decimal", ["min", "0.5"]]` it
 is the decimal 0.5 with scale 1; `["int", ["min", 0.5]]` does not type-check.
@@ -77,9 +83,11 @@ distinct when A-Z are read as a-z. A `strictObject` cannot have a `flat` field, 
 tell which members that field reads. raoh-java refuses to construct a decoder that breaks one of
 them, so such a form is not a decoder of this language either.
 
-A form's result type follows from its arguments; `enum` gives `symbol<...>` of the names it lists
-(`symbols_from` in `catalog/operations.json`). A form whose result is `symbol` without alternatives
-says where they come from with `symbols_from`.
+A form's result type follows from its arguments. `catalog/operations.json` writes it as a type,
+which may mention the form's parameters; as `"product"`, the product of the types of the fields its
+one fields argument reads (`object`); or as `"symbol"`, the symbol type whose alternatives are the
+strings of the list argument `symbols_from` names (`enum`). `"product"` and `"symbol"` are not types
+themselves: a type written anywhere lists everything it has, and `symbol` alone is none.
 
 A form that does not type-check, or whose arguments do not meet what it requires, is not a
 decoder, and a case that contains one is rejected.
@@ -106,7 +114,7 @@ failed.
 
 `catalog/operations.json` gives the meaning of each form in its `doc`, the issues it can give in
 `issues`, and how it gives them in `flow`, an expression over its arguments and its issues that
-[issues.md](issues.md) describes. Every argument whose decoders give issues is placed in the flow
+[issues.md](issues.md) describes. Every argument that gives issues (its decoders, or its fixture) is placed in the flow
 or discarded exactly once, and every issue is declared once and given by exactly one part of it;
 the registry is rejected otherwise, as it is when the flow or a metadata source names an argument
 or an issue the form does not have, or a member the language does not define. These conditions are

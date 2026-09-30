@@ -87,9 +87,6 @@ func observe(t Type, n *jsontext.Node) (Value, error) {
 		if err := want(jsontext.String); err != nil {
 			return v, err
 		}
-		if t.Symbols == nil {
-			return v, fmt.Errorf("a symbol type whose alternatives are not known has no observation")
-		}
 		if !slices.Contains(t.Symbols, n.Text) {
 			return v, fmt.Errorf("%q is not one of the alternatives %s", n.Text, strings.Join(t.Symbols, ", "))
 		}

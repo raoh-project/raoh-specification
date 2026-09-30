@@ -230,7 +230,12 @@ func TestSymbolsHaveTheirAlternatives(t *testing.T) {
 			t.Errorf("%s is well formed", bad)
 		}
 	}
-	if WellFormed(Of(Symbol)) != nil {
-		t.Error("a symbol pattern whose alternatives come from elsewhere is not well formed")
+	if WellFormed(Of(Symbol)) == nil {
+		t.Error("a symbol type without alternatives is well formed")
+	}
+	for _, s := range []string{"symbol", "list<symbol>", "nullable<symbol>"} {
+		if _, err := ParseType(s); err == nil {
+			t.Errorf("%s is a type", s)
+		}
 	}
 }

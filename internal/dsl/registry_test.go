@@ -197,7 +197,7 @@ func TestRegistryInvariants(t *testing.T) {
 		}, false, false, "does not say its alternatives"},
 		{"symbols_from for a symbol with alternatives", func(c catalogs) {
 			section(c.ops, "constructors", "enum")["result"] = `symbol<"A">`
-		}, false, false, "symbols_from symbols needs"},
+		}, false, false, "symbols_from says the alternatives of a symbol result"},
 		{"properties without a type", func(c catalogs) {
 			delete(arg(section(c.ops, "encoders", "object"), 0), "type")
 		}, true, false, "needs a type"},
@@ -210,6 +210,46 @@ func TestRegistryInvariants(t *testing.T) {
 		{"a fixture issue metadata nothing binds", func(c catalogs) {
 			c.fixtures["unbound"] = doc{"kind": "refine", "doc": "x", "input": "T", "issue": doc{"code": "c", "message_key": "c", "message": "m", "meta": doc{"x": "list<U>"}}}
 		}, false, false, "meta x mentions U"},
+		{"a refine fixture argument with an output", func(c catalogs) {
+			arg(operation(c.ops, "refine"), 0)["output"] = "R"
+		}, true, false, "a refine fixture has no output type"},
+		{"a map fixture argument without an output", func(c catalogs) {
+			delete(arg(operation(c.ops, "map"), 0), "output")
+		}, true, false, "a map fixture has an output type"},
+		{"a getter fixture argument without an output", func(c catalogs) {
+			delete(arg(section(c.ops, "properties", "propertyWithDefault"), 1), "output")
+		}, true, false, "a getter fixture has an output type"},
+		{"a refine fixture placed nowhere", func(c catalogs) {
+			operation(c.ops, "refine")["flow"] = "none"
+		}, false, false, "places the issues of argument predicate 0 times"},
+		{"a map fixture placed", func(c catalogs) {
+			operation(c.ops, "map")["flow"] = doc{"fixture": "function"}
+		}, false, false, "gives no issue"},
+		{"a map fixture discarded", func(c catalogs) {
+			operation(c.ops, "map")["flow"] = doc{"discard": []any{"function"}}
+		}, false, false, "gives no issue"},
+		{"a symbol without alternatives in a result", func(c catalogs) {
+			operation(c.ops, "minLength")["result"] = "list<symbol>"
+		}, false, false, "a symbol type lists its alternatives"},
+		{"a symbol without alternatives in a value argument", func(c catalogs) {
+			arg(operation(c.ops, "minLength"), 0)["type"] = "nullable<symbol>"
+		}, false, false, "a symbol type lists its alternatives"},
+		{"a symbol without alternatives as a fixture output", func(c catalogs) {
+			c.fixtures["sym"] = doc{"kind": "map", "doc": "x", "input": "int32", "output": "symbol"}
+		}, false, false, "a symbol type lists its alternatives"},
+		{"a symbol without alternatives in fixture metadata", func(c catalogs) {
+			c.fixtures["sym"] = doc{"kind": "refine", "doc": "x", "input": "int32", "issue": doc{"code": "c", "message_key": "c", "message": "m", "meta": doc{"x": "list<symbol>"}}}
+		}, false, false, "a symbol type lists its alternatives"},
+		{"a symbol without alternatives in the issue catalogue", func(c catalogs) {
+			c.issues["too_short"].(doc)["meta"].(doc)["min"] = "symbol"
+		}, false, false, "a symbol type lists its alternatives"},
+		{"a product of two fields arguments", func(c catalogs) {
+			f := section(c.ops, "constructors", "object")
+			f["args"] = append(f["args"].([]any), doc{"name": "more", "kind": "fields"})
+		}, false, false, "two fields arguments"},
+		{"symbols_from for a declared result", func(c catalogs) {
+			section(c.ops, "constructors", "enum")["result"] = "string"
+		}, false, false, "symbols_from says the alternatives of a symbol result, and its result is string"},
 		{name: "a fixture issue with an empty message", edit: func(c catalogs) {
 			c.fixtures["even"].(doc)["issue"].(doc)["message"] = ""
 		}},
