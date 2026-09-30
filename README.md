@@ -29,13 +29,13 @@ and `raoh-jooq`, a PHP associative array or a Rust `serde_json::Value` are all a
 | `catalog/operations.json` | Every constructor and operation the decoder language has, with its type |
 | `catalog/fixtures.json` | The named functions the suite uses where a decoder takes a function |
 | `catalog/messages/` | The English and Japanese message catalogues |
-| `suite/` | The conformance cases |
+| `suite/` | The conformance cases, the IDs retired from them, and the source cases left out |
 | `schema/` | JSON Schemas for cases, runner results, conformance declarations and reports |
 | `cmd/raoh-verify` | The verifier |
 
-The Go packages at the root (`jsontext`, `value`, `catalog`, `dsl`, `suite`, `compare`,
-`manifest`, `verify`) are the verifier's implementation. They are not a Raoh implementation and
-share no code with raoh-go.
+The Go packages under `internal/` are the verifier's implementation. They are not a Raoh
+implementation and share no code with raoh-go. [spec/conformance.md](spec/conformance.md) lists
+the files the specification consists of; no other file may sit beside them.
 
 ## Checking an implementation
 

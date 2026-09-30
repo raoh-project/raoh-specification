@@ -1,11 +1,10 @@
 package suite
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/raoh-project/raoh-specification/internal/artifacts/artifactstest"
 	"github.com/raoh-project/raoh-specification/internal/catalog"
 	"github.com/raoh-project/raoh-specification/internal/dsl"
 )
@@ -108,19 +107,10 @@ func TestCaseShape(t *testing.T) {
 }
 
 func TestLoadRejectsRepeatedIDs(t *testing.T) {
-	root := t.TempDir()
-	for _, dir := range []string{"catalog/messages", "suite/core"} {
-		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write := func(name, text string) {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(text), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("suite/core/a.json", `[{"id": "int.one", "decoder": ["int"], "input": 1, "ok": 1}]`)
-	write("suite/core/b.json", `[{"id": "int.one", "decoder": ["int"], "input": 2, "ok": 2}]`)
+	root := artifactstest.Copy(t, "../..", map[string]string{
+		"suite/core/a.json": `[{"id": "int.one", "decoder": ["int"], "input": 1, "ok": 1}]`,
+		"suite/core/b.json": `[{"id": "int.one", "decoder": ["int"], "input": 2, "ok": 2}]`,
+	})
 	_, err := Load(root, checker(t))
 	if err == nil || !strings.Contains(err.Error(), "also used in suite/core/a.json") {
 		t.Errorf("got %v", err)

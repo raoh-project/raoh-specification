@@ -71,10 +71,25 @@ A runner result (`schema/runner-result.schema.json`) records:
 - `catalogs`: for each locale the implementation ships (`en`, `ja`), every message key and its
   template.
 
-The manifest digest ties a result to the exact suite it was produced from. It is the SHA-256 of
-every `.md`, `.json` and `.properties` file under `spec/`, `catalog/`, `schema/` and `suite/` whose
-name does not start with a dot, and of `specification.json`, taken
-in the order of their paths (relative, `/`-separated, compared byte by byte). Each file contributes
+The manifest digest ties a result to the exact revision it was produced from. It is taken over the
+normative artifact set, the files the specification consists of:
+
+| Artifact | Path |
+|----------|------|
+| The version | `specification.json` |
+| Normative prose | `spec/<name>.md`, `suite/<NAME>.md` |
+| The issue catalogue, the decoder language, the fixtures | `catalog/issues.json`, `catalog/operations.json`, `catalog/fixtures.json` |
+| The message catalogues | `catalog/messages/<locale>.properties` for `en` and `ja` |
+| The schemas | `schema/<name>.schema.json` |
+| The cases, and the IDs retired from them | `suite/<profile>/<name>.json` for `core` and `encode`, `suite/retired.json` |
+
+Every file under `spec/`, `catalog/`, `schema/` and `suite/` is one of these, except names that
+start with a dot; any other file there makes the specification invalid, rather than being left out
+of the digest. The verifier reads the machine-readable artifacts from this same set, so the digest
+covers everything it reads.
+
+The digest is the SHA-256 of the artifacts, taken in the order of their paths (relative,
+`/`-separated, compared byte by byte). Each contributes
 
 ```text
 <length of the path in bytes> LF <path> LF <length of the content in bytes> LF <content>

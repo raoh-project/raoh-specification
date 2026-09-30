@@ -3,11 +3,10 @@ package verify
 import (
 	"encoding/json"
 	"errors"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/raoh-project/raoh-specification/internal/artifacts/artifactstest"
 )
 
 const miniCore = `[
@@ -27,49 +26,15 @@ const miniEncode = `[
 // miniSpec builds a specification with the real catalogues and schemas and a small suite.
 func miniSpec(t *testing.T) *Spec {
 	t.Helper()
-	root := t.TempDir()
-	copyTree(t, "../..", root, "catalog")
-	copyTree(t, "../..", root, "schema")
-	for name, text := range map[string]string{
-		"specification.json":     `{"version": "9.9.9-test"}`,
+	root := artifactstest.Copy(t, "../..", map[string]string{
 		"suite/core/mini.json":   miniCore,
 		"suite/encode/mini.json": miniEncode,
-	} {
-		path := filepath.Join(root, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	})
 	s, err := Load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return s
-}
-
-func copyTree(t *testing.T, from, to, dir string) {
-	t.Helper()
-	err := filepath.WalkDir(filepath.Join(from, dir), func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, _ := filepath.Rel(from, path)
-		text, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		dst := filepath.Join(to, rel)
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return err
-		}
-		return os.WriteFile(dst, text, 0o644)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 const (

@@ -2,7 +2,6 @@ package suite
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,14 +9,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/raoh-project/raoh-specification/internal/artifacts"
 	"github.com/raoh-project/raoh-specification/internal/catalog"
 	"github.com/raoh-project/raoh-specification/internal/dsl"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
-
-// Profiles whose cases are in suite/<profile>/.
-var CaseProfiles = []string{"core", "encode"}
 
 // ExpectedIssue is an issue a case expects, with what the verifier needs to compare it.
 type ExpectedIssue struct {
@@ -61,43 +58,28 @@ type Suite struct {
 	ByID  map[string]*Case
 }
 
-// Load reads every case under root/suite.
+// Load reads every case file of the specification under root.
 func Load(root string, chk *dsl.Checker) (*Suite, error) {
+	list, err := artifacts.List(root)
+	if err != nil {
+		return nil, err
+	}
 	s := &Suite{ByID: map[string]*Case{}}
 	var problems []string
-	for _, profile := range CaseProfiles {
-		dir := filepath.Join(root, "suite", profile)
-		var files []string
-		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if !d.IsDir() && strings.HasSuffix(path, ".json") {
-				files = append(files, path)
-			}
-			return nil
-		})
-		if err != nil && !os.IsNotExist(err) {
+	for _, a := range artifacts.OfKind(list, artifacts.CaseFile) {
+		text, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(a.Path)))
+		if err != nil {
 			return nil, err
 		}
-		sort.Strings(files)
-		for _, path := range files {
-			rel, _ := filepath.Rel(root, path)
-			rel = filepath.ToSlash(rel)
-			text, err := os.ReadFile(path)
-			if err != nil {
-				return nil, err
+		cases, errs := ParseFile(a.Path, a.Profile, text, chk)
+		problems = append(problems, errs...)
+		for _, c := range cases {
+			if other, dup := s.ByID[c.ID]; dup {
+				problems = append(problems, fmt.Sprintf("%s: %s: the ID is also used in %s", a.Path, c.ID, other.File))
+				continue
 			}
-			cases, errs := ParseFile(rel, profile, text, chk)
-			problems = append(problems, errs...)
-			for _, c := range cases {
-				if other, dup := s.ByID[c.ID]; dup {
-					problems = append(problems, fmt.Sprintf("%s: %s: the ID is also used in %s", rel, c.ID, other.File))
-					continue
-				}
-				s.ByID[c.ID] = c
-				s.Cases = append(s.Cases, c)
-			}
+			s.ByID[c.ID] = c
+			s.Cases = append(s.Cases, c)
 		}
 	}
 	if len(problems) > 0 {

@@ -6,53 +6,23 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
-	"sort"
 	"strconv"
-	"strings"
+
+	"github.com/raoh-project/raoh-specification/internal/artifacts"
 )
 
-// Dirs are the directories whose files the digest covers, besides specification.json.
-var Dirs = []string{"spec", "catalog", "schema", "suite"}
-
-// Extensions are the kinds of file the digest covers. Anything else under Dirs (an editor's
-// backup, a .DS_Store) is not part of the specification, so that the same revision gives the same
-// digest on every machine.
-var Extensions = []string{".md", ".json", ".properties"}
-
-// Files lists the files the digest covers, as relative /-separated paths in byte order.
+// Files lists the files the digest covers: the normative artifact set, in byte order of paths.
 func Files(root string) ([]string, error) {
-	files := []string{"specification.json"}
-	for _, dir := range Dirs {
-		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return nil
-			}
-			if strings.HasPrefix(d.Name(), ".") || !slices.Contains(Extensions, filepath.Ext(d.Name())) {
-				return nil
-			}
-			if !d.Type().IsRegular() {
-				return fmt.Errorf("%s is not a regular file", path)
-			}
-			rel, err := filepath.Rel(root, path)
-			if err != nil {
-				return err
-			}
-			files = append(files, filepath.ToSlash(rel))
-			return nil
-		})
-		if err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
+	list, err := artifacts.List(root)
+	if err != nil {
+		return nil, err
 	}
-	sort.Strings(files)
+	files := make([]string, len(list))
+	for i, a := range list {
+		files[i] = a.Path
+	}
 	return files, nil
 }
 

@@ -10,12 +10,13 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/raoh-project/raoh-specification/internal/artifacts"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
 // Locales are the locales the specification has message catalogues for.
-var Locales = []string{"en", "ja"}
+var Locales = artifacts.Locales
 
 // KeyPrefix is prefixed to a message key to make its key in a properties file.
 const KeyPrefix = "raoh."
