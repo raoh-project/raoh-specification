@@ -65,10 +65,11 @@ later version.
 
 ## Order
 
-Issues are compared in the order the decoder gives them, except where an operation says its issues
-come in the order of the input's members (for example the unknown fields a strict object reports).
-Those issues are compared as a multiset: the same issues, each the same number of times, in any
-order. `catalog/operations.json` marks such operations with `"issue_order": "input"`.
+Issues are compared in the order the decoder gives them, unless the decoder contains a form whose
+issues come in the order of the input's members (the unknown fields `strictObject` and `strict`
+report). `catalog/operations.json` marks such forms with `"issue_order": "input"`. The issues of a
+decoder containing one are compared as a multiset: the same issues, each the same number of times,
+in any order.
 
 ## Issues from fixtures
 
