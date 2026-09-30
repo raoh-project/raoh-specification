@@ -46,15 +46,28 @@ func rejected(t *testing.T, c *Checker, form, why string) {
 	}
 }
 
-func issue(t *testing.T, checked *Checked, key string) Possible {
+func issue(t *testing.T, checked *Checked, key string) Located {
 	t.Helper()
-	for _, p := range checked.Issues {
+	for _, p := range checked.Sites {
 		if p.Key == key {
 			return p
 		}
 	}
-	t.Fatalf("no possible issue %s among %v", key, checked.Issues)
-	return Possible{}
+	t.Fatalf("no site %s among %v", key, checked.Sites)
+	return Located{}
+}
+
+// sites writes the sites of a decoder as "path key" or "path key (unordered at group)".
+func sites(checked *Checked) []string {
+	var out []string
+	for _, s := range checked.Sites {
+		line := PathString(s.Path) + " " + s.Key
+		if s.Group != nil {
+			line += " (unordered at " + PathString(s.Group) + ")"
+		}
+		out = append(out, line)
+	}
+	return out
 }
 
 func TestResultTypes(t *testing.T) {
@@ -150,22 +163,42 @@ func TestPossibleIssuesAreInstantiated(t *testing.T) {
 func TestReplacedIssuesAreNotPossible(t *testing.T) {
 	c := checker(t)
 	d := decoder(t, c, `["recover", ["int", ["min", 1]], 1]`)
-	if len(d.Issues) != 0 {
-		t.Errorf("recover can give %v", d.Issues)
+	if len(d.Sites) != 0 {
+		t.Errorf("recover can give %v", sites(d))
 	}
 	d = decoder(t, c, `["oneOf", [["int", ["map", "decimal_string"]], ["string", ["minLength", 3]]]]`)
-	if len(d.Issues) != 1 || d.Issues[0].Key != "one_of_failed" {
-		t.Errorf("oneOf can give %v", d.Issues)
+	if len(d.Sites) != 1 || d.Sites[0].Key != "one_of_failed" || len(d.Sites[0].Candidates) != 2 {
+		t.Errorf("oneOf can give %v", sites(d))
+	}
+	cand := Sites(d.Sites[0].Candidates[1])
+	if len(cand) != 3 || cand[2].Key != "too_short" {
+		t.Errorf("the second candidate's sites: %v", cand)
 	}
 }
 
-func TestInputOrder(t *testing.T) {
+// A flow keeps where each issue arises and which issues come in the input's order, so that
+// neither is lost to the rest of the decoder. Within a form, the flows of its arguments come
+// first and its own issues after them.
+func TestFlowsKeepPathsAndOrder(t *testing.T) {
 	c := checker(t)
-	if decoder(t, c, `["object", [["field", "a", ["int"]]]]`).InputOrder {
-		t.Error("object is input-ordered")
-	}
-	if !decoder(t, c, `["list", ["strictObject", [["field", "a", ["int"]]]]]`).InputOrder {
-		t.Error("strictObject inside a list is not input-ordered")
+	for form, want := range map[string]string{
+		`["object", [["field", "name", ["string"]], ["optionalField", "nick", ["int", ["min", 1]]]]]`: "" +
+			"/name required|/name type_mismatch|/name type_mismatch|/nick required|/nick type_mismatch|/nick type_mismatch.numeric_range|/nick out_of_range.minimum",
+		`["list", ["object", [["field", "q", ["int", ["positive"]]]]], ["nonempty"]]`: "" +
+			"/*/q required|/*/q type_mismatch|/*/q type_mismatch.numeric_range|/*/q out_of_range.positive|/*/q type_mismatch|" +
+			" required| type_mismatch| too_small.nonempty",
+		`["strict", ["object", [["field", "w", ["int"]]]], ["kind", "w"]]`: "" +
+			"/w required|/w type_mismatch|/w type_mismatch.numeric_range|/w type_mismatch|/* unknown_field (unordered at )",
+		`["discriminate", "kind", {"a": ["strictObject", [["field", "x", ["int"]]]]}]`: "" +
+			"/x required|/x type_mismatch|/x type_mismatch.numeric_range|/x type_mismatch|/* unknown_field (unordered at )|" +
+			"/kind required|/kind type_mismatch|/kind not_allowed",
+		`["object", [["field", "p", ["object", [["field", "s", ["int"]], ["field", "e", ["int"]]], ["flatMap", "ordered_period"]]]]]`: "" +
+			"/p/s required|/p/s type_mismatch|/p/s type_mismatch.numeric_range|/p/s type_mismatch|" +
+			"/p/e required|/p/e type_mismatch|/p/e type_mismatch.numeric_range|/p/e type_mismatch|/p/end invalid_value|/p type_mismatch",
+	} {
+		if got := strings.Join(sites(decoder(t, c, form)), "|"); got != want {
+			t.Errorf("%s:\n got %s\nwant %s", form, got, want)
+		}
 	}
 }
 

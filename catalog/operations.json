@@ -37,13 +37,13 @@
     },
     "list": {
       "doc": "Accepts a JSON array and decodes each element with the element decoder at the path of its index. The issues of every failing element are given, in index order.",
-      "args": [{"name": "element", "kind": "decoder", "type": "T"}],
+      "args": [{"name": "element", "kind": "decoder", "type": "T", "flows": "each_element"}],
       "result": "list<T>",
       "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "array"}}]
     },
     "dict": {
       "doc": "Accepts a JSON object and decodes each member's value with the value decoder at the path of its name.",
-      "args": [{"name": "value", "kind": "decoder", "type": "T"}],
+      "args": [{"name": "value", "kind": "decoder", "type": "T", "flows": "each_element"}],
       "result": "map<T>",
       "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "object"}}]
     },
@@ -51,13 +51,13 @@
       "doc": "Decodes each field from the same input, in the order the fields are declared, and gives the product of their values. Each field checks for itself that the input is an object: a required field of a non-object input gives type_mismatch (expected \"object\") at the field's path, and an optional field reads a non-object input as not having the field. The issues of every failing field are given, in declaration order.",
       "args": [{"name": "fields", "kind": "fields"}],
       "result": "product",
-      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "object"}}]
+      "issues": []
     },
     "strictObject": {
       "doc": "As object, and in addition gives unknown_field, at the member's path, for every member of an object input that no field names, in the order of the input's members.",
       "args": [{"name": "fields", "kind": "fields"}],
       "result": "product",
-      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "object"}}, "unknown_field"],
+      "issues": [{"key": "unknown_field", "at": "member"}],
       "issue_order": "input"
     },
     "strict": {
@@ -67,7 +67,7 @@
         {"name": "known", "kind": "value", "type": "list<string>"}
       ],
       "result": "T",
-      "issues": ["unknown_field"],
+      "issues": [{"key": "unknown_field", "at": "member"}],
       "issue_order": "input"
     },
     "nullable": {
@@ -102,7 +102,7 @@
         {"name": "variants", "kind": "variants", "type": "T"}
       ],
       "result": "T",
-      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "object"}}, {"key": "not_allowed", "T": "string", "omit": ["actual"]}]
+      "issues": [{"key": "required", "at": "tag"}, {"key": "type_mismatch", "at": "tag", "meta": {"expected": "object"}}, {"key": "not_allowed", "at": "tag", "T": "string", "omit": ["actual"]}]
     },
     "discriminateBy": {
       "doc": "As discriminate, except that the tag is what the tag decoder gives for the whole input; the tag decoder's issues are given as they are. A tag that names no variant gives not_allowed at the tag field's path, as discriminate does.",
@@ -112,14 +112,13 @@
         {"name": "variants", "kind": "variants", "type": "T"}
       ],
       "result": "T",
-      "issues": [{"key": "not_allowed", "T": "string", "omit": ["actual"]}]
+      "issues": [{"key": "not_allowed", "at": "tag", "T": "string", "omit": ["actual"]}]
     },
     "oneOf": {
       "doc": "Tries each candidate in order on the same input and gives the first success. When all fail, gives one_of_failed at the input's path, whose candidates list, for each candidate by index, the issues it gave, each with its path, code, message and meta.",
-      "args": [{"name": "candidates", "kind": "decoders", "type": "T"}],
+      "args": [{"name": "candidates", "kind": "decoders", "type": "T", "flows": "candidates"}],
       "result": "T",
-      "issues": ["one_of_failed"],
-      "replaces_issues": true
+      "issues": ["one_of_failed"]
     },
     "withDefault": {
       "doc": "Gives the default for a JSON null or an absent value, and decodes anything else with the inner decoder.",
@@ -133,27 +132,26 @@
     "recover": {
       "doc": "Decodes with the inner decoder, and gives the fallback instead of any failure.",
       "args": [
-        {"name": "inner", "kind": "decoder", "type": "T"},
+        {"name": "inner", "kind": "decoder", "type": "T", "flows": "none"},
         {"name": "fallback", "kind": "value", "type": "T"}
       ],
       "result": "T",
-      "issues": [],
-      "replaces_issues": true
+      "issues": []
     },
     "recoverWith": {
       "doc": "Decodes with the inner decoder, and gives what the fixture computes from the issues instead of any failure.",
       "args": [
-        {"name": "inner", "kind": "decoder", "type": "T"},
+        {"name": "inner", "kind": "decoder", "type": "T", "flows": "none"},
         {"name": "recovery", "kind": "fixture", "fixture": "recover", "input": "issues", "output": "T"}
       ],
       "result": "T",
-      "issues": [],
-      "replaces_issues": true
+      "issues": []
     }
   },
   "fields": {
     "field": {
-      "doc": "A required field: decodes the member of that name with the decoder, at the member's path. An absent member is passed to the decoder as absent.",
+      "doc": "A required field: decodes the member of that name with the decoder, at the member's path. An absent member is passed to the decoder as absent. When the input is not an object, gives type_mismatch (expected \"object\") at the member's path instead.",
+      "issues": [{"key": "type_mismatch", "meta": {"expected": "object"}}],
       "args": [
         {"name": "name", "kind": "value", "type": "string"},
         {"name": "decoder", "kind": "decoder", "type": "T"}

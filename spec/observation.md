@@ -65,6 +65,7 @@ tell an empty optional from one holding null. The type checker rejects every for
 would be such a type.
 | `record<...>` | a JSON object with exactly the fields of the type |
 | `json` | the value itself |
+| `issues` | a JSON array of issues, as [issues.md](issues.md) describes the ones `one_of_failed` lists |
 
 ## Outcomes
 

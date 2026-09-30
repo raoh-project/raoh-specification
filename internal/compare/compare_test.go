@@ -160,3 +160,40 @@ func schemasFor(t *testing.T) *schemas.Set {
 	}
 	return sch
 }
+
+// Only the issues of one unordered group may come in any order; everything else keeps its place,
+// and the group keeps its place among the others.
+func TestUnorderedGroupsKeepTheirPlace(t *testing.T) {
+	c := oneCase(t, `{"id": "a.b", "decoder": ["strict", ["discriminate", "kind", {
+		"rect": ["strict", ["object", [["field", "w", ["int"]], ["field", "h", ["int"]]], ["map", "area"]], ["kind", "w", "h"]]}],
+		["kind", "w", "h"]],
+		"input": {"kind": "rect", "w": "2", "extra": 1, "more": 2, "h": 3},
+		"issues": [
+			{"path": "/w", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer", "actual": "string"}},
+			{"path": "/extra", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "extra"}},
+			{"path": "/more", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "more"}}]}`)
+	w := `{"path": "/w", "code": "type_mismatch", "message_key": "type_mismatch", "message": "expected integer", "meta": {"expected": "integer", "actual": "string"}}`
+	unknown := func(f string) string {
+		return `{"path": "/` + f + `", "code": "unknown_field", "message_key": "unknown_field", "message": "unknown field", "meta": {"field": "` + f + `"}}`
+	}
+	matches(t, c, `{"issues": [`+w+`,`+unknown("extra")+`,`+unknown("more")+`]}`)
+	matches(t, c, `{"issues": [`+w+`,`+unknown("more")+`,`+unknown("extra")+`]}`)
+	differs(t, c, `{"issues": [`+unknown("extra")+`,`+w+`,`+unknown("more")+`]}`, "issue 0")
+	differs(t, c, `{"issues": [`+unknown("extra")+`,`+unknown("more")+`,`+w+`]}`, "issue 0")
+}
+
+// The issues a oneOf's candidates report are typed by each candidate's decoder, so a float's
+// sign is compared as the value model compares it.
+func TestCandidatesAreTyped(t *testing.T) {
+	c := oneCase(t, `{"id": "a.b", "decoder": ["oneOf", [["double", ["positive"]], ["double", ["oneOf", [1]]]]], "input": -0.0,
+		"issues": [{"path": "", "code": "one_of_failed", "message_key": "one_of_failed", "meta": {"candidates": [
+			{"candidate": 0, "issues": [{"path": "", "code": "out_of_range", "message": "must be positive", "meta": {"min": 0, "actual": {"float": "-0"}}}]},
+			{"candidate": 1, "issues": [{"path": "", "code": "not_allowed", "message": "must be one of [1.0]", "meta": {"allowed": [1], "actual": {"float": "-0"}}}]}]}}]}`)
+	obs := func(actual string) string {
+		return `{"issues": [{"path": "", "code": "one_of_failed", "message_key": "one_of_failed", "message": "no variant matched", "meta": {"candidates": [
+			{"candidate": 1, "issues": [{"path": "", "code": "not_allowed", "message": "must be one of [1.0]", "meta": {"allowed": [1.0], "actual": {"float": "-0"}}}]},
+			{"candidate": 0, "issues": [{"path": "", "code": "out_of_range", "message": "must be positive", "meta": {"min": 0.0, "actual": ` + actual + `}}]}]}}]}`
+	}
+	matches(t, c, obs(`{"float": "-0"}`))
+	differs(t, c, obs(`0`), "candidate 0")
+}

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/raoh-project/raoh-specification/internal/artifacts"
@@ -20,12 +19,19 @@ import (
 // ExpectedIssue is an issue a case expects, with what the verifier needs to compare it.
 type ExpectedIssue struct {
 	Issue
-	// Possible is the issue of the decoder it is an instance of.
-	Possible dsl.Possible
+	// Site is where in the decoder it arises.
+	Site dsl.Located
 	// Meta holds the metadata values, typed.
 	Meta map[string]value.Value
 	// Message is the message: the one the case gives, or the one derived from the catalogue.
 	Message string
+	// Group identifies, for an issue whose site is unordered, the object whose members order it;
+	// empty for an ordered issue.
+	Group string
+	// Candidates are, for one_of_failed, the issues each candidate gave, by candidate index, and
+	// CandidatesMeta the metadata entry that lists them.
+	Candidates     map[int][]ExpectedIssue
+	CandidatesMeta string
 }
 
 // Case is one conformance case.
@@ -205,18 +211,31 @@ func parseCase(file, profile string, n *jsontext.Node, chk *dsl.Checker) (*Case,
 	return c, nil
 }
 
-// Expect finds the possible issue an issue is an instance of, types its metadata, and settles its
-// message. An issue that more than one possible issue fits, with different types or messages, is
-// ambiguous: which one a runner gives depends on where in the decoder it arises, which the case
-// does not say.
+// Expect finds the site in the decoder's flow an issue arises at, types its metadata, and
+// settles its message. The site is found by the issue's path, message key and code; an issue
+// that two sites fit, with different types, messages or ordering, is ambiguous, and so is a case
+// that expects it.
 func Expect(is Issue, checked *dsl.Checked, cat *catalog.Catalog) (ExpectedIssue, error) {
+	return expectAmong(is, checked.Sites, nil, cat)
+}
+
+// expectAmong finds an issue among sites. base is the path the sites are relative to.
+func expectAmong(is Issue, sites []dsl.Located, base []string, cat *catalog.Catalog) (ExpectedIssue, error) {
+	path, err := SplitPath(is.Path)
+	if err != nil {
+		return ExpectedIssue{}, err
+	}
+	if len(path) < len(base) || !slices.Equal(path[:len(base)], base) {
+		return ExpectedIssue{}, fmt.Errorf("%s at %q is not below %q", is.Key, is.Path, JoinPath(base))
+	}
+	rel := path[len(base):]
 	var fits []ExpectedIssue
 	var tried []string
-	for _, p := range checked.Issues {
-		if p.Key != is.Key {
+	for _, site := range sites {
+		if site.Code != is.Code || (is.Key != "" && site.Key != is.Key) || !dsl.Matches(site.Path, rel) {
 			continue
 		}
-		e, err := instance(is, p, cat)
+		e, err := instance(is, site, path, cat)
 		if err != nil {
 			tried = append(tried, err.Error())
 			continue
@@ -225,16 +244,23 @@ func Expect(is Issue, checked *dsl.Checked, cat *catalog.Catalog) (ExpectedIssue
 	}
 	if len(fits) == 0 {
 		if len(tried) == 0 {
-			return ExpectedIssue{}, fmt.Errorf("the decoder cannot give %s", is.Key)
+			return ExpectedIssue{}, fmt.Errorf("the decoder gives no %s at %q", describeKey(is), is.Path)
 		}
 		return ExpectedIssue{}, fmt.Errorf("%s", strings.Join(tried, "; "))
 	}
 	for _, other := range fits[1:] {
-		if other.Message != fits[0].Message || !sameTypes(other.Meta, fits[0].Meta) {
-			return ExpectedIssue{}, fmt.Errorf("%s is ambiguous: the decoder can give it with metadata typed %s or %s; write the case so that only one fits", is.Key, typesOf(fits[0].Meta), typesOf(other.Meta))
+		if other.Message != fits[0].Message || !sameTypes(other.Meta, fits[0].Meta) || other.Group != fits[0].Group {
+			return ExpectedIssue{}, fmt.Errorf("%s at %q is ambiguous: sites %s and %s of the decoder can give it differently", describeKey(is), is.Path, dsl.PathString(fits[0].Site.Path), dsl.PathString(other.Site.Path))
 		}
 	}
 	return fits[0], nil
+}
+
+func describeKey(is Issue) string {
+	if is.Key == "" {
+		return is.Code
+	}
+	return is.Key
 }
 
 func sameTypes(a, b map[string]value.Value) bool {
@@ -250,64 +276,113 @@ func sameTypes(a, b map[string]value.Value) bool {
 	return true
 }
 
-func typesOf(m map[string]value.Value) string {
-	var parts []string
-	for k, v := range m {
-		parts = append(parts, k+":"+v.Type.String())
+// GroupOf identifies the object whose members order an issue at a site, or is empty.
+func GroupOf(site dsl.Located, path []string) string {
+	if site.Group == nil {
+		return ""
 	}
-	sort.Strings(parts)
-	return "{" + strings.Join(parts, ",") + "}"
+	return "unordered " + JoinPath(path[:len(site.Group)])
 }
 
-func instance(is Issue, p dsl.Possible, cat *catalog.Catalog) (ExpectedIssue, error) {
-	e := ExpectedIssue{Issue: is, Possible: p, Meta: map[string]value.Value{}}
-	if is.Code != p.Code {
-		return e, fmt.Errorf("%s has code %s, not %s", is.Key, p.Code, is.Code)
-	}
-	if len(p.Path) > 0 {
-		segs, _ := SplitPath(is.Path)
-		if len(segs) < len(p.Path) || !slices.Equal(segs[len(segs)-len(p.Path):], p.Path) {
-			return e, fmt.Errorf("%s is given at %s below the decoder, and %q does not end so", is.Key, JoinPath(p.Path), is.Path)
-		}
-	}
+func instance(is Issue, site dsl.Located, path []string, cat *catalog.Catalog) (ExpectedIssue, error) {
+	e := ExpectedIssue{Issue: is, Site: site, Meta: map[string]value.Value{}, Group: GroupOf(site, path)}
 	for _, m := range is.Meta.Members {
-		t, ok := p.Meta[m.Name]
+		t, ok := site.Meta[m.Name]
 		if !ok {
-			return e, fmt.Errorf("%s has no metadata %s", is.Key, m.Name)
+			return e, fmt.Errorf("%s has no metadata %s", site.Key, m.Name)
+		}
+		if t.Kind == value.List && t.Args[0].Kind == value.Record && site.Candidates != nil {
+			e.CandidatesMeta = m.Name
+			if err := e.candidates(m.Value, site, path, cat); err != nil {
+				return e, fmt.Errorf("%s meta %s: %w", site.Key, m.Name, err)
+			}
+			continue
 		}
 		v, err := value.Observe(t, m.Value)
 		if err != nil {
-			return e, fmt.Errorf("%s meta %s: %w", is.Key, m.Name, err)
+			return e, fmt.Errorf("%s meta %s: %w", site.Key, m.Name, err)
 		}
 		e.Meta[m.Name] = v
 	}
-	for name, want := range p.Fixed {
+	for name, want := range site.Fixed {
 		got, ok := is.Meta.Get(name)
 		if !ok || !value.EqualJSON(want, got) {
-			return e, fmt.Errorf("%s from this form always has %s %s", is.Key, name, want.Raw)
+			return e, fmt.Errorf("%s from this form always has %s %s", site.Key, name, want.Raw)
 		}
 	}
-	for name := range p.Meta {
-		if _, ok := e.Meta[name]; !ok && !slices.Contains(p.Optional, name) {
-			return e, fmt.Errorf("%s needs metadata %s", is.Key, name)
+	for name := range site.Meta {
+		_, typed := e.Meta[name]
+		_, nested := is.Meta.Get(name)
+		if !typed && !nested && !slices.Contains(site.Optional, name) {
+			return e, fmt.Errorf("%s needs metadata %s", site.Key, name)
 		}
 	}
 	switch {
-	case p.Message != "":
-		if is.Message == nil || *is.Message != p.Message {
-			return e, fmt.Errorf("%s is given the message %q, which the case has to write", is.Key, p.Message)
+	case is.Key == "":
+		// An issue a candidate reported has no message key; its message is whatever the
+		// candidate wrote, which the case gives.
+		if is.Message == nil {
+			return e, fmt.Errorf("an issue a candidate reported has to give its message")
 		}
-		e.Message = p.Message
+		e.Message = *is.Message
+	case site.Message != "":
+		if is.Message == nil || *is.Message != site.Message {
+			return e, fmt.Errorf("%s is given the message %q, which the case has to write", site.Key, site.Message)
+		}
+		e.Message = site.Message
 	case is.Message != nil:
-		return e, fmt.Errorf("the message of %s is derived from the catalogue; leave it out", is.Key)
+		return e, fmt.Errorf("the message of %s is derived from the catalogue; leave it out", site.Key)
 	default:
-		m, err := Derive(is.Key, is.Code, e.Meta, cat)
+		m, err := Derive(site.Key, site.Code, e.Meta, cat)
 		if err != nil {
 			return e, err
 		}
 		e.Message = m
 	}
 	return e, nil
+}
+
+// candidates reads the candidates of a one_of_failed: for each, its index and the issues it
+// gave, each typed by the flow of that candidate.
+func (e *ExpectedIssue) candidates(n *jsontext.Node, site dsl.Located, path []string, cat *catalog.Catalog) error {
+	if n.Kind != jsontext.Array {
+		return fmt.Errorf("expected an array of candidates")
+	}
+	e.Candidates = map[int][]ExpectedIssue{}
+	for _, c := range n.Elems {
+		idx, err := c.Member("candidate")
+		if err != nil {
+			return err
+		}
+		i, err := value.Observe(value.Of(value.Int32), idx)
+		if err != nil || i.Int.Sign() < 0 || i.Int.Int64() >= int64(len(site.Candidates)) {
+			return fmt.Errorf("candidate %s is not an index of the %d candidates", idx.Raw, len(site.Candidates))
+		}
+		k := int(i.Int.Int64())
+		if _, dup := e.Candidates[k]; dup {
+			return fmt.Errorf("candidate %d appears twice", k)
+		}
+		list, err := c.Member("issues")
+		if err != nil {
+			return err
+		}
+		nested, err := ParseNestedIssues(list)
+		if err != nil {
+			return err
+		}
+		sites := dsl.Sites(site.Candidates[k])
+		for j, is := range nested {
+			ne, err := expectAmong(is, sites, path, cat)
+			if err != nil {
+				return fmt.Errorf("candidate %d issue %d: %w", k, j, err)
+			}
+			e.Candidates[k] = append(e.Candidates[k], ne)
+		}
+		if len(c.Members) != 2 {
+			return fmt.Errorf("a candidate has candidate and issues, and nothing else")
+		}
+	}
+	return nil
 }
 
 // Derive derives an issue's message from the English catalogue. See spec/issues.md.

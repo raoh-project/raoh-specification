@@ -38,7 +38,6 @@
         "args": {"type": "array", "items": {"$ref": "#/$defs/arg"}},
         "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}},
         "issue_order": {"const": "input"},
-        "replaces_issues": {"type": "boolean"},
         "requires": {
           "type": "array",
           "items": {
@@ -62,6 +61,7 @@
         "kind": {"enum": ["decoder", "decoders", "fields", "variants", "value", "message", "fixture", "encoder", "properties"]},
         "type": {"$ref": "#/$defs/type"},
         "optional": {"type": "boolean"},
+        "flows": {"enum": ["here", "each_element", "candidates", "none"]},
         "default": {"description": "What an optional argument left out stands for, as an observation of its type."},
         "one_of": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         "fixture": {"enum": ["map", "refine", "flatMap", "recover", "getter"]},
@@ -83,6 +83,7 @@
           "required": ["key"],
           "properties": {
             "key": {"type": "string", "minLength": 1},
+            "at": {"enum": ["here", "tag", "member"]},
             "omit": {"type": "array", "items": {"type": "string"}},
             "meta": {"type": "object"}
           },

@@ -63,6 +63,43 @@ func ParseIssues(n *jsontext.Node) ([]Issue, error) {
 
 var issueMembers = []string{"path", "code", "message_key", "message", "meta"}
 
+// ParseNestedIssues reads the issues a candidate of a oneOf reported, as its one_of_failed lists
+// them: each with path, code, message and meta, and no message key.
+func ParseNestedIssues(n *jsontext.Node) ([]Issue, error) {
+	if n.Kind != jsontext.Array || len(n.Elems) == 0 {
+		return nil, fmt.Errorf("a candidate's issues must be a non-empty array")
+	}
+	var out []Issue
+	for i, e := range n.Elems {
+		if e.Kind != jsontext.Object {
+			return nil, fmt.Errorf("issue %d: expected an object", i)
+		}
+		for _, name := range e.Names() {
+			if !slices.Contains([]string{"path", "code", "message", "meta"}, name) {
+				return nil, fmt.Errorf("issue %d: unknown member %q", i, name)
+			}
+		}
+		var is Issue
+		var err error
+		if is.Path, err = e.String("path"); err != nil {
+			return nil, err
+		}
+		if is.Code, err = e.String("code"); err != nil {
+			return nil, err
+		}
+		m, err := e.String("message")
+		if err != nil {
+			return nil, err
+		}
+		is.Message = &m
+		if is.Meta, err = e.Member("meta"); err != nil || is.Meta.Kind != jsontext.Object {
+			return nil, fmt.Errorf("issue %d: meta must be an object", i)
+		}
+		out = append(out, is)
+	}
+	return out, nil
+}
+
 func parseIssue(n *jsontext.Node) (Issue, error) {
 	var is Issue
 	if n.Kind != jsontext.Object {

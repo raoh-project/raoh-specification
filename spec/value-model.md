@@ -70,8 +70,9 @@ different types.
 |------|--------|-----------|
 | `record<f1:T1,...,fn:Tn>` | a value of each named field | the same value for each field |
 | `json` | any JSON value | the same kind; numbers with the same value, strings, booleans and arrays equal element by element, objects with the same members in any order |
-| `issues` | a non-empty list of issues, as a failed decoder gives them | not observed |
+| `issues` | a non-empty list of issues, as a failed decoder gives them | issue by issue, as [issues.md](issues.md) compares them |
 
-`record` and `json` appear only in issue metadata, where a variant carries structured data (the
-candidates `one_of_failed` lists, for instance). `issues` appears only as the input of a fixture
-that recovers from a failure; it is never written down.
+`record` appears only in issue metadata, where a variant carries structured data. `issues` appears
+in the candidates `one_of_failed` lists, where each candidate's issues are typed by that
+candidate's decoder, and as the input of a fixture that recovers from a failure. `json` is the
+output of an encoder.

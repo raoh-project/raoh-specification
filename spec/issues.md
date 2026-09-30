@@ -66,13 +66,33 @@ Other types have no message form, and no template refers to metadata of those ty
 Whether the float and decimal forms should stay as raoh-java writes them is an open question for a
 later version.
 
-## Order
+## Where issues arise, and in what order
 
-Issues are compared in the order the decoder gives them, unless the decoder contains a form whose
-issues come in the order of the input's members (the unknown fields `strictObject` and `strict`
-report). `catalog/operations.json` marks such forms with `"issue_order": "input"`. The issues of a
-decoder containing one are compared as a multiset: the same issues, each the same number of times,
-in any order.
+Every decoder has an issue flow, which the verifier builds from the decoder's form and
+`catalog/operations.json`. It says where each issue can arise, relative to the path the decoder
+runs at, and in what order issues come:
+
+- A form gives the issues of its decoder arguments first, then its own. A field gives its issues at
+  the path of the member it names; the elements of `list` and the members of `dict` give theirs at
+  each element's or member's path, in order.
+- An operation's own issues arise where it runs, except where `catalog/operations.json` places
+  them at the tag field (`"at": "tag"`, for `discriminate`) or at each member of the input
+  (`"at": "member"`, for the unknown members `strict` and `strictObject` report).
+- A form marked `"issue_order": "input"` gives its issues at members in the order of the input's
+  members. Those issues, for one object, form an unordered group.
+
+A case's issue is matched with the place in the flow its path, message key and code fit, and its
+metadata is typed there. An issue that two places fit with different types, messages or ordering
+is ambiguous, and a case that expects one is rejected.
+
+Issues are compared in the order the decoder gives them, except that consecutive issues of one
+unordered group are compared as a multiset: the same issues, each the same number of times, in
+any order. The group keeps its place among the other issues: the unknown members `strict` reports
+still come after the issues of the decoder it wraps.
+
+`one_of_failed` lists, for each candidate that failed, the issues it gave. Those are typed and
+compared by the flow of that candidate. As raoh-java writes them, they have a path, a code, a
+message and metadata, and no message key; a case gives their messages as they are written.
 
 ## Issues from fixtures
 

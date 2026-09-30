@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/raoh-project/raoh-specification/internal/dsl"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
 	"github.com/raoh-project/raoh-specification/internal/suite"
 	"github.com/raoh-project/raoh-specification/internal/value"
@@ -41,10 +42,18 @@ func Expected(c *suite.Case, observed suite.Outcome) (bool, string) {
 	if !observed.Failed() {
 		return false, fmt.Sprintf("expected issues %s, observed ok %s", describeExpected(c.Issues), observed.OK.Raw)
 	}
-	return matchIssues(len(c.Issues), len(observed.Issues), c.Checked.InputOrder,
-		func(i, j int) string { return matchExpected(c.Issues[i], observed.Issues[j]) },
+	return matchExpectedList(c.Issues, observed.Issues)
+}
+
+func matchExpectedList(expected []suite.ExpectedIssue, observed []suite.Issue) (bool, string) {
+	groups := make([]string, len(expected))
+	for i, e := range expected {
+		groups[i] = e.Group
+	}
+	return matchRuns(groups, len(observed),
+		func(i, j int) string { return matchExpected(expected[i], observed[j]) },
 		func() string {
-			return fmt.Sprintf("expected %s, observed %s", describeExpected(c.Issues), describeIssues(observed.Issues))
+			return fmt.Sprintf("expected %s, observed %s", describeExpected(expected), describeIssues(observed))
 		})
 }
 
@@ -86,36 +95,69 @@ func Same(c *suite.Case, declared, observed suite.Outcome) (bool, string) {
 		}
 		return true, ""
 	}
-	return matchIssues(len(declared.Issues), len(observed.Issues), c.Checked.InputOrder,
+	groups := make([]string, len(declared.Issues))
+	for i, d := range declared.Issues {
+		groups[i] = groupOf(d, c.Checked.Sites)
+	}
+	return matchRuns(groups, len(observed.Issues),
 		func(i, j int) string { return matchObserved(declared.Issues[i], observed.Issues[j]) },
 		func() string {
 			return fmt.Sprintf("declared %s, observed %s", describeIssues(declared.Issues), describeIssues(observed.Issues))
 		})
 }
 
-// matchIssues compares two lists of issues in order, or as multisets when unordered.
-func matchIssues(n, m int, unordered bool, match func(i, j int) string, describe func() string) (bool, string) {
+// groupOf finds the unordered group of an issue a declaration gives, by the sites its path, key
+// and code fit; an issue no unordered site fits, or that sites of different groups fit, is
+// ordered.
+func groupOf(is suite.Issue, sites []dsl.Located) string {
+	path, err := suite.SplitPath(is.Path)
+	if err != nil {
+		return ""
+	}
+	group, found := "", false
+	for _, site := range sites {
+		if site.Key != is.Key || site.Code != is.Code || !dsl.Matches(site.Path, path) {
+			continue
+		}
+		g := suite.GroupOf(site, path)
+		if found && g != group {
+			return ""
+		}
+		group, found = g, true
+	}
+	return group
+}
+
+// matchRuns compares a list of issues with an observed one. Consecutive issues of the same
+// unordered group form a run, compared with the same number of observed issues as a multiset;
+// every other issue is compared with the observed issue at its position.
+func matchRuns(groups []string, m int, match func(i, j int) string, describe func() string) (bool, string) {
+	n := len(groups)
 	if n != m {
 		return false, fmt.Sprintf("%d issue(s) where %d were expected: %s", m, n, describe())
 	}
-	if !unordered {
-		for i := range n {
-			if why := match(i, i); why != "" {
-				return false, fmt.Sprintf("issue %d: %s", i, why)
+	for i := 0; i < n; {
+		k := i + 1
+		if groups[i] != "" {
+			for k < n && groups[k] == groups[i] {
+				k++
 			}
 		}
-		return true, ""
-	}
-	used := make([]bool, m)
-next:
-	for i := range n {
-		for j := range m {
-			if !used[j] && match(i, j) == "" {
-				used[j] = true
-				continue next
+		used := make([]bool, k-i)
+	next:
+		for a := i; a < k; a++ {
+			for b := i; b < k; b++ {
+				if !used[b-i] && match(a, b) == "" {
+					used[b-i] = true
+					continue next
+				}
 			}
+			if k-i == 1 {
+				return false, fmt.Sprintf("issue %d: %s", i, match(i, i))
+			}
+			return false, fmt.Sprintf("issue %d has no match among issues %d to %d, which may come in any order: %s", a, i, k-1, describe())
 		}
-		return false, fmt.Sprintf("issue %d has no match in any order: %s", i, describe())
+		i = k
 	}
 	return true, ""
 }
@@ -140,10 +182,20 @@ func matchExpected(e suite.ExpectedIssue, o suite.Issue) string {
 		return fmt.Sprintf("message %q, observed %q", e.Message, *o.Message)
 	}
 	names := o.Meta.Names()
-	if len(names) != len(e.Meta) {
+	expectedNames := len(e.Meta)
+	if e.CandidatesMeta != "" {
+		expectedNames++
+	}
+	if len(names) != expectedNames {
 		return fmt.Sprintf("metadata %s, observed %s", metaNames(e.Meta), strings.Join(sorted(names), ","))
 	}
 	for _, m := range o.Meta.Members {
+		if m.Name == e.CandidatesMeta {
+			if why := matchCandidates(e, m.Value); why != "" {
+				return why
+			}
+			continue
+		}
 		want, ok := e.Meta[m.Name]
 		if !ok {
 			return fmt.Sprintf("metadata %s, observed %s", metaNames(e.Meta), strings.Join(sorted(names), ","))
@@ -171,6 +223,40 @@ func matchObserved(d, o suite.Issue) string {
 	}
 	if !value.EqualJSON(d.Meta, o.Meta) {
 		return fmt.Sprintf("meta %s, observed %s", d.Meta.Raw, o.Meta.Raw)
+	}
+	return ""
+}
+
+// matchCandidates compares the candidates a one_of_failed reports: each candidate's issues, typed
+// by that candidate's flow.
+func matchCandidates(e suite.ExpectedIssue, n *jsontext.Node) string {
+	if n.Kind != jsontext.Array || len(n.Elems) != len(e.Candidates) {
+		return fmt.Sprintf("meta %s: expected %d candidates", e.CandidatesMeta, len(e.Candidates))
+	}
+	for _, c := range n.Elems {
+		idx, err := c.Member("candidate")
+		if err != nil {
+			return fmt.Sprintf("meta %s: %v", e.CandidatesMeta, err)
+		}
+		i, err := value.Observe(value.Of(value.Int32), idx)
+		if err != nil {
+			return fmt.Sprintf("meta %s: %v", e.CandidatesMeta, err)
+		}
+		want, ok := e.Candidates[int(i.Int.Int64())]
+		if !ok || len(c.Members) != 2 {
+			return fmt.Sprintf("meta %s: candidate %s is not expected", e.CandidatesMeta, idx.Raw)
+		}
+		list, err := c.Member("issues")
+		if err != nil {
+			return fmt.Sprintf("meta %s: %v", e.CandidatesMeta, err)
+		}
+		got, err := suite.ParseNestedIssues(list)
+		if err != nil {
+			return fmt.Sprintf("meta %s: %v", e.CandidatesMeta, err)
+		}
+		if ok, why := matchExpectedList(want, got); !ok {
+			return fmt.Sprintf("meta %s candidate %s: %s", e.CandidatesMeta, idx.Raw, why)
+		}
 	}
 	return ""
 }

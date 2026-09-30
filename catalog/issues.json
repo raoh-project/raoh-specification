@@ -67,6 +67,6 @@
   "unknown_field": {"code": "unknown_field", "meta": {"field": "string"}},
   "one_of_failed": {
     "code": "one_of_failed",
-    "meta": {"candidates": "list<record<candidate:int32,issues:json>>"}
+    "meta": {"candidates": "list<record<candidate:int32,issues:issues>>"}
   }
 }

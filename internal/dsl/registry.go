@@ -28,16 +28,51 @@ type Arg struct {
 	Default *value.Value
 	// OneOf restricts a string value to the values listed.
 	OneOf []string
+	// Flows says where the issues of a decoder argument go.
+	Flows Flows
 	// FixtureKind, FixtureInput and FixtureOutput constrain a fixture argument.
 	FixtureKind   string
 	FixtureInput  value.Type
 	FixtureOutput *value.Type
 }
 
+// Flows says where the issues of a decoder argument go in the form's flow.
+type Flows int
+
+// The placements of an argument's issues.
+const (
+	// FlowsHere puts them where the form runs.
+	FlowsHere Flows = iota
+	// FlowsEachElement repeats them for each element or member, at its path.
+	FlowsEachElement
+	// FlowsCandidates makes them the candidates of the form's one_of_failed.
+	FlowsCandidates
+	// FlowsNone drops them: the form gives something else instead of any failure.
+	FlowsNone
+)
+
+var flowsNames = map[string]Flows{"here": FlowsHere, "each_element": FlowsEachElement, "candidates": FlowsCandidates, "none": FlowsNone}
+
+// Place says where a form gives one of its own issues.
+type Place int
+
+// The places of a form's own issues.
+const (
+	// PlaceHere is where the form runs.
+	PlaceHere Place = iota
+	// PlaceTag is the member its field argument names.
+	PlaceTag
+	// PlaceMember is each member of the input it reports on.
+	PlaceMember
+)
+
+var placeNames = map[string]Place{"here": PlaceHere, "tag": PlaceTag, "member": PlaceMember}
+
 // IssueRef is an issue variant a form can give, with its type parameters bound to types that
 // may mention the form's own parameters.
 type IssueRef struct {
 	Key  string
+	At   Place
 	Bind map[string]value.Type
 	Omit []string
 	// Fixed are metadata values the form always gives, such as the expected of a type mismatch.
@@ -57,10 +92,8 @@ type Form struct {
 	// Input is the input type of an encoder.
 	Input  value.Type
 	Issues []IssueRef
-	// InputOrder marks a form whose issues come in the order of the input's members.
+	// InputOrder marks a form whose issues at members come in the order of the input's members.
 	InputOrder bool
-	// ReplacesIssues marks a form that gives no issue of its inner decoder.
-	ReplacesIssues bool
 	// Requires are the conditions its arguments have to meet for the form to exist at all, as
 	// raoh-java refuses to construct the decoder otherwise.
 	Requires []Require
@@ -263,9 +296,6 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 		}
 		f.InputOrder = true
 	}
-	if rep, ok := n.Get("replaces_issues"); ok {
-		f.ReplacesIssues = rep.Kind == jsontext.Bool && rep.Bool
-	}
 	if args, ok := n.Get("args"); ok {
 		for _, a := range args.Elems {
 			arg, err := parseArg(a)
@@ -336,6 +366,13 @@ func parseArg(n *jsontext.Node) (Arg, error) {
 	if o, ok := n.Get("optional"); ok && o.Kind == jsontext.Bool {
 		a.Optional = o.Bool
 	}
+	if fl, ok := n.Get("flows"); ok {
+		v, ok := flowsNames[fl.Text]
+		if !ok {
+			return a, fmt.Errorf("argument %s: flows %q is not a placement", a.Name, fl.Text)
+		}
+		a.Flows = v
+	}
 	if d, ok := n.Get("default"); ok {
 		v, err := value.Observe(a.Type, d)
 		if err != nil {
@@ -373,6 +410,12 @@ func parseIssueRef(n *jsontext.Node) (IssueRef, error) {
 		switch {
 		case m.Name == "key":
 			ref.Key = m.Value.Text
+		case m.Name == "at":
+			at, ok := placeNames[m.Value.Text]
+			if !ok {
+				return ref, fmt.Errorf("at %q is not a place", m.Value.Text)
+			}
+			ref.At = at
 		case m.Name == "omit":
 			for _, e := range m.Value.Elems {
 				ref.Omit = append(ref.Omit, e.Text)

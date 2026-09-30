@@ -70,7 +70,7 @@ func TestExpectedOutcomesAreTyped(t *testing.T) {
 	rejected(t, "core", `[{"id": "a.b", "decoder": ["float"], "input": 16777217, "ok": 16777217}]`, "rounds to")
 	rejected(t, "core", `[{"id": "a.b", "decoder": ["int"], "input": 1, "ok": 1, "issues": []}]`, "either ok or issues")
 	rejected(t, "core", `[{"id": "a.b", "decoder": ["int"], "input": "x",
-		"issues": [{"path": "", "code": "too_short", "message_key": "too_short", "meta": {"min": 1, "actual": 0}}]}]`, "cannot give too_short")
+		"issues": [{"path": "", "code": "too_short", "message_key": "too_short", "meta": {"min": 1, "actual": 0}}]}]`, "gives no too_short")
 	rejected(t, "core", `[{"id": "a.b", "decoder": ["int", ["min", 1]], "input": 0,
 		"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "meta": {"min": 1}}]}]`, "needs metadata actual")
 	rejected(t, "core", `[{"id": "a.b", "decoder": ["double", ["min", 1]], "input": 0,
@@ -147,17 +147,32 @@ func TestMessagesMustBeWhereTheyAreGiven(t *testing.T) {
 		"issues": [{"path": "", "code": "must_be_even", "message_key": "must_be_even", "message": "totally different", "meta": {"actual": 3}}]}]`, `"must be even"`)
 	rejected(t, "core", `[{"id": "a.b", "decoder": ["object", [["field", "start", ["int"]], ["field", "end", ["int"]]], ["flatMap", "ordered_period"]],
 		"input": {"start": 3, "end": 2},
-		"issues": [{"path": "/zzz", "code": "invalid_value", "message_key": "invalid_value", "message": "end is before start", "meta": {}}]}]`, "/end")
+		"issues": [{"path": "/zzz", "code": "invalid_value", "message_key": "invalid_value", "message": "end is before start", "meta": {}}]}]`, `no invalid_value at "/zzz"`)
 	accepted(t, "core", `[{"id": "a.b", "decoder": ["object", [["field", "id", ["int"]], ["field", "period",
 		["object", [["field", "start", ["int"]], ["field", "end", ["int"]]], ["flatMap", "ordered_period"]]]]],
 		"input": {"id": 1, "period": {"start": 3, "end": 2}},
 		"issues": [{"path": "/period/end", "code": "invalid_value", "message_key": "invalid_value", "message": "end is before start", "meta": {}}]}]`)
 }
 
-func TestAnIssueThatFitsTwoTypingsIsRejected(t *testing.T) {
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["object", [["field", "a", ["int", ["oneOf", [1, 2]]]], ["field", "b", ["double", ["oneOf", [1, 2]]]]]],
+// The path of an issue says which part of the decoder gave it, and so how its metadata is typed.
+func TestIssuesAreTypedByWhereTheyArise(t *testing.T) {
+	cases := accepted(t, "core", `[{"id": "a.b", "decoder": ["object", [["field", "a", ["int", ["oneOf", [1, 2]]]], ["field", "b", ["double", ["oneOf", [1, 2]]]]]],
 		"input": {"a": 1, "b": 3},
-		"issues": [{"path": "/b", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": [1, 2], "actual": 3}}]}]`, "ambiguous")
+		"issues": [{"path": "/b", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": [1, 2], "actual": 3}}]}]`)
+	e := cases[0].Issues[0]
+	if e.Meta["actual"].Type.String() != "float64" || e.Message != "must be one of [1.0, 2.0]" {
+		t.Errorf("typed %s, message %q", e.Meta["actual"].Type, e.Message)
+	}
+}
+
+// Two flat fields that read the same member can give an issue at the same path with different
+// types; which one gave it is not in the issue, so the case is rejected.
+func TestAnIssueThatFitsTwoTypingsIsRejected(t *testing.T) {
+	rejected(t, "core", `[{"id": "a.b", "decoder": ["object", [
+		["flat", ["object", [["field", "x", ["int", ["oneOf", [1, 2]]]]]]],
+		["flat", ["object", [["field", "x", ["double", ["oneOf", [1, 2]]]]]]]]],
+		"input": {"x": 3},
+		"issues": [{"path": "/x", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": [1, 2], "actual": 3}}]}]`, "ambiguous")
 }
 
 func schemasFor(t *testing.T) *schemas.Set {
