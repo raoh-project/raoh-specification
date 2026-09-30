@@ -52,6 +52,10 @@ in its order and groups; that each issue's metadata has the types its place give
 the form decides (from constants, arguments and member names); and that each message is the one
 its place gives, derived from the catalogue or given by the form.
 
+An implementation's issues go through the same reading as a case's: a list the decoder's flow
+does not give for the input is a failure before anything is compared, and so is an issue whose
+metadata is not what the form decides.
+
 Values that depend on running a decoder are checked for their type and their observation, not
 recomputed: the value a decoder gives, the `actual` a failed bound reports, the elements a
 `unique` or `containsAll` finds, the value a fixture computes. Whether a decoder's checks hold of
