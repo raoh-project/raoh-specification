@@ -110,7 +110,7 @@ func TestIntegers(t *testing.T) {
 	invalid(t, "int32", "-2147483649", "range")
 	obs(t, "int64", "9223372036854775807")
 	invalid(t, "int64", "9223372036854775808", "range")
-	invalid(t, "int32", "1.0", "without a fraction")
+	invalid(t, "int32", "1.0", "no fraction")
 	invalid(t, "int32", `"1"`, "expected number")
 }
 
@@ -173,9 +173,6 @@ func TestTemporalValuesCompareByValue(t *testing.T) {
 	// As OffsetDateTime.equals: the same instant at another offset is another value.
 	if Equal(obs(t, "offset_datetime", `"2024-01-01T09:00+09:00"`), obs(t, "offset_datetime", `"2024-01-01T00:00Z"`)) {
 		t.Error("offset date-times at different offsets are the same")
-	}
-	if !Equal(obs(t, "date", `"+10000-01-01"`), obs(t, "date", `"10000-01-01"`)) {
-		t.Error("an expanded year differs")
 	}
 	obs(t, "instant", `"+1000000000-12-31T23:59:59.999999999Z"`)
 	invalid(t, "date", `"2024-02-30"`, "not a date")

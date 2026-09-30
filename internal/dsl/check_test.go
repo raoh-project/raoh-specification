@@ -84,7 +84,7 @@ func TestLiteralsAreReadAtTheTypeTheyAreUsedAt(t *testing.T) {
 	c := checker(t)
 	decoder(t, c, `["float", ["min", 0.1]]`)
 	decoder(t, c, `["double", ["oneOf", [2.0, {"float": "-0"}]]]`)
-	rejected(t, c, `["int", ["min", 0.5]]`, "without a fraction")
+	rejected(t, c, `["int", ["min", 0.5]]`, "no fraction")
 	rejected(t, c, `["float", ["min", 16777217]]`, "rounds to")
 	rejected(t, c, `["decimal", ["min", 0.5]]`, "expected string")
 	rejected(t, c, `["list", ["int"], ["contains", "2"]]`, "expected number")
@@ -183,4 +183,28 @@ func TestEncoders(t *testing.T) {
 	if _, err := c.CheckEncoder(jsontext.MustParse(`["object", [["propertyWithDefault", "value", "identity", ["string"], 1]]]`)); err == nil {
 		t.Error("a default of the wrong type accepted")
 	}
+}
+
+// A form raoh-java refuses to construct is not a decoder.
+func TestArgumentsMeetWhatTheFormRequires(t *testing.T) {
+	c := checker(t)
+	rejected(t, c, `["int", ["range", 5, 1]]`, "must not be after")
+	decoder(t, c, `["int", ["range", 1, 1]]`)
+	rejected(t, c, `["double", ["range", 0, {"float": "-0"}]]`, "must not be after")
+	decoder(t, c, `["double", ["range", {"float": "-0"}, 0]]`)
+	rejected(t, c, `["decimal", ["range", "10", "9.99"]]`, "must not be after")
+	rejected(t, c, `["string", ["date"], ["between", "2024-12-31", "2024-01-01"]]`, "must not be after")
+	rejected(t, c, `["int", ["multipleOf", 0]]`, "must not be zero")
+	rejected(t, c, `["decimal", ["multipleOf", "0.00"]]`, "must not be zero")
+	rejected(t, c, `["list", ["int"], ["containsAll", []]]`, "must not be empty")
+	rejected(t, c, `["enum", ["Red", "RED"], ["string"]]`, "ASCII case folding")
+	decoder(t, c, `["enum", ["RED", "GREEN"], ["string"]]`)
+	rejected(t, c, `["decimal", ["oneOf", ["1"]]]`, "does not apply to decimal")
+}
+
+func TestResultTypesMustBeWellFormed(t *testing.T) {
+	c := checker(t)
+	rejected(t, c, `["nullable", ["nullable", ["int"]]]`, "cannot tell its own null")
+	rejected(t, c, `["object", [["optionalField", "a", ["nullable", ["int"]]]]]`, "cannot tell its own null")
+	decoder(t, c, `["nullable", ["list", ["nullable", ["int"]]]]`)
 }

@@ -47,10 +47,10 @@ func observe(t Type, n *jsontext.Node) (Value, error) {
 		if err := want(jsontext.Number); err != nil {
 			return v, err
 		}
-		i, ok := new(big.Int).SetString(n.Text, 10)
-		if !ok {
-			return v, fmt.Errorf("an integer is written without a fraction or an exponent")
+		if !integerPattern.MatchString(n.Text) {
+			return v, fmt.Errorf("an integer is written in decimal digits with no fraction, no exponent and no minus sign on zero")
 		}
+		i, _ := new(big.Int).SetString(n.Text, 10)
 		bits := 32
 		if t.Kind == Int64 {
 			bits = 64
@@ -72,6 +72,9 @@ func observe(t Type, n *jsontext.Node) (Value, error) {
 		d, err := ParseDecimal(n.Text)
 		if err != nil {
 			return v, err
+		}
+		if d.Unscaled.Sign() == 0 && strings.HasPrefix(n.Text, "-") {
+			return v, fmt.Errorf("a decimal zero is written without a minus sign")
 		}
 		v.Dec = d
 	case String, Symbol, URI:
@@ -188,6 +191,8 @@ func observe(t Type, n *jsontext.Node) (Value, error) {
 	return v, nil
 }
 
+var integerPattern = regexp.MustCompile(`^(0|-?[1-9][0-9]*)$`)
+
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 // observeFloat reads a float observation: a JSON number whose value is the shortest decimal that
@@ -281,17 +286,34 @@ var (
 	}
 )
 
-// ParseTemporal reads a temporal value written in ISO 8601 as spec/observation.md describes.
+// ParseTemporal reads a temporal value written as spec/observation.md lists. The year and the
+// offset have one spelling each, the one raoh-java writes: a year of four digits, with - when
+// negative, and of five or more digits only when it needs them, then with + or -; an offset of Z
+// for zero, and of ±hh:mm, followed by :ss only when the seconds are not zero. The time of day
+// may be written with or without seconds and with one to nine digits of fraction.
 func ParseTemporal(k Kind, s string) (Temporal, error) {
 	m := temporalRe[k].FindStringSubmatch(s)
 	if m == nil {
 		return Temporal{}, fmt.Errorf("%q is not a %s", s, kindNames[k])
 	}
 	var tm Temporal
-	atoi := func(s string) int { n, _ := strconv.Atoi(s); return n }
+	atoi := func(s string) int {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			// The patterns admit only digits, of a length that fits.
+			panic(err)
+		}
+		return n
+	}
 	rest := m[1:]
 	if k != Time {
+		if len(strings.TrimLeft(rest[0], "+-")) > 10 {
+			return Temporal{}, fmt.Errorf("%q has a year beyond the range of any temporal type", s)
+		}
 		tm.Year, tm.Month, tm.Day = atoi(rest[0]), atoi(rest[1]), atoi(rest[2])
+		if formatYear(tm.Year) != rest[0] {
+			return Temporal{}, fmt.Errorf("%q writes the year %d as %q, not %q", s, tm.Year, rest[0], formatYear(tm.Year))
+		}
 		d := time.Date(tm.Year, time.Month(tm.Month), tm.Day, 0, 0, 0, 0, time.UTC)
 		if d.Year() != tm.Year || int(d.Month()) != tm.Month || d.Day() != tm.Day {
 			return Temporal{}, fmt.Errorf("%q is not a date", s)
@@ -299,7 +321,10 @@ func ParseTemporal(k Kind, s string) (Temporal, error) {
 		rest = rest[3:]
 	}
 	if k != Date {
-		tm.Hour, tm.Minute, tm.Second = atoi(rest[0]), atoi(rest[1]), atoi(rest[2])
+		tm.Hour, tm.Minute = atoi(rest[0]), atoi(rest[1])
+		if rest[2] != "" {
+			tm.Second = atoi(rest[2])
+		}
 		if rest[3] != "" {
 			tm.Nano = atoi((rest[3] + "00000000")[:9])
 		}
@@ -308,22 +333,31 @@ func ParseTemporal(k Kind, s string) (Temporal, error) {
 		}
 		rest = rest[4:]
 	}
-	if k == OffsetDateTime && rest[0] != "Z" {
+	if k == OffsetDateTime {
 		o := rest[0]
-		sign := 1
-		if o[0] == '-' {
-			sign = -1
+		if o != "Z" {
+			h, mi, sec := atoi(o[1:3]), atoi(o[4:6]), 0
+			if len(o) > 6 {
+				sec = atoi(o[7:9])
+			}
+			if mi > 59 || sec > 59 {
+				return Temporal{}, fmt.Errorf("%q has an offset whose minutes or seconds are beyond 59", s)
+			}
+			tm.Offset = h*3600 + mi*60 + sec
+			if tm.Offset > 18*3600 {
+				return Temporal{}, fmt.Errorf("%q has an offset beyond 18 hours", s)
+			}
+			if o[0] == '-' {
+				tm.Offset = -tm.Offset
+			}
 		}
-		secs := atoi(o[1:3])*3600 + atoi(o[4:6])*60
-		if len(o) > 6 {
-			secs += atoi(o[7:9])
+		if formatOffset(tm.Offset) != o {
+			return Temporal{}, fmt.Errorf("%q writes the offset as %q, not %q", s, o, formatOffset(tm.Offset))
 		}
-		if secs > 18*3600 {
-			return Temporal{}, fmt.Errorf("%q has an offset beyond 18 hours", s)
-		}
-		tm.Offset = sign * secs
 	}
-	if k == Instant {
+	if k == Instant || k == OffsetDateTime {
+		// For an offset date-time this is its local date-time read as UTC; the instant is
+		// Epoch - Offset.
 		tm.Epoch = time.Date(tm.Year, time.Month(tm.Month), tm.Day, tm.Hour, tm.Minute, tm.Second, 0, time.UTC).Unix()
 	}
 	return tm, nil

@@ -50,7 +50,14 @@ A value argument is read as an observation of the type the argument has where it
 `["float", ["min", 0.1]]` the bound is the float32 nearest 0.1; in `["decimal", ["min", "0.5"]]` it
 is the decimal 0.5 with scale 1; `["int", ["min", 0.5]]` does not type-check.
 
-A form that does not type-check is not a decoder, and a case that contains one is rejected.
+Some forms put conditions on their arguments, listed as `requires` in `catalog/operations.json`:
+the bounds of `range` and `between` must be in order, the divisor of `multipleOf` must not be
+zero, the elements of `containsAll` must not be empty, and the symbols of `enum` must stay
+distinct when A-Z are read as a-z. raoh-java refuses to construct a decoder that breaks one of
+them, so such a form is not a decoder of this language either.
+
+A form that does not type-check, or whose arguments do not meet what it requires, is not a
+decoder, and a case that contains one is rejected.
 
 ## Features
 

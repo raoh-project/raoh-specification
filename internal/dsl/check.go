@@ -106,6 +106,9 @@ func concrete(t value.Type, what string) error {
 	if ps := t.Params(); len(ps) > 0 {
 		return fmt.Errorf("%s: cannot tell what %s is", what, strings.Join(ps, ", "))
 	}
+	if err := value.WellFormed(t); err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
 	return nil
 }
 
@@ -140,7 +143,7 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, error) {
 			product = append(product, t)
 		}
 		return nil
-	})
+	}, f.Requires...)
 	if err != nil {
 		return value.Type{}, fmt.Errorf("%s: %w", name, err)
 	}
@@ -228,7 +231,7 @@ func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, er
 	if len(given) < required || len(given) > len(f.Args) {
 		return value.Type{}, fmt.Errorf("%s takes %d to %d argument(s), found %d", name, required, len(f.Args), len(given))
 	}
-	if err := s.args(name, f.Args[:len(given)], given, bound, nil); err != nil {
+	if err := s.args(name, f.Args[:len(given)], given, bound, nil, f.Requires...); err != nil {
 		return value.Type{}, fmt.Errorf("%s: %w", name, err)
 	}
 	message := ""
@@ -312,7 +315,8 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 
 // args checks arguments in three passes, so that the types that decoders and encoders fix are
 // known when values are read and fixtures are matched.
-func (s *state) args(owner string, args []Arg, nodes []*jsontext.Node, bound map[string]value.Type, other func(Arg, *jsontext.Node) error) error {
+func (s *state) args(owner string, args []Arg, nodes []*jsontext.Node, bound map[string]value.Type, other func(Arg, *jsontext.Node) error, requires ...Require) error {
+	values := map[string]value.Value{}
 	for pass := 0; pass < 3; pass++ {
 		for i, a := range args {
 			v := nodes[i]
@@ -342,7 +346,7 @@ func (s *state) args(owner string, args []Arg, nodes []*jsontext.Node, bound map
 			case pass == 0 && (a.Kind == "fields" || a.Kind == "properties"):
 				err = other(a, v)
 			case pass == 1 && a.Kind == "value":
-				err = s.literal(a, v, bound)
+				values[a.Name], err = s.literal(a, v, bound)
 			case pass == 1 && a.Kind == "message":
 				if v.Kind != jsontext.String {
 					err = fmt.Errorf("%s must be a string", a.Name)
@@ -353,6 +357,56 @@ func (s *state) args(owner string, args []Arg, nodes []*jsontext.Node, bound map
 			if err != nil {
 				return err
 			}
+		}
+	}
+	for _, r := range requires {
+		if err := meets(r, values); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// meets checks a condition on argument values. An argument left out is not checked.
+func meets(r Require, values map[string]value.Value) error {
+	var vs []value.Value
+	for _, name := range r.Args {
+		v, ok := values[name]
+		if !ok {
+			return nil
+		}
+		vs = append(vs, v)
+	}
+	switch r.Check {
+	case "ordered":
+		c, err := value.Compare(vs[0], vs[1])
+		if err != nil {
+			return err
+		}
+		if c > 0 {
+			return fmt.Errorf("%s must not be after %s", r.Args[0], r.Args[1])
+		}
+	case "nonzero":
+		if value.IsZero(vs[0]) {
+			return fmt.Errorf("%s must not be zero", r.Args[0])
+		}
+	case "nonempty":
+		if len(vs[0].Elems) == 0 {
+			return fmt.Errorf("%s must not be empty", r.Args[0])
+		}
+	case "distinct_ascii_fold":
+		seen := map[string]string{}
+		for _, e := range vs[0].Elems {
+			folded := strings.Map(func(c rune) rune {
+				if 'A' <= c && c <= 'Z' {
+					return c - 'A' + 'a'
+				}
+				return c
+			}, e.Str)
+			if other, dup := seen[folded]; dup {
+				return fmt.Errorf("%s: %q and %q are the same under ASCII case folding", r.Args[0], other, e.Str)
+			}
+			seen[folded] = e.Str
 		}
 	}
 	return nil
@@ -369,19 +423,19 @@ func (s *state) bindDecoder(want value.Type, n *jsontext.Node, bound map[string]
 	return nil
 }
 
-func (s *state) literal(a Arg, n *jsontext.Node, bound map[string]value.Type) error {
+func (s *state) literal(a Arg, n *jsontext.Node, bound map[string]value.Type) (value.Value, error) {
 	t := a.Type.Subst(bound)
 	if err := concrete(t, a.Name); err != nil {
-		return err
+		return value.Value{}, err
 	}
 	v, err := value.Observe(t, n)
 	if err != nil {
-		return fmt.Errorf("%s: %w", a.Name, err)
+		return value.Value{}, fmt.Errorf("%s: %w", a.Name, err)
 	}
 	if len(a.OneOf) > 0 && !slices.Contains(a.OneOf, v.Str) {
-		return fmt.Errorf("%s must be one of %s", a.Name, strings.Join(a.OneOf, ", "))
+		return value.Value{}, fmt.Errorf("%s must be one of %s", a.Name, strings.Join(a.OneOf, ", "))
 	}
-	return nil
+	return v, nil
 }
 
 func (s *state) fixture(a Arg, n *jsontext.Node, bound map[string]value.Type) error {

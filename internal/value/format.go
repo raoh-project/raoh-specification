@@ -123,13 +123,19 @@ func formatDecimal(d Dec) string {
 }
 
 func formatDate(t Temporal) string {
-	if t.Year < 0 {
-		return fmt.Sprintf("-%04d-%02d-%02d", -t.Year, t.Month, t.Day)
+	return fmt.Sprintf("%s-%02d-%02d", formatYear(t.Year), t.Month, t.Day)
+}
+
+// formatYear writes a year as LocalDate.toString does: four digits, with - when negative, and
+// more digits only when needed, then always signed.
+func formatYear(y int) string {
+	switch {
+	case y > 9999:
+		return fmt.Sprintf("+%d", y)
+	case y < 0:
+		return fmt.Sprintf("-%04d", -y)
 	}
-	if t.Year > 9999 {
-		return fmt.Sprintf("+%d-%02d-%02d", t.Year, t.Month, t.Day)
-	}
-	return fmt.Sprintf("%04d-%02d-%02d", t.Year, t.Month, t.Day)
+	return fmt.Sprintf("%04d", y)
 }
 
 // formatTime writes a time of day as LocalTime.toString does, leaving out seconds that are zero

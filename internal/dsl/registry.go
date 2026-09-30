@@ -58,7 +58,21 @@ type Form struct {
 	InputOrder bool
 	// ReplacesIssues marks a form that gives no issue of its inner decoder.
 	ReplacesIssues bool
+	// Requires are the conditions its arguments have to meet for the form to exist at all, as
+	// raoh-java refuses to construct the decoder otherwise.
+	Requires []Require
 }
+
+// Require is a condition on the values of some of a form's arguments.
+type Require struct {
+	// Check is ordered (the first is not after the second, as Compare orders them), nonzero,
+	// nonempty (a list with an element) or distinct_ascii_fold (strings that stay distinct when
+	// A-Z are read as a-z).
+	Check string
+	Args  []string
+}
+
+var requireArity = map[string]int{"ordered": 2, "nonzero": 1, "nonempty": 1, "distinct_ascii_fold": 1}
 
 // FixtureIssue is the issue a refine or flatMap fixture creates.
 type FixtureIssue struct {
@@ -256,6 +270,26 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 	for i, a := range f.Args {
 		if !a.Optional && i > 0 && f.Args[i-1].Optional {
 			return nil, fmt.Errorf("argument %s follows an optional argument", a.Name)
+		}
+	}
+	if reqs, ok := n.Get("requires"); ok {
+		for _, e := range reqs.Elems {
+			var r Require
+			r.Check, _ = str(e, "check")
+			args, err := strs(e, "args")
+			if err != nil {
+				return nil, err
+			}
+			r.Args = args
+			if want, ok := requireArity[r.Check]; !ok || len(r.Args) != want {
+				return nil, fmt.Errorf("requires %q with %d argument(s) is not a condition", r.Check, len(r.Args))
+			}
+			for _, name := range r.Args {
+				if !slices.ContainsFunc(f.Args, func(a Arg) bool { return a.Name == name && a.Kind == "value" }) {
+					return nil, fmt.Errorf("requires %s of %s, which is not a value argument", r.Check, name)
+				}
+			}
+			f.Requires = append(f.Requires, r)
 		}
 	}
 	if issues, ok := n.Get("issues"); ok {

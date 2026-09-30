@@ -24,7 +24,8 @@ type Dec struct {
 
 // Temporal holds the fields of a temporal value. Which fields mean something depends on the type:
 // a Date has Year, Month and Day; a Time has Hour, Minute, Second and Nano; a DateTime has both;
-// an OffsetDateTime adds Offset, in seconds east of UTC; an Instant is Epoch seconds and Nano.
+// an OffsetDateTime adds Offset, in seconds east of UTC, and Epoch, its local date-time read as
+// UTC; an Instant is Epoch seconds and Nano.
 type Temporal struct {
 	Year, Month, Day           int
 	Hour, Minute, Second, Nano int

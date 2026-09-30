@@ -198,7 +198,36 @@ func ParseType(s string) (Type, error) {
 	if p.pos != len(s) {
 		return Type{}, fmt.Errorf("type %q: unexpected %q", s, s[p.pos:])
 	}
+	if err := WellFormed(t); err != nil {
+		return Type{}, fmt.Errorf("type %q: %w", s, err)
+	}
 	return t, nil
+}
+
+// nullObservable reports whether JSON null is an observation of some value of the type.
+func nullObservable(t Type) bool {
+	switch t.Kind {
+	case Optional, Nullable, JSON:
+		return true
+	}
+	return false
+}
+
+// WellFormed checks that every value of the type has an observation no other value has. An
+// optional or nullable value observes its absence as null, so what it holds must not observe
+// anything as null: optional<nullable<T>> could not tell an empty optional from a null in it.
+// Types built by substituting type parameters are checked again, since a parameter may stand for
+// such a type.
+func WellFormed(t Type) error {
+	if (t.Kind == Optional || t.Kind == Nullable) && nullObservable(t.Args[0]) {
+		return fmt.Errorf("%s cannot tell its own null from a null of %s", t, t.Args[0])
+	}
+	for _, a := range t.Args {
+		if err := WellFormed(a); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // MustParseType is ParseType for types written in code.

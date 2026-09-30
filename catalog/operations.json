@@ -83,7 +83,8 @@
         {"name": "string", "kind": "decoder", "type": "string"}
       ],
       "result": "symbol",
-      "issues": ["invalid_format.enum"]
+      "issues": ["invalid_format.enum"],
+      "requires": [{"check": "distinct_ascii_fold", "args": ["symbols"]}]
     },
     "literal": {
       "doc": "Decodes a string with the string decoder and accepts it when it equals the literal; otherwise gives invalid_format.literal.",
@@ -251,6 +252,7 @@
      "doc": "Gives out_of_range.maximum when the value is greater than max, ordered as min orders."},
     {"name": "range", "receivers": ["int32", "int64", "float32", "float64", "decimal"], "result": "R",
      "issues": [{"key": "out_of_range.range", "T": "R"}],
+     "requires": [{"check": "ordered", "args": ["min", "max"]}],
      "args": [{"name": "min", "kind": "value", "type": "R"}, {"name": "max", "kind": "value", "type": "R"}],
      "doc": "Gives out_of_range.range when the value is outside [min, max], ordered as min orders."},
     {"name": "positive", "receivers": ["int32", "int64", "float32", "float64", "decimal"], "result": "R",
@@ -265,12 +267,13 @@
     {"name": "nonPositive", "receivers": ["int32", "int64", "float32", "float64", "decimal"], "result": "R",
      "issues": [{"key": "out_of_range.non_positive", "T": "R"}],
      "doc": "Gives out_of_range.non_positive, with max zero, when the value is greater than zero, ordered as min orders."},
-    {"name": "oneOf", "receivers": ["int32", "int64", "float32", "float64", "decimal"], "result": "R",
+    {"name": "oneOf", "receivers": ["int32", "int64", "float32", "float64"], "result": "R",
      "issues": [{"key": "not_allowed", "T": "R"}],
      "args": [{"name": "allowed", "kind": "value", "type": "list<R>"}],
      "doc": "Gives not_allowed, with allowed in ascending order, when the value is none of the allowed ones, compared as the value model compares them (for floats, +0 and -0 differ)."},
-    {"name": "multipleOf", "receivers": ["int32", "int64"], "result": "R",
+    {"name": "multipleOf", "receivers": ["int32", "int64", "decimal"], "result": "R",
      "issues": [{"key": "not_multiple_of", "T": "R"}],
+     "requires": [{"check": "nonzero", "args": ["divisor"]}],
      "args": [{"name": "divisor", "kind": "value", "type": "R"}],
      "doc": "Gives not_multiple_of when the value is not a multiple of the divisor."},
     {"name": "scale", "receivers": ["decimal"], "result": "decimal", "issues": ["invalid_scale"],
@@ -294,6 +297,7 @@
     {"name": "contains", "receivers": ["list<E>"], "result": "R", "issues": [{"key": "missing_element", "T": "E"}],
      "args": [{"name": "element", "kind": "value", "type": "E"}], "doc": "Gives missing_element unless the element occurs."},
     {"name": "containsAll", "receivers": ["list<E>"], "result": "R", "issues": [{"key": "missing_elements", "T": "E"}],
+     "requires": [{"check": "nonempty", "args": ["elements"]}],
      "args": [{"name": "elements", "kind": "value", "type": "list<E>"}],
      "doc": "Gives missing_elements unless every element occurs; missing lists, in the order given, each given element that does not occur, as many times as it was given."},
     {"name": "toSet", "receivers": ["list<E>"], "result": "set<E>", "issues": [], "doc": "Gives the set of the elements."},
@@ -308,6 +312,7 @@
      "doc": "Gives out_of_range.after unless the value is strictly after the bound, ordered as before orders."},
     {"name": "between", "receivers": ["instant", "date", "time", "datetime", "offset_datetime"], "result": "R",
      "issues": [{"key": "out_of_range.between", "T": "R"}],
+     "requires": [{"check": "ordered", "args": ["from", "to"]}],
      "args": [{"name": "from", "kind": "value", "type": "R"}, {"name": "to", "kind": "value", "type": "R"}],
      "doc": "Gives out_of_range.between unless from <= value <= to, ordered as before orders."},
 
