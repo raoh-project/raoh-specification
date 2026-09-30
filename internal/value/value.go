@@ -9,9 +9,11 @@ import (
 // State says which case of a Presence, Optional or Nullable a value is.
 type State int
 
-// The cases of Presence, Optional and Nullable. Optional and Nullable have no Absent.
+// The cases of Presence, Optional and Nullable. Optional and Nullable have no Absent. The zero
+// State is InvalidState, so that a value whose case nobody set is not taken for present.
 const (
-	Present State = iota
+	InvalidState State = iota
+	Present
 	Null
 	Absent
 )

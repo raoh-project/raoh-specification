@@ -184,6 +184,21 @@ func Parse(operations, fixtures []byte) (*Registry, error) {
 			section.into[m.Name] = f
 		}
 	}
+	for name, f := range r.Constructors {
+		if err := f.needs(name, "constructor", true, false); err != nil {
+			return nil, err
+		}
+	}
+	for name, f := range r.Fields {
+		if err := f.needs(name, "field", true, false); err != nil {
+			return nil, err
+		}
+	}
+	for name, f := range r.Encoders {
+		if err := f.needs(name, "encoder", false, true); err != nil {
+			return nil, err
+		}
+	}
 	list, ok := root.Get("operations")
 	if !ok || list.Kind != jsontext.Array {
 		return nil, fmt.Errorf("operations.json: operations must be an array")
@@ -199,6 +214,9 @@ func Parse(operations, fixtures []byte) (*Registry, error) {
 		}
 		if len(f.Receivers) == 0 {
 			return nil, fmt.Errorf("operations.json: operation %s has no receivers", name.Text)
+		}
+		if err := f.needs(name.Text, "operation", true, false); err != nil {
+			return nil, err
 		}
 		for _, other := range r.Operations[f.Name] {
 			for _, rc := range f.Receivers {
@@ -340,6 +358,26 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 		}
 	}
 	return f, nil
+}
+
+// needs checks that a form has the types its section requires, so that a type the file leaves
+// out is an error and never the zero Type.
+func (f *Form) needs(name, section string, result, input bool) error {
+	if result && f.Result.Kind == value.Invalid {
+		return fmt.Errorf("operations.json: %s %s has no result type", section, name)
+	}
+	if input && f.Input.Kind == value.Invalid {
+		return fmt.Errorf("operations.json: %s %s has no input type", section, name)
+	}
+	for _, a := range f.Args {
+		if slices.Contains([]string{"decoder", "decoders", "variants", "value", "encoder"}, a.Kind) && a.Type.Kind == value.Invalid {
+			return fmt.Errorf("operations.json: %s %s: argument %s has no type", section, name, a.Name)
+		}
+		if a.Kind == "fixture" && a.FixtureInput.Kind == value.Invalid {
+			return fmt.Errorf("operations.json: %s %s: argument %s has no fixture input type", section, name, a.Name)
+		}
+	}
+	return nil
 }
 
 func parseArg(n *jsontext.Node) (Arg, error) {

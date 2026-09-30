@@ -189,3 +189,19 @@ func TestRecordsAndJSON(t *testing.T) {
 	}
 	invalid(t, typ, `{"candidate": 0}`, "has the fields")
 }
+
+// A Type or a State nobody set is not a valid one.
+func TestZeroValuesAreInvalid(t *testing.T) {
+	if err := WellFormed(Type{}); err == nil {
+		t.Error("the zero Type is well formed")
+	}
+	if (Type{}).Kind == Bool || (Value{}).State == Present {
+		t.Error("a zero value is a valid kind or state")
+	}
+	if v := obs(t, "presence<int32>", `{"present": 1}`); v.State != Present {
+		t.Errorf("present has state %v", v.State)
+	}
+	if v := obs(t, "nullable<int32>", `1`); v.State != Present {
+		t.Errorf("a nullable holding 1 has state %v", v.State)
+	}
+}

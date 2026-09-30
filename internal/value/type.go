@@ -11,9 +11,11 @@ import (
 // Kind is the kind of a type.
 type Kind int
 
-// The kinds of type. See spec/value-model.md.
+// The kinds of type. See spec/value-model.md. The zero Kind is Invalid, so that a Type nobody set
+// is never mistaken for a type.
 const (
-	Bool Kind = iota
+	Invalid Kind = iota
+	Bool
 	Int32
 	Int64
 	Float32
@@ -84,6 +86,9 @@ func ListOf(elem Type) Type { return Type{Kind: List, Args: []Type{elem}} }
 func ProductOf(elems ...Type) Type { return Type{Kind: Product, Args: elems} }
 
 func (t Type) String() string {
+	if t.Kind == Invalid {
+		return "<invalid>"
+	}
 	if t.Kind == Param {
 		return t.Name
 	}
@@ -219,6 +224,9 @@ func nullObservable(t Type) bool {
 // Types built by substituting type parameters are checked again, since a parameter may stand for
 // such a type.
 func WellFormed(t Type) error {
+	if t.Kind == Invalid {
+		return fmt.Errorf("the type is missing")
+	}
 	if (t.Kind == Optional || t.Kind == Nullable) && nullObservable(t.Args[0]) {
 		return fmt.Errorf("%s cannot tell its own null from a null of %s", t, t.Args[0])
 	}

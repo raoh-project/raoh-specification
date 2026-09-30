@@ -169,7 +169,7 @@ func observe(t Type, n *jsontext.Node) (Value, error) {
 			if err != nil {
 				return v, err
 			}
-			v.Elems = []Value{ev}
+			v.State, v.Elems = Present, []Value{ev}
 		default:
 			return v, fmt.Errorf(`expected "absent", "null" or {"present": value}`)
 		}
@@ -182,7 +182,7 @@ func observe(t Type, n *jsontext.Node) (Value, error) {
 		if err != nil {
 			return v, err
 		}
-		v.Elems = []Value{ev}
+		v.State, v.Elems = Present, []Value{ev}
 	case JSON:
 		v.Node = n
 	default:

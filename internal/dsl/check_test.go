@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"github.com/raoh-project/raoh-specification/internal/schemas"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -250,4 +251,31 @@ func schemasFor(t *testing.T) *schemas.Set {
 		t.Fatal(err)
 	}
 	return sch
+}
+
+// A section's required type left out of the file is an error, in the schema and in the parser,
+// never a zero Type.
+func TestMissingTypesAreErrors(t *testing.T) {
+	ops, err := os.ReadFile("../../catalog/operations.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx, _ := os.ReadFile("../../catalog/fixtures.json")
+	for name, edit := range map[string][2]string{
+		"constructor result": {`      "result": "string",
+      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "string"}}]`, `      "issues": ["required", {"key": "type_mismatch", "meta": {"expected": "string"}}]`},
+		"encoder input": {`      "doc": "Encodes a string as a JSON string.",
+      "input": "string"`, `      "doc": "Encodes a string as a JSON string."`},
+	} {
+		broken := strings.Replace(string(ops), edit[0], edit[1], 1)
+		if broken == string(ops) {
+			t.Fatalf("%s: the edit did not apply", name)
+		}
+		if err := schemasFor(t).Validate("operations", []byte(broken)); err == nil {
+			t.Errorf("%s: the schema accepts it", name)
+		}
+		if _, err := Parse([]byte(broken), fx); err == nil {
+			t.Errorf("%s: the parser accepts it", name)
+		}
+	}
 }
