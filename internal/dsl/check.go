@@ -19,8 +19,6 @@ type Checked struct {
 	Features []string
 	// Flow is the issues a decoder can give; empty for an encoder.
 	Flow Flow
-	// Sites are the sites of Flow, in order.
-	Sites []Located
 }
 
 // Checker type-checks forms against a registry and an issue catalogue.
@@ -32,6 +30,8 @@ type Checker struct {
 type state struct {
 	*Checker
 	features map[string]bool
+	// unordered counts the Unordered flows made, to give each its own ID.
+	unordered int
 }
 
 func (c *Checker) newState() *state {
@@ -39,7 +39,7 @@ func (c *Checker) newState() *state {
 }
 
 func (s *state) done(result value.Type, flow Flow) *Checked {
-	out := &Checked{Result: result, Flow: flow, Sites: Sites(flow)}
+	out := &Checked{Result: result, Flow: flow}
 	for f := range s.features {
 		out.Features = append(out.Features, f)
 	}
@@ -106,7 +106,11 @@ type checkedArgs struct {
 	// fields are the flows of an object's fields and product their types.
 	fields  []Flow
 	product []value.Type
-	message string
+	// fieldNames are the member names of the fields, and flat is set when a field reads the whole
+	// input without naming a member.
+	fieldNames []string
+	flat       bool
+	message    string
 	// keys are the variant names of a variants argument, by argument name.
 	keys map[string][]string
 }
@@ -169,7 +173,11 @@ func (s *state) formFlow(owner string, f *Form, bound map[string]value.Type, ca 
 			case FlowsHere:
 				items = append(items, fl)
 			case FlowsEachElement:
-				items = append(items, Repeat{Body: fl})
+				over := Elements
+				if f.Result.Kind == value.Map {
+					over = Members
+				}
+				items = append(items, Repeat{Over: over, Body: fl})
 			case FlowsCandidates:
 				candidates = append(candidates, fl)
 			case FlowsNone:
@@ -196,13 +204,18 @@ func (s *state) formFlow(owner string, f *Form, bound map[string]value.Type, ca 
 			}
 			items = append(items, At{Name: tag.Str, Body: site})
 		case PlaceMember:
-			members = append(members, Repeat{Body: site})
+			known, err := knownMembers(owner, ca)
+			if err != nil {
+				return nil, err
+			}
+			members = append(members, Repeat{Over: Members, Except: known, Body: site})
 		}
 	}
 	if len(members) > 0 {
 		var m Flow = Seq{Items: members}
 		if f.InputOrder {
-			m = Unordered{Body: m}
+			s.unordered++
+			m = &Unordered{ID: s.unordered, Body: m}
 		}
 		items = append(items, m)
 	}
@@ -219,37 +232,57 @@ func (s *state) formFlow(owner string, f *Form, bound map[string]value.Type, ca 
 	return Seq{Items: items}, nil
 }
 
-func (s *state) field(n *jsontext.Node) (value.Type, Flow, error) {
+// field checks a field form, and gives the name of the member it reads, or "" for a field that
+// reads the whole input.
+func (s *state) field(n *jsontext.Node) (value.Type, Flow, string, error) {
 	name, err := head(n, "field")
 	if err != nil {
-		return value.Type{}, nil, err
+		return value.Type{}, nil, "", err
 	}
 	f, ok := s.Registry.Fields[name]
 	if !ok {
-		return value.Type{}, nil, fmt.Errorf("unknown field kind %q", name)
+		return value.Type{}, nil, "", fmt.Errorf("unknown field kind %q", name)
 	}
 	s.features["field."+name] = true
 	if len(n.Elems)-1 != len(f.Args) {
-		return value.Type{}, nil, fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
+		return value.Type{}, nil, "", fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
 	}
 	bound := map[string]value.Type{}
 	ca, err := s.args(f, f.Args, n.Elems[1:], bound)
 	if err != nil {
-		return value.Type{}, nil, fmt.Errorf("%s: %w", name, err)
+		return value.Type{}, nil, "", fmt.Errorf("%s: %w", name, err)
 	}
 	result := f.Result.Subst(bound)
 	if err := concrete(result, name); err != nil {
-		return value.Type{}, nil, err
+		return value.Type{}, nil, "", err
 	}
 	flow, err := s.formFlow(name, f, bound, ca)
 	if err != nil {
-		return value.Type{}, nil, err
+		return value.Type{}, nil, "", err
 	}
 	// A field that names a member gives all its issues at that member's path.
-	if member, ok := ca.values["name"]; ok {
-		flow = At{Name: member.Str, Body: flow}
+	member, ok := ca.values["name"]
+	if !ok {
+		return result, flow, "", nil
 	}
-	return result, flow, nil
+	return result, At{Name: member.Str, Body: flow}, member.Str, nil
+}
+
+// knownMembers are the members a form that reports unknown members knows: its known argument,
+// or the names of its fields. A field that reads the whole input leaves them unknown, and
+// raoh-java refuses to construct such a form.
+func knownMembers(owner string, ca checkedArgs) ([]string, error) {
+	if known, ok := ca.values["known"]; ok {
+		var names []string
+		for _, e := range known.Elems {
+			names = append(names, e.Str)
+		}
+		return names, nil
+	}
+	if ca.flat {
+		return nil, fmt.Errorf("%s: a flat field reads the whole input, so the members it knows are not known", owner)
+	}
+	return ca.fieldNames, nil
 }
 
 func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, Flow, error) {
@@ -396,9 +429,15 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 				for j := 0; err == nil && j < len(v.Elems); j++ {
 					var t value.Type
 					var flow Flow
-					if t, flow, err = s.field(v.Elems[j]); err == nil {
+					var member string
+					if t, flow, member, err = s.field(v.Elems[j]); err == nil {
 						ca.product = append(ca.product, t)
 						ca.fields = append(ca.fields, flow)
+						if member == "" {
+							ca.flat = true
+						} else {
+							ca.fieldNames = append(ca.fieldNames, member)
+						}
 					}
 				}
 			case pass == 0 && a.Kind == "encoder":

@@ -108,18 +108,39 @@ func TestNestedTypeParametersInMeta(t *testing.T) {
 		"message": "must be one of [1.0, 2.0]", "meta": {"allowed": [1, 2], "actual": 0.10000000149011612}}]}`, "meta actual")
 }
 
+func unknown(f string) string {
+	return `{"path": "/` + f + `", "code": "unknown_field", "message_key": "unknown_field", "message": "unknown field", "meta": {"field": "` + f + `"}}`
+}
+
 func TestInputOrderedIssuesAreAMultiset(t *testing.T) {
-	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["strictObject", [["field", "a", ["int"]]]], "input": {"a": 1, "z": 1, "y": 1, "z2": 1},
+	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["strictObject", [["field", "a", ["int"]]]], "input": {"a": 1, "z": 1, "y": 1},
 		"issues": [
 			{"path": "/z", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "z"}},
-			{"path": "/y", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "y"}},
 			{"path": "/y", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "y"}}]}`)
-	issue := func(f string) string {
-		return `{"path": "/` + f + `", "code": "unknown_field", "message_key": "unknown_field", "message": "unknown field", "meta": {"field": "` + f + `"}}`
+	matches(t, c, `{"issues": [`+unknown("z")+`,`+unknown("y")+`]}`)
+	matches(t, c, `{"issues": [`+unknown("y")+`,`+unknown("z")+`]}`)
+	// The same number of issues, but y twice: a set comparison would accept it.
+	differs(t, c, `{"issues": [`+unknown("y")+`,`+unknown("y")+`]}`, "no match")
+}
+
+// Two strict forms on the same object are two groups: the inner one's issues come before the
+// outer one's, and only within each may they come in any order.
+func TestTwoGroupsOnOneObjectKeepTheirOrder(t *testing.T) {
+	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a", "x"]], ["a", "y"]],
+		"input": {"a": 1, "x": 1, "y": 1},
+		"issues": [
+			{"path": "/y", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "y"}},
+			{"path": "/x", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "x"}}]}`)
+	matches(t, c, `{"issues": [`+unknown("y")+`,`+unknown("x")+`]}`)
+	differs(t, c, `{"issues": [`+unknown("x")+`,`+unknown("y")+`]}`, "issue 0")
+	// A case that puts the outer group's issue first does not fit the flow.
+	if _, problems := suiteParse(t, `{"id": "R000001", "title": "t", "decoder": ["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a", "x"]], ["a", "y"]],
+		"input": {"a": 1, "x": 1, "y": 1},
+		"issues": [
+			{"path": "/x", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "x"}},
+			{"path": "/y", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "y"}}]}`); len(problems) == 0 {
+		t.Error("a case with the groups out of order was accepted")
 	}
-	matches(t, c, `{"issues": [`+issue("y")+`,`+issue("z")+`,`+issue("y")+`]}`)
-	// The same issues, but y once and z twice: a set comparison would accept it.
-	differs(t, c, `{"issues": [`+issue("y")+`,`+issue("z")+`,`+issue("z")+`]}`, "no match")
 }
 
 func TestSameComparesDeclaredOutcomes(t *testing.T) {
@@ -163,23 +184,24 @@ func schemasFor(t *testing.T) *schemas.Set {
 
 // Only the issues of one unordered group may come in any order; everything else keeps its place,
 // and the group keeps its place among the others.
+// Only the issues of one unordered group may come in any order; everything else keeps its place,
+// and the group keeps its place among the others.
 func TestUnorderedGroupsKeepTheirPlace(t *testing.T) {
+	expected := func(f string) string {
+		return `{"path": "/` + f + `", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "` + f + `"}}`
+	}
 	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["strict", ["discriminate", "kind", {
 		"rect": ["strict", ["object", [["field", "w", ["int"]], ["field", "h", ["int"]]], ["map", "area"]], ["kind", "w", "h"]]}],
 		["kind", "w", "h"]],
 		"input": {"kind": "rect", "w": "2", "extra": 1, "more": 2, "h": 3},
 		"issues": [
 			{"path": "/w", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer", "actual": "string"}},
-			{"path": "/extra", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "extra"}},
-			{"path": "/more", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "more"}}]}`)
+			`+expected("extra")+`, `+expected("more")+`, `+expected("extra")+`, `+expected("more")+`]}`)
 	w := `{"path": "/w", "code": "type_mismatch", "message_key": "type_mismatch", "message": "expected integer", "meta": {"expected": "integer", "actual": "string"}}`
-	unknown := func(f string) string {
-		return `{"path": "/` + f + `", "code": "unknown_field", "message_key": "unknown_field", "message": "unknown field", "meta": {"field": "` + f + `"}}`
-	}
-	matches(t, c, `{"issues": [`+w+`,`+unknown("extra")+`,`+unknown("more")+`]}`)
-	matches(t, c, `{"issues": [`+w+`,`+unknown("more")+`,`+unknown("extra")+`]}`)
-	differs(t, c, `{"issues": [`+unknown("extra")+`,`+w+`,`+unknown("more")+`]}`, "issue 0")
-	differs(t, c, `{"issues": [`+unknown("extra")+`,`+unknown("more")+`,`+w+`]}`, "issue 0")
+	matches(t, c, `{"issues": [`+w+`,`+unknown("extra")+`,`+unknown("more")+`,`+unknown("extra")+`,`+unknown("more")+`]}`)
+	matches(t, c, `{"issues": [`+w+`,`+unknown("more")+`,`+unknown("extra")+`,`+unknown("extra")+`,`+unknown("more")+`]}`)
+	differs(t, c, `{"issues": [`+unknown("extra")+`,`+w+`,`+unknown("more")+`,`+unknown("extra")+`,`+unknown("more")+`]}`, "issue 0")
+	differs(t, c, `{"issues": [`+w+`,`+unknown("extra")+`,`+unknown("extra")+`,`+unknown("more")+`,`+unknown("more")+`]}`, "no match")
 }
 
 // The issues a oneOf's candidates report are typed by each candidate's decoder, so a float's
@@ -196,4 +218,12 @@ func TestCandidatesAreTyped(t *testing.T) {
 	}
 	matches(t, c, obs(`{"float": "-0"}`))
 	differs(t, c, obs(`0`), "candidate 0")
+}
+
+func suiteParse(t *testing.T, text string) ([]*suite.Case, []string) {
+	t.Helper()
+	sch, _ := schemas.Load("../..")
+	cat, _ := catalog.Load("../..", sch)
+	reg, _ := dsl.Load("../..", sch)
+	return suite.ParseFile("suite/core/t.json", "core", []byte("["+text+"]"), &dsl.Checker{Registry: reg, Catalog: cat})
 }

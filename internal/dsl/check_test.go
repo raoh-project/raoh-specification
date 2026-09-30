@@ -48,28 +48,34 @@ func rejected(t *testing.T, c *Checker, form, why string) {
 	}
 }
 
-func issue(t *testing.T, checked *Checked, key string) Located {
+func issue(t *testing.T, checked *Checked, key string) *Site {
 	t.Helper()
-	for _, p := range checked.Sites {
+	var all []*Site
+	var walk func(f Flow)
+	walk = func(f Flow) {
+		switch f := f.(type) {
+		case *Site:
+			all = append(all, f)
+		case Seq:
+			for _, i := range f.Items {
+				walk(i)
+			}
+		case *Unordered:
+			walk(f.Body)
+		case Repeat:
+			walk(f.Body)
+		case At:
+			walk(f.Body)
+		}
+	}
+	walk(checked.Flow)
+	for _, p := range all {
 		if p.Key == key {
 			return p
 		}
 	}
-	t.Fatalf("no site %s among %v", key, checked.Sites)
-	return Located{}
-}
-
-// sites writes the sites of a decoder as "path key" or "path key (unordered at group)".
-func sites(checked *Checked) []string {
-	var out []string
-	for _, s := range checked.Sites {
-		line := PathString(s.Path) + " " + s.Key
-		if s.Group != nil {
-			line += " (unordered at " + PathString(s.Group) + ")"
-		}
-		out = append(out, line)
-	}
-	return out
+	t.Fatalf("no site %s among %v", key, Describe(checked.Flow))
+	return nil
 }
 
 func TestResultTypes(t *testing.T) {
@@ -165,22 +171,22 @@ func TestPossibleIssuesAreInstantiated(t *testing.T) {
 func TestReplacedIssuesAreNotPossible(t *testing.T) {
 	c := checker(t)
 	d := decoder(t, c, `["recover", ["int", ["min", 1]], 1]`)
-	if len(d.Sites) != 0 {
-		t.Errorf("recover can give %v", sites(d))
+	if got := Describe(d.Flow); len(got) != 0 {
+		t.Errorf("recover can give %v", got)
 	}
 	d = decoder(t, c, `["oneOf", [["int", ["map", "decimal_string"]], ["string", ["minLength", 3]]]]`)
-	if len(d.Sites) != 1 || d.Sites[0].Key != "one_of_failed" || len(d.Sites[0].Candidates) != 2 {
-		t.Errorf("oneOf can give %v", sites(d))
+	one := issue(t, d, "one_of_failed")
+	if got := Describe(d.Flow); len(got) != 1 || len(one.Candidates) != 2 {
+		t.Errorf("oneOf can give %v", got)
 	}
-	cand := Sites(d.Sites[0].Candidates[1])
-	if len(cand) != 3 || cand[2].Key != "too_short" {
-		t.Errorf("the second candidate's sites: %v", cand)
+	if got := strings.Join(Describe(one.Candidates[1]), "|"); got != " required| type_mismatch| too_short" {
+		t.Errorf("the second candidate's sites: %s", got)
 	}
 }
 
 // A flow keeps where each issue arises and which issues come in the input's order, so that
 // neither is lost to the rest of the decoder. Within a form, the flows of its arguments come
-// first and its own issues after them.
+// first and its own issues after them; each Unordered has its own ID.
 func TestFlowsKeepPathsAndOrder(t *testing.T) {
 	c := checker(t)
 	for form, want := range map[string]string{
@@ -190,17 +196,45 @@ func TestFlowsKeepPathsAndOrder(t *testing.T) {
 			"/*/q required|/*/q type_mismatch|/*/q type_mismatch.numeric_range|/*/q out_of_range.positive|/*/q type_mismatch|" +
 			" required| type_mismatch| too_small.nonempty",
 		`["strict", ["object", [["field", "w", ["int"]]]], ["kind", "w"]]`: "" +
-			"/w required|/w type_mismatch|/w type_mismatch.numeric_range|/w type_mismatch|/* unknown_field (unordered at )",
+			"/w required|/w type_mismatch|/w type_mismatch.numeric_range|/w type_mismatch|/*-{kind,w} unknown_field (unordered#1)",
+		`["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a", "x"]], ["a", "y"]]`: "" +
+			"/a required|/a type_mismatch|/a type_mismatch.numeric_range|/a type_mismatch|" +
+			"/*-{a,x} unknown_field (unordered#1)|/*-{a,y} unknown_field (unordered#2)",
 		`["discriminate", "kind", {"a": ["strictObject", [["field", "x", ["int"]]]]}]`: "" +
-			"/x required|/x type_mismatch|/x type_mismatch.numeric_range|/x type_mismatch|/* unknown_field (unordered at )|" +
+			"/x required|/x type_mismatch|/x type_mismatch.numeric_range|/x type_mismatch|/*-{x} unknown_field (unordered#1)|" +
 			"/kind required|/kind type_mismatch|/kind not_allowed",
 		`["object", [["field", "p", ["object", [["field", "s", ["int"]], ["field", "e", ["int"]]], ["flatMap", "ordered_period"]]]]]`: "" +
 			"/p/s required|/p/s type_mismatch|/p/s type_mismatch.numeric_range|/p/s type_mismatch|" +
 			"/p/e required|/p/e type_mismatch|/p/e type_mismatch.numeric_range|/p/e type_mismatch|/p/end invalid_value|/p type_mismatch",
 	} {
-		if got := strings.Join(sites(decoder(t, c, form)), "|"); got != want {
+		if got := strings.Join(Describe(decoder(t, c, form).Flow), "|"); got != want {
 			t.Errorf("%s:\n got %s\nwant %s", form, got, want)
 		}
+	}
+	rejected(t, c, `["strictObject", [["flat", ["object", [["field", "a", ["int"]]]]]]]`, "flat field")
+}
+
+// For an input, a flow's repeats expand over its elements and members, and a strict form's
+// unknown members are the ones it does not know.
+func TestInstantiate(t *testing.T) {
+	c := checker(t)
+	d := decoder(t, c, `["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a", "x"]], ["a", "y"]]`)
+	var got []string
+	for _, s := range Instantiate(d.Flow, jsontext.MustParse(`{"a": 1, "x": 1, "y": 1, "z": 1}`), nil) {
+		if s.Key == "unknown_field" {
+			got = append(got, JoinPath(s.Path)+" "+s.Group)
+		}
+	}
+	want := []string{`/y unordered#1 at ""`, `/z unordered#1 at ""`, `/x unordered#2 at ""`, `/z unordered#2 at ""`}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v", got)
+	}
+	d = decoder(t, c, `["list", ["int"]]`)
+	if n := len(Instantiate(d.Flow, jsontext.MustParse(`[1, 2, 3]`), nil)); n != 3*3+2 {
+		t.Errorf("a list of three gives %d slots", n)
+	}
+	if n := len(Instantiate(d.Flow, jsontext.MustParse(`{"a": 1}`), nil)); n != 2 {
+		t.Errorf("a list decoder given an object gives %d slots", n)
 	}
 }
 

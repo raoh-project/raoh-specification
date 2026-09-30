@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/raoh-project/raoh-specification/internal/dsl"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
 	"github.com/raoh-project/raoh-specification/internal/suite"
 	"github.com/raoh-project/raoh-specification/internal/value"
@@ -95,37 +94,12 @@ func Same(c *suite.Case, declared, observed suite.Outcome) (bool, string) {
 		}
 		return true, ""
 	}
-	groups := make([]string, len(declared.Issues))
-	for i, d := range declared.Issues {
-		groups[i] = groupOf(d, c.Checked.Sites)
-	}
+	groups := suite.Groups(declared.Issues, c.Slots())
 	return matchRuns(groups, len(observed.Issues),
 		func(i, j int) string { return matchObserved(declared.Issues[i], observed.Issues[j]) },
 		func() string {
 			return fmt.Sprintf("declared %s, observed %s", describeIssues(declared.Issues), describeIssues(observed.Issues))
 		})
-}
-
-// groupOf finds the unordered group of an issue a declaration gives, by the sites its path, key
-// and code fit; an issue no unordered site fits, or that sites of different groups fit, is
-// ordered.
-func groupOf(is suite.Issue, sites []dsl.Located) string {
-	path, err := suite.SplitPath(is.Path)
-	if err != nil {
-		return ""
-	}
-	group, found := "", false
-	for _, site := range sites {
-		if site.Key != is.Key || site.Code != is.Code || !dsl.Matches(site.Path, path) {
-			continue
-		}
-		g := suite.GroupOf(site, path)
-		if found && g != group {
-			return ""
-		}
-		group, found = g, true
-	}
-	return group
 }
 
 // matchRuns compares a list of issues with an observed one. Consecutive issues of the same

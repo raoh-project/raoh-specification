@@ -1,14 +1,19 @@
 package dsl
 
 import (
+	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/raoh-project/raoh-specification/internal/jsontext"
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
 // Flow is the issues a decoder can give: where each can arise, what it is, and in what order they
 // come. It keeps the structure of the decoder, so that the path, the typing, the origin of the
-// message and the ordering of every issue follow from one description.
+// message and the ordering of every issue follow from one description. A flow is a grammar: for
+// a given input, Instantiate lists the places issues can arise at, in order.
 type Flow interface{ isFlow() }
 
 // Site is one issue that can arise where the flow runs.
@@ -35,12 +40,33 @@ type Site struct {
 type Seq struct{ Items []Flow }
 
 // Unordered is a flow whose issues come in the order of the input's members, which the
-// specification leaves to the implementation: they are compared as a multiset.
-type Unordered struct{ Body Flow }
+// specification leaves to the implementation: the issues of one instance of it are compared as a
+// multiset. Each Unordered of a decoder has its own ID, so that two of them on the same object
+// are two groups.
+type Unordered struct {
+	ID   int
+	Body Flow
+}
+
+// Over is what a Repeat repeats over.
+type Over int
+
+// The things a Repeat repeats over.
+const (
+	// Elements are the elements of an array input.
+	Elements Over = iota + 1
+	// Members are the members of an object input.
+	Members
+)
 
 // Repeat is a flow given for each element of an array or each member of an object, in order, at
-// the path of the element or member.
-type Repeat struct{ Body Flow }
+// the path of the element or member. Members named in Except are skipped: a strict form reports
+// only the members it does not know.
+type Repeat struct {
+	Over   Over
+	Except []string
+	Body   Flow
+}
 
 // At is a flow given at the path of a named member.
 type At struct {
@@ -48,78 +74,104 @@ type At struct {
 	Body Flow
 }
 
-func (*Site) isFlow()     {}
-func (Seq) isFlow()       {}
-func (Unordered) isFlow() {}
-func (Repeat) isFlow()    {}
-func (At) isFlow()        {}
+func (*Site) isFlow()      {}
+func (Seq) isFlow()        {}
+func (*Unordered) isFlow() {}
+func (Repeat) isFlow()     {}
+func (At) isFlow()         {}
 
-// Seg is one segment of a path pattern: a member name, or any member or index.
-type Seg struct {
-	Name string
-	Any  bool
-}
-
-func (s Seg) String() string {
-	if s.Any {
-		return "*"
-	}
-	return strings.ReplaceAll(strings.ReplaceAll(s.Name, "~", "~0"), "/", "~1")
-}
-
-// Located is a site with the path pattern where it arises, relative to the decoder, and, when its
-// issues are unordered, the path pattern of the object whose members order them.
-type Located struct {
+// Slot is a place an issue can arise at for a given input: a site, the concrete path, the input
+// there, and the unordered group instance it belongs to, if any.
+type Slot struct {
 	*Site
-	Path []Seg
-	// Group is the path of the Unordered flow the site is in; nil when the site is ordered.
-	Group []Seg
+	Path  []string
+	Input *jsontext.Node
+	// Group identifies the instance of the Unordered the slot is in; empty when it is ordered.
+	Group string
 }
 
-// PathString writes a path pattern.
-func PathString(p []Seg) string {
+// Instantiate lists the slots of a flow for an input given at a path, in the order the flow gives
+// its issues. The input may be nil for an absent value.
+func Instantiate(f Flow, input *jsontext.Node, path []string) []Slot {
+	var out []Slot
+	var walk func(f Flow, in *jsontext.Node, at []string, group string)
+	walk = func(f Flow, in *jsontext.Node, at []string, group string) {
+		switch f := f.(type) {
+		case *Site:
+			out = append(out, Slot{Site: f, Path: at, Input: in, Group: group})
+		case Seq:
+			for _, item := range f.Items {
+				walk(item, in, at, group)
+			}
+		case *Unordered:
+			walk(f.Body, in, at, fmt.Sprintf("unordered#%d at %q", f.ID, JoinPath(at)))
+		case Repeat:
+			switch {
+			case f.Over == Elements && in != nil && in.Kind == jsontext.Array:
+				for i, e := range in.Elems {
+					walk(f.Body, e, appendPath(at, strconv.Itoa(i)), group)
+				}
+			case f.Over == Members && in != nil && in.Kind == jsontext.Object:
+				for _, m := range in.Members {
+					if !slices.Contains(f.Except, m.Name) {
+						walk(f.Body, m.Value, appendPath(at, m.Name), group)
+					}
+				}
+			}
+		case At:
+			var child *jsontext.Node
+			if in != nil && in.Kind == jsontext.Object {
+				child, _ = in.Get(f.Name)
+			}
+			walk(f.Body, child, appendPath(at, f.Name), group)
+		}
+	}
+	walk(f, input, append([]string{}, path...), "")
+	return out
+}
+
+func appendPath(p []string, seg string) []string {
+	return append(append([]string{}, p...), seg)
+}
+
+// JoinPath writes path segments as a JSON Pointer.
+func JoinPath(segs []string) string {
 	var b strings.Builder
-	for _, s := range p {
-		b.WriteString("/" + s.String())
+	for _, s := range segs {
+		b.WriteString("/" + strings.ReplaceAll(strings.ReplaceAll(s, "~", "~0"), "/", "~1"))
 	}
 	return b.String()
 }
 
-// Sites lists the sites of a flow, in order, with their paths.
-func Sites(f Flow) []Located {
-	var out []Located
-	var walk func(f Flow, at []Seg, group []Seg)
-	walk = func(f Flow, at []Seg, group []Seg) {
+// Describe writes a flow's sites with their path patterns, for tests and messages: "*" stands
+// for any element or member, and a site in an Unordered is marked with its ID.
+func Describe(f Flow) []string {
+	var out []string
+	var walk func(f Flow, at string, group string)
+	walk = func(f Flow, at string, group string) {
 		switch f := f.(type) {
 		case *Site:
-			out = append(out, Located{Site: f, Path: at, Group: group})
+			line := at + " " + f.Key
+			if group != "" {
+				line += " (" + group + ")"
+			}
+			out = append(out, line)
 		case Seq:
 			for _, item := range f.Items {
 				walk(item, at, group)
 			}
-		case Unordered:
-			walk(f.Body, at, clonePath(at))
+		case *Unordered:
+			walk(f.Body, at, fmt.Sprintf("unordered#%d", f.ID))
 		case Repeat:
-			walk(f.Body, append(clonePath(at), Seg{Any: true}), group)
+			seg := "/*"
+			if len(f.Except) > 0 {
+				seg = "/*-{" + strings.Join(f.Except, ",") + "}"
+			}
+			walk(f.Body, at+seg, group)
 		case At:
-			walk(f.Body, append(clonePath(at), Seg{Name: f.Name}), group)
+			walk(f.Body, at+JoinPath([]string{f.Name}), group)
 		}
 	}
-	walk(f, []Seg{}, nil)
+	walk(f, "", "")
 	return out
-}
-
-func clonePath(p []Seg) []Seg { return append([]Seg{}, p...) }
-
-// Matches reports whether a concrete path, as segments, fits a path pattern.
-func Matches(pattern []Seg, path []string) bool {
-	if len(pattern) != len(path) {
-		return false
-	}
-	for i, s := range pattern {
-		if !s.Any && s.Name != path[i] {
-			return false
-		}
-	}
-	return true
 }

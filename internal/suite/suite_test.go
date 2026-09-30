@@ -174,7 +174,7 @@ func TestAnIssueThatFitsTwoTypingsIsRejected(t *testing.T) {
 		["flat", ["object", [["field", "x", ["int", ["oneOf", [1, 2]]]]]]],
 		["flat", ["object", [["field", "x", ["double", ["oneOf", [1, 2]]]]]]]]],
 		"input": {"x": 3},
-		"issues": [{"path": "/x", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": [1, 2], "actual": 3}}]}]`, "ambiguous")
+		"issues": [{"path": "/x", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": [1, 2], "actual": 3}}]}]`, "two ways")
 }
 
 func schemasFor(t *testing.T) *schemas.Set {
@@ -232,4 +232,20 @@ func TestMetaTheFormDecides(t *testing.T) {
 	rejected(t, "core", issue(`["double", ["positive"]]`, `0`, "out_of_range.positive", "out_of_range", `{"min": 1, "actual": 0}`), "the min 0.0")
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["strictObject", [["field", "a", ["int"]]]], "input": {"a": 1, "b": 2},
 		"issues": [{"path": "/b", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "a"}}]}]`, "member's name")
+}
+
+// A oneOf fails only when every candidate fails, so its one_of_failed reports every candidate once,
+// and each candidate's issues come from that candidate's flow, messages included.
+func TestCandidatesAreComplete(t *testing.T) {
+	c := func(candidates string) string {
+		return `[{"id": "R000001", "title": "t", "decoder": ["oneOf", [["int", ["min", 1]], ["int", ["max", -1]]]], "input": 0,
+			"issues": [{"path": "", "code": "one_of_failed", "message_key": "one_of_failed", "meta": {"candidates": [` + candidates + `]}}]}]`
+	}
+	zero := `{"candidate": 0, "issues": [{"path": "", "code": "out_of_range", "message": "must be at least 1", "meta": {"min": 1, "actual": 0}}]}`
+	one := `{"candidate": 1, "issues": [{"path": "", "code": "out_of_range", "message": "must be at most -1", "meta": {"max": -1, "actual": 0}}]}`
+	accepted(t, "core", c(one+","+zero))
+	rejected(t, "core", c(zero), "candidate 1 is missing")
+	rejected(t, "core", c(zero+","+zero+","+one), "appears twice")
+	rejected(t, "core", c(strings.Replace(zero, "must be at least 1", "banana", 1)+","+one), `not "banana"`)
+	rejected(t, "core", c(strings.Replace(zero, `"min": 1`, `"min": 2`, 1)+","+one), "the min 1")
 }

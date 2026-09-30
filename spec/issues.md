@@ -80,30 +80,37 @@ later version.
 ## Where issues arise, and in what order
 
 Every decoder has an issue flow, which the verifier builds from the decoder's form and
-`catalog/operations.json`. It says where each issue can arise, relative to the path the decoder
-runs at, and in what order issues come:
+`catalog/operations.json`. The flow is a grammar of the issue lists the decoder can give:
 
 - A form gives the issues of its decoder arguments first, then its own. A field gives its issues at
   the path of the member it names; the elements of `list` and the members of `dict` give theirs at
   each element's or member's path, in order.
 - An operation's own issues arise where it runs, except where `catalog/operations.json` places
-  them at the tag field (`"at": "tag"`, for `discriminate`) or at each member of the input
-  (`"at": "member"`, for the unknown members `strict` and `strictObject` report).
+  them at the tag field (`"at": "tag"`, for `discriminate`) or at members of the input
+  (`"at": "member"`): `strict` and `strictObject` report each member they do not know, which is
+  every member not named in `strict`'s `known` argument or among `strictObject`'s fields.
 - A form marked `"issue_order": "input"` gives its issues at members in the order of the input's
-  members. Those issues, for one object, form an unordered group.
+  members. They form an unordered group: one for each such form, and for each object it runs on.
+  Two strict forms on the same object are two groups.
 
-A case's issue is matched with the place in the flow its path, message key and code fit, and its
-metadata is typed there. An issue that two places fit with different types, messages or ordering
-is ambiguous, and a case that expects one is rejected.
+For a case, the verifier instantiates the flow on the case's input: repeats expand over the
+input's elements and members, and each place an issue can arise at gets its concrete path. The
+case's issues must fit these places in order, each place used at most once, except that the
+issues of one unordered group may come in any order among themselves; the group keeps its place
+among the others, so the unknown members `strict` reports come after the issues of the decoder
+it wraps. Each issue is typed, and its metadata and message settled, at the place it fits. If no
+assignment fits, or two assignments fit that type, word or group an issue differently, the case is
+rejected.
 
-Issues are compared in the order the decoder gives them, except that consecutive issues of one
+A runner's issues are compared with the case's in order, except that consecutive issues of one
 unordered group are compared as a multiset: the same issues, each the same number of times, in
-any order. The group keeps its place among the other issues: the unknown members `strict` reports
-still come after the issues of the decoder it wraps.
+any order.
 
-`one_of_failed` lists, for each candidate that failed, the issues it gave. Those are typed and
-compared by the flow of that candidate. As raoh-java writes them, they have a path, a code, a
-message and metadata, and no message key; a case gives their messages as they are written.
+`one_of_failed` is given only when every candidate failed, and it lists every candidate exactly
+once, by index; the order of the list does not matter. Each candidate's issues are read by that
+candidate's flow on the same input. As raoh-java writes them, they have a path, a code, a message
+and metadata, and no message key. Their message is the one their place gives, as for any other
+issue; a case may write it, and then it has to be that message.
 
 ## Issues from fixtures
 
