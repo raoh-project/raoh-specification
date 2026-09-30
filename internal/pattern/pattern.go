@@ -1,9 +1,11 @@
 // Package pattern reads the pattern language of spec/pattern.md: it tells a pattern from text that
-// is not one. It is the language Souther's string patterns are written in, read the way Souther's
-// compiler reads it, so that one pattern means one set of strings in both.
+// is not one, and an admissible pattern from one past the limits spec/pattern.md sets apart from
+// what a pattern means. It is the language Souther's string patterns are written in, read the way
+// Souther's compiler reads it, so that one pattern means one set of strings in both.
 //
 // The verifier never matches a pattern; a case says what its decoder gives. What it needs is to
-// refuse, where a case is read, a pattern whose meaning the specification does not define.
+// refuse, where a case is read, text whose meaning the specification does not define and a pattern
+// that means a set of strings but is past a limit, since neither is an argument.
 package pattern
 
 import (
@@ -50,7 +52,7 @@ func (inTurn) isWritten()   {}
 func (eitherOf) isWritten() {}
 func (repeated) isWritten() {}
 
-// refusal is why text is no pattern, and the construct that stopped the reading.
+// refusal is why text is no admissible pattern, and the construct that stopped the reading.
 type refusal struct {
 	why       string
 	construct string
@@ -67,7 +69,8 @@ type reader struct {
 	construct int
 }
 
-// Read reports whether text is a pattern, and if it is not, why.
+// Read reports whether text is an admissible pattern, and if it is not, why: it is no pattern, or
+// a pattern past a limit.
 func Read(text string) (err error) {
 	if !utf8.ValidString(text) {
 		return fmt.Errorf("a pattern is text")

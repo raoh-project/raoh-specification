@@ -267,7 +267,7 @@
      "issues": [{"key": "invalid_format", "meta": {"pattern": {"arg": "regex"}}}],
      "args": [{"name": "regex", "kind": "value", "type": "string"}],
      "requires": [{"check": "pattern", "args": ["regex"]}],
-     "doc": "Gives invalid_format, with the pattern as written, unless the whole string is one of the strings the pattern denotes. The pattern is written in the pattern language of spec/pattern.md, which says what it means and which patterns are admitted: its matching is over Unicode scalar values, case-sensitive, and of the whole string, and a pattern past a count of 134217727, groups nested 200 deep or 250000 states is not an argument.",
+     "doc": "Gives invalid_format, with the pattern as written, unless the whole string is one of the strings the pattern denotes. The pattern is written in the pattern language of spec/pattern.md, which says what it means and which patterns are admitted: its matching is over Unicode scalar values, case-sensitive, and of the whole string, and a pattern that writes a count above 134217727, nests groups more than 200 deep or comes to more than 250000 states is not an argument.",
      "flow": "own"},
     {"name": "email", "receivers": ["string"], "result": "string",
      "issues": ["invalid_format.email"],
