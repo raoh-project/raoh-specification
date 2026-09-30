@@ -156,6 +156,8 @@ type requirement struct {
 	kind    string
 	list    bool
 	strings bool
+	// text is a condition on one string value.
+	text bool
 }
 
 // requirements are the kinds of condition. Each stands for something raoh-java refuses to
@@ -172,6 +174,8 @@ var requirements = map[string]requirement{
 	"distinct": {arity: 1, kind: "value", list: true},
 	// distinct_ascii_fold: the strings stay distinct when A-Z are read as a-z.
 	"distinct_ascii_fold": {arity: 1, kind: "value", list: true, strings: true},
+	// pattern: the string is a pattern of spec/pattern.md.
+	"pattern": {arity: 1, kind: "value", text: true},
 	// named_fields: every field names the member it reads; none is flat.
 	"named_fields": {arity: 1, kind: "fields"},
 	// distinct_members: no two properties write the same member.
@@ -536,6 +540,9 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 			t := f.Args[i.Index()].Type
 			if req.list && (t.Kind != value.List || (req.strings && t.Args[0].Kind != value.String)) {
 				return nil, fmt.Errorf("requires %s of %s, a %s, and it reads a list", r.Check, name, t)
+			}
+			if req.text && t.Kind != value.String {
+				return nil, fmt.Errorf("requires %s of %s, a %s, and it reads a string", r.Check, name, t)
 			}
 			r.Args = append(r.Args, i)
 		}

@@ -343,7 +343,8 @@
                   "distinct",
                   "distinct_ascii_fold",
                   "named_fields",
-                  "distinct_members"
+                  "distinct_members",
+                  "pattern"
                 ]
               },
               "args": {

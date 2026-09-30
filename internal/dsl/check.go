@@ -9,6 +9,7 @@ import (
 
 	"github.com/raoh-project/raoh-specification/internal/catalog"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
+	"github.com/raoh-project/raoh-specification/internal/pattern"
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
@@ -691,6 +692,10 @@ func meets(f *Form, r Require, ca checkedArgs) error {
 					return fmt.Errorf("%s lists the same value twice", name(0))
 				}
 			}
+		}
+	case "pattern":
+		if err := pattern.Read(vs[0].Str); err != nil {
+			return fmt.Errorf("%s is not a pattern (spec/pattern.md): %w", name(0), err)
 		}
 	case "named_fields":
 		for _, fl := range ca.fields[r.Args[0]] {
