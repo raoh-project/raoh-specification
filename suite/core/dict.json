@@ -1,0 +1,16 @@
+[
+  {"id": "dict.type_mismatch_a_1_b_x_c_3", "decoder": ["dict",["int"]], "input": {"a":1,"b":"x","c":3}, "issues": [{"path": "/b", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "integer"}}]},
+  {"id": "dict.type_mismatch_1", "decoder": ["dict",["int"]], "input": [1], "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "array", "expected": "object"}}]},
+  {"id": "dict.nonempty.too_small_nonempty_empty_object", "decoder": ["dict",["int"],["nonempty"]], "input": {}, "issues": [{"path": "", "code": "too_small", "message_key": "too_small.nonempty", "meta": {"actual": 0, "min": 1}}]},
+  {"id": "dict.nonempty.accepts_a_1", "decoder": ["dict",["int"],["nonempty"]], "input": {"a":1}, "ok": {"a": 1}},
+  {"id": "dict.nonempty.type_mismatch_1", "decoder": ["dict",["int"],["nonempty"]], "input": [1], "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "array", "expected": "object"}}]},
+  {"id": "dict.nonempty.message.too_small_nonempty_empty_object", "decoder": ["dict",["int"],["nonempty","empty"]], "input": {}, "issues": [{"path": "", "code": "too_small", "message_key": "too_small.nonempty", "message": "empty", "meta": {"actual": 0, "min": 1}}]},
+  {"id": "dict.min_size.too_small_a_1", "decoder": ["dict",["int"],["minSize",2]], "input": {"a":1}, "issues": [{"path": "", "code": "too_small", "message_key": "too_small", "meta": {"actual": 1, "min": 2}}]},
+  {"id": "dict.min_size.accepts_a_1_b_2", "decoder": ["dict",["int"],["minSize",2]], "input": {"a":1,"b":2}, "ok": {"a": 1, "b": 2}},
+  {"id": "dict.max_size.too_big_a_1_b_2", "decoder": ["dict",["int"],["maxSize",1]], "input": {"a":1,"b":2}, "issues": [{"path": "", "code": "too_big", "message_key": "too_big", "meta": {"actual": 2, "max": 1}}]},
+  {"id": "dict.max_size.accepts_a_1", "decoder": ["dict",["int"],["maxSize",1]], "input": {"a":1}, "ok": {"a": 1}},
+  {"id": "dict.fixed_size.invalid_size_a_1", "decoder": ["dict",["int"],["fixedSize",2]], "input": {"a":1}, "issues": [{"path": "", "code": "invalid_size", "message_key": "invalid_size", "meta": {"actual": 1, "expected": 2}}]},
+  {"id": "dict.fixed_size.accepts_a_1_b_2", "decoder": ["dict",["int"],["fixedSize",2]], "input": {"a":1,"b":2}, "ok": {"a": 1, "b": 2}},
+  {"id": "dict.fixed_size.invalid_size_a_1_b_2_c_3", "decoder": ["dict",["int"],["fixedSize",2]], "input": {"a":1,"b":2,"c":3}, "issues": [{"path": "", "code": "invalid_size", "message_key": "invalid_size", "meta": {"actual": 3, "expected": 2}}]},
+  {"id": "dict.min_size.member_issue.type_mismatch_a_x", "decoder": ["dict",["int"],["minSize",2]], "input": {"a":"x"}, "issues": [{"path": "/a", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "integer"}}]}
+]

@@ -1,0 +1,6 @@
+[
+  {"id": "bool.accepts_true", "decoder": ["bool"], "input": true, "ok": true},
+  {"id": "bool.type_mismatch_true", "decoder": ["bool"], "input": "true", "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "boolean"}}]},
+  {"id": "bool.required_null", "decoder": ["bool"], "input": null, "issues": [{"path": "", "code": "required", "message_key": "required", "meta": {}}]},
+  {"id": "bool.is_true.invalid_value_false", "decoder": ["bool",["isTrue"]], "input": false, "issues": [{"path": "", "code": "invalid_value", "message_key": "invalid_value", "meta": {"actual": false, "expected": true}}]}
+]

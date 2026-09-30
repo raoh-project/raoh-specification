@@ -174,6 +174,10 @@ func TestTemporalValuesCompareByValue(t *testing.T) {
 	if Equal(obs(t, "offset_datetime", `"2024-01-01T09:00+09:00"`), obs(t, "offset_datetime", `"2024-01-01T00:00Z"`)) {
 		t.Error("offset date-times at different offsets are the same")
 	}
+	if !Equal(obs(t, "date", `"+10000-01-01"`), obs(t, "date", `"10000-01-01"`)) {
+		t.Error("an expanded year differs")
+	}
+	obs(t, "instant", `"+1000000000-12-31T23:59:59.999999999Z"`)
 	invalid(t, "date", `"2024-02-30"`, "not a date")
 	invalid(t, "time", `"24:00"`, "not a time")
 	invalid(t, "uuid", `"123E4567-E89B-12D3-A456-426614174000"`, "lower case")

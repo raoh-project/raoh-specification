@@ -1,0 +1,7 @@
+[
+  {"id": "recover.accepts_page_x", "decoder": ["object",[["field","id",["withDefault",["int"],0]],["field","page",["recover",["int"],1]]]], "input": {"page":"x"}, "ok": [0, 1]},
+  {"id": "recover.with.accepts_id_1_page_2", "decoder": ["object",[["field","id",["int"]],["field","page",["recoverWith",["int"],"issue_count_plus_10"]]]], "input": {"id":1,"page":2}, "ok": [1, 2]},
+  {"id": "recover.with.accepts_id_1_page_x", "decoder": ["object",[["field","id",["int"]],["field","page",["recoverWith",["int"],"issue_count_plus_10"]]]], "input": {"id":1,"page":"x"}, "ok": [1, 11]},
+  {"id": "recover.with.accepts_id_1", "decoder": ["object",[["field","id",["int"]],["field","page",["recoverWith",["int"],"issue_count_plus_10"]]]], "input": {"id":1}, "ok": [1, 11]},
+  {"id": "recover.with.type_mismatch_id_x_page_y", "decoder": ["object",[["field","id",["int"]],["field","page",["recoverWith",["int"],"issue_count_plus_10"]]]], "input": {"id":"x","page":"y"}, "issues": [{"path": "/id", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "integer"}}]}
+]

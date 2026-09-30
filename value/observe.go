@@ -263,7 +263,7 @@ func ParseDecimal(s string) (Dec, error) {
 }
 
 var (
-	datePattern   = `(-?[0-9]{4,})-([0-9]{2})-([0-9]{2})`
+	datePattern   = `([+-]?[0-9]{4,})-([0-9]{2})-([0-9]{2})`
 	timePattern   = `([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:\.([0-9]{1,9}))?)?`
 	offsetPattern = `(Z|[+-][0-9]{2}:[0-9]{2}(?::[0-9]{2})?)`
 	temporalRe    = map[Kind]*regexp.Regexp{

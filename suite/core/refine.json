@@ -1,0 +1,6 @@
+[
+  {"id": "refine.accepts_4", "decoder": ["int",["refine","even"]], "input": 4, "ok": 4},
+  {"id": "refine.must_be_even_3", "decoder": ["int",["refine","even"]], "input": 3, "issues": [{"path": "", "code": "must_be_even", "message_key": "must_be_even", "message": "must be even", "meta": {"actual": 3}}]},
+  {"id": "refine.type_mismatch_x", "decoder": ["int",["refine","even"]], "input": "x", "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "integer"}}]},
+  {"id": "refine.required_null", "decoder": ["int",["refine","even"]], "input": null, "issues": [{"path": "", "code": "required", "message_key": "required", "meta": {}}]}
+]

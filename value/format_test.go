@@ -37,6 +37,7 @@ func TestFormatForMessage(t *testing.T) {
 		{"offset_datetime", `"2024-01-01T00:00:00+00:00"`, "2024-01-01T00:00Z"},
 		{"instant", `"2024-01-01T00:00Z"`, "2024-01-01T00:00:00Z"},
 		{"date", `"2024-12-31"`, "2024-12-31"},
+		{"date", `"10000-01-01"`, "+10000-01-01"},
 		// AbstractCollection.toString.
 		{"list<int32>", "[1, 3, 3]", "[1, 3, 3]"},
 		{"list<string>", `["rect", "square"]`, "[rect, square]"},

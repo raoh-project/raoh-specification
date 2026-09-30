@@ -34,7 +34,7 @@ Temporal values are written as JSON strings in ISO 8601:
 
 | Type | Observation |
 |------|-------------|
-| `date` | `yyyy-mm-dd` |
+| `date` | `yyyy-mm-dd`, with a year of more than four digits preceded by `+` or `-` (`+10000-01-01`) |
 | `time` | `hh:mm`, `hh:mm:ss` or `hh:mm:ss.f` with one to nine digits of fraction |
 | `datetime` | a date, `T`, and a time |
 | `offset_datetime` | a date-time followed by `Z` or an offset `±hh:mm` (or `±hh:mm:ss`) |

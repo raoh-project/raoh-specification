@@ -1,0 +1,5 @@
+[
+  {"id": "one_of.accepts_5", "decoder": ["oneOf",[["int",["map","decimal_string"]],["string",["minLength",3]]]], "input": 5, "ok": "5"},
+  {"id": "one_of.accepts_abc", "decoder": ["oneOf",[["int",["map","decimal_string"]],["string",["minLength",3]]]], "input": "abc", "ok": "abc"},
+  {"id": "one_of.one_of_failed_ab", "decoder": ["oneOf",[["int",["map","decimal_string"]],["string",["minLength",3]]]], "input": "ab", "issues": [{"path": "", "code": "one_of_failed", "message_key": "one_of_failed", "meta": {"candidates": [{"candidate": 0, "issues": [{"code":"type_mismatch","message":"expected integer","meta":{"actual":"string","expected":"integer"},"path":""}]}, {"candidate": 1, "issues": [{"code":"too_short","message":"must be at least 3 characters","meta":{"actual":2,"min":3},"path":""}]}]}}]}
+]

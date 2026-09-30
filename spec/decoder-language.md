@@ -85,4 +85,10 @@ version may decide otherwise:
   rejects it.
 - `strict` inside `strict` reports an unknown member once for each.
 
+One meaning differs from what raoh-java 0.8.0 gives with Jackson's default configuration: `decimal`
+keeps the scale the lexeme is written with, so `0.0001` gives scale 4. raoh-json documents that its
+result depends on how the JSON library parsed the number (a fractional number parsed as a binary64
+double comes back with the scale `Double.toString` writes, 0.00010), which makes it adapter
+behaviour; the input model keeps the lexeme.
+
 Each is an open issue in this repository.

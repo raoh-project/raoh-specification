@@ -1,0 +1,4 @@
+[
+  {"id": "property_with_default.accepts_null", "encoder": ["object",[["propertyWithDefault","value","identity",["string"],"default"]]], "value": null, "ok": {"value":"default"}},
+  {"id": "property_with_default.accepts_hello", "encoder": ["object",[["propertyWithDefault","value","identity",["string"],"default"]]], "value": "hello", "ok": {"value":"hello"}}
+]

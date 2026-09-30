@@ -1,0 +1,10 @@
+[
+  {"id": "long.accepts_9007199254740993", "decoder": ["long"], "input": 9007199254740993, "ok": 9007199254740993},
+  {"id": "long.type_mismatch_1", "decoder": ["long"], "input": "1", "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "long"}}]},
+  {"id": "long.type_mismatch_1_0", "decoder": ["long"], "input": 1.0, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "number", "expected": "long"}}]},
+  {"id": "long.accepts_0", "decoder": ["long"], "input": -0, "ok": 0},
+  {"id": "long.type_mismatch_0_0", "decoder": ["long"], "input": -0.0, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "number", "expected": "long"}}]},
+  {"id": "long.type_mismatch_1e_30", "decoder": ["long"], "input": 1e+30, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "number", "expected": "long"}}]},
+  {"id": "long.type_mismatch_numeric_range_12345678901234567890", "decoder": ["long"], "input": 12345678901234567890, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch.numeric_range", "meta": {"expected": "long"}}]},
+  {"id": "long.type_mismatch_numeric_range_123456789012345678901", "decoder": ["long"], "input": 123456789012345678901, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch.numeric_range", "meta": {"expected": "long"}}]}
+]

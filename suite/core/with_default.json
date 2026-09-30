@@ -1,0 +1,9 @@
+[
+  {"id": "with_default.accepts_empty_object", "decoder": ["object",[["field","id",["withDefault",["int"],0]],["field","page",["withDefault",["int"],1]]]], "input": {}, "ok": [0, 1]},
+  {"id": "with_default.accepts_page_null", "decoder": ["object",[["field","id",["withDefault",["int"],0]],["field","page",["withDefault",["int"],1]]]], "input": {"page":null}, "ok": [0, 1]},
+  {"id": "with_default.type_mismatch_page_x", "decoder": ["object",[["field","id",["withDefault",["int"],0]],["field","page",["withDefault",["int"],1]]]], "input": {"page":"x"}, "issues": [{"path": "/page", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "integer"}}]},
+  {"id": "with_default.other_defaults.accepts_empty_object", "decoder": ["object",[["field","id",["withDefault",["int"],7]],["field","page",["withDefault",["int"],8]]]], "input": {}, "ok": [7, 8]},
+  {"id": "with_default.other_defaults.accepts_id_null_page_null", "decoder": ["object",[["field","id",["withDefault",["int"],7]],["field","page",["withDefault",["int"],8]]]], "input": {"id":null,"page":null}, "ok": [7, 8]},
+  {"id": "with_default.other_defaults.accepts_id_3_page_4", "decoder": ["object",[["field","id",["withDefault",["int"],7]],["field","page",["withDefault",["int"],8]]]], "input": {"id":3,"page":4}, "ok": [3, 4]},
+  {"id": "with_default.other_defaults.type_mismatch_id_x", "decoder": ["object",[["field","id",["withDefault",["int"],7]],["field","page",["withDefault",["int"],8]]]], "input": {"id":"x"}, "issues": [{"path": "/id", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "integer"}}]}
+]
