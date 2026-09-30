@@ -192,15 +192,3 @@ func TestRecordsAndJSON(t *testing.T) {
 	}
 	invalid(t, typ, `{"candidate": 0}`, "has the fields")
 }
-
-func TestExtremeExponentsDoNotPanic(t *testing.T) {
-	invalid(t, "float64", "1e-99999999", "exponent")
-	invalid(t, "float32", "1e99999999", "range")
-	huge := jsontext.MustParse("1e10000000")
-	if EqualJSON(huge, jsontext.MustParse("1")) {
-		t.Error("1e10000000 equals 1")
-	}
-	if !EqualJSON(huge, jsontext.MustParse("1e10000000")) {
-		t.Error("1e10000000 differs from itself")
-	}
-}

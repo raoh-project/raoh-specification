@@ -224,12 +224,15 @@ func observeFloat(t Type, n *jsontext.Node) (float64, error) {
 	if f == 0 && strings.HasPrefix(n.Text, "-") {
 		return 0, fmt.Errorf(`negative zero is written {"float": "-0"}`)
 	}
-	written, ok := new(big.Rat).SetString(n.Text)
-	if !ok {
-		return 0, fmt.Errorf("%s has an exponent too large to compare exactly", n.Text)
+	written, err := ParseNumber(n.Text)
+	if err != nil {
+		return 0, err
 	}
-	shortest, _ := new(big.Rat).SetString(strconv.FormatFloat(f, 'e', -1, bits))
-	if written.Cmp(shortest) != 0 {
+	shortest, err := ParseNumber(strconv.FormatFloat(f, 'e', -1, bits))
+	if err != nil {
+		return 0, err
+	}
+	if !written.Equal(shortest) {
 		return 0, fmt.Errorf("%s rounds to the %s %s", n.Text, t, strconv.FormatFloat(f, 'g', -1, bits))
 	}
 	return f, nil

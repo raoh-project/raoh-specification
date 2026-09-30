@@ -2,7 +2,6 @@ package value
 
 import (
 	"math"
-	"math/big"
 
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
 )
@@ -108,13 +107,9 @@ func EqualJSON(a, b *jsontext.Node) bool {
 	case jsontext.String:
 		return a.Text == b.Text
 	case jsontext.Number:
-		x, okx := new(big.Rat).SetString(a.Text)
-		y, oky := new(big.Rat).SetString(b.Text)
-		if !okx || !oky {
-			// An exponent too large for an exact value: only the same lexeme is the same number.
-			return a.Text == b.Text
-		}
-		return x.Cmp(y) == 0
+		x, errx := ParseNumber(a.Text)
+		y, erry := ParseNumber(b.Text)
+		return errx == nil && erry == nil && x.Equal(y)
 	case jsontext.Array:
 		if len(a.Elems) != len(b.Elems) {
 			return false
