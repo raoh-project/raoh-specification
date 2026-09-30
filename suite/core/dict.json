@@ -1,0 +1,16 @@
+[
+  {"id": "R000022", "title": "dict(int) rejects {\"a\":1,\"b\":\"x\",\"c\":3} with type_mismatch at /b", "decoder": ["dict",["int"]], "input": {"a":1,"b":"x","c":3}, "issues": [{"path":"/b","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"string","expected":"integer"}}]},
+  {"id": "R000023", "title": "dict(int) rejects [1] with type_mismatch", "decoder": ["dict",["int"]], "input": [1], "issues": [{"path":"","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"array","expected":"object"}}]},
+  {"id": "R000024", "title": "dict(int).nonempty() rejects {} with too_small.nonempty", "decoder": ["dict",["int"],["nonempty"]], "input": {}, "issues": [{"path":"","code":"too_small","message_key":"too_small.nonempty","meta":{"actual":0,"min":1}}]},
+  {"id": "R000025", "title": "dict(int).nonempty() accepts {\"a\":1}", "decoder": ["dict",["int"],["nonempty"]], "input": {"a":1}, "ok": {"a":1}},
+  {"id": "R000026", "title": "dict(int).nonempty() rejects [1] with type_mismatch", "decoder": ["dict",["int"],["nonempty"]], "input": [1], "issues": [{"path":"","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"array","expected":"object"}}]},
+  {"id": "R000027", "title": "dict(int).nonempty(\"empty\") rejects {} with too_small.nonempty", "decoder": ["dict",["int"],["nonempty","empty"]], "input": {}, "issues": [{"path":"","code":"too_small","message_key":"too_small.nonempty","message":"empty","meta":{"actual":0,"min":1}}]},
+  {"id": "R000028", "title": "dict(int).minSize(2) rejects {\"a\":1} with too_small", "decoder": ["dict",["int"],["minSize",2]], "input": {"a":1}, "issues": [{"path":"","code":"too_small","message_key":"too_small","meta":{"actual":1,"min":2}}]},
+  {"id": "R000029", "title": "dict(int).minSize(2) accepts {\"a\":1,\"b\":2}", "decoder": ["dict",["int"],["minSize",2]], "input": {"a":1,"b":2}, "ok": {"a":1,"b":2}},
+  {"id": "R000030", "title": "dict(int).maxSize(1) rejects {\"a\":1,\"b\":2} with too_big", "decoder": ["dict",["int"],["maxSize",1]], "input": {"a":1,"b":2}, "issues": [{"path":"","code":"too_big","message_key":"too_big","meta":{"actual":2,"max":1}}]},
+  {"id": "R000031", "title": "dict(int).maxSize(1) accepts {\"a\":1}", "decoder": ["dict",["int"],["maxSize",1]], "input": {"a":1}, "ok": {"a":1}},
+  {"id": "R000032", "title": "dict(int).fixedSize(2) rejects {\"a\":1} with invalid_size", "decoder": ["dict",["int"],["fixedSize",2]], "input": {"a":1}, "issues": [{"path":"","code":"invalid_size","message_key":"invalid_size","meta":{"actual":1,"expected":2}}]},
+  {"id": "R000033", "title": "dict(int).fixedSize(2) accepts {\"a\":1,\"b\":2}", "decoder": ["dict",["int"],["fixedSize",2]], "input": {"a":1,"b":2}, "ok": {"a":1,"b":2}},
+  {"id": "R000034", "title": "dict(int).fixedSize(2) rejects {\"a\":1,\"b\":2,\"c\":3} with invalid_size", "decoder": ["dict",["int"],["fixedSize",2]], "input": {"a":1,"b":2,"c":3}, "issues": [{"path":"","code":"invalid_size","message_key":"invalid_size","meta":{"actual":3,"expected":2}}]},
+  {"id": "R000035", "title": "dict(int).minSize(2) rejects {\"a\":\"x\"} with type_mismatch at /a", "decoder": ["dict",["int"],["minSize",2]], "input": {"a":"x"}, "issues": [{"path":"/a","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"string","expected":"integer"}}]}
+]

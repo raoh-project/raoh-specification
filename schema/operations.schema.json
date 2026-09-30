@@ -1,0 +1,922 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/raoh-project/raoh-specification/schema/operations.schema.json",
+  "title": "The decoder language",
+  "description": "catalog/operations.json: every constructor, field kind, operation, encoder and property kind, with its arguments, types and the issues it gives.",
+  "type": "object",
+  "required": [
+    "constructors",
+    "fields",
+    "operations",
+    "encoders",
+    "properties"
+  ],
+  "properties": {
+    "constructors": {
+      "$ref": "#/$defs/constructors"
+    },
+    "fields": {
+      "$ref": "#/$defs/fields"
+    },
+    "encoders": {
+      "$ref": "#/$defs/encoders"
+    },
+    "properties": {
+      "$ref": "#/$defs/properties"
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/form"
+          }
+        ],
+        "required": [
+          "name",
+          "receivers",
+          "result",
+          "issues",
+          "flow"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "input"
+              ]
+            },
+            {
+              "required": [
+                "member"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "constructors": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][A-Za-z]*$"
+      },
+      "additionalProperties": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/form"
+          }
+        ],
+        "required": [
+          "result",
+          "issues",
+          "flow"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "receivers"
+              ]
+            },
+            {
+              "required": [
+                "input"
+              ]
+            },
+            {
+              "required": [
+                "member"
+              ]
+            }
+          ]
+        },
+        "properties": {
+          "args": {
+            "items": {
+              "properties": {
+                "optional": {
+                  "const": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "fields": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][A-Za-z]*$"
+      },
+      "additionalProperties": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/form"
+          }
+        ],
+        "required": [
+          "result",
+          "args",
+          "flow"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "receivers"
+              ]
+            },
+            {
+              "required": [
+                "input"
+              ]
+            },
+            {
+              "required": [
+                "member"
+              ]
+            }
+          ]
+        },
+        "properties": {
+          "args": {
+            "items": {
+              "properties": {
+                "optional": {
+                  "const": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "encoders": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][A-Za-z]*$"
+      },
+      "additionalProperties": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/form"
+          }
+        ],
+        "required": [
+          "input"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "result"
+              ]
+            },
+            {
+              "required": [
+                "receivers"
+              ]
+            },
+            {
+              "required": [
+                "issues"
+              ]
+            },
+            {
+              "required": [
+                "flow"
+              ]
+            },
+            {
+              "required": [
+                "symbols_from"
+              ]
+            },
+            {
+              "required": [
+                "member"
+              ]
+            }
+          ]
+        },
+        "properties": {
+          "args": {
+            "items": {
+              "properties": {
+                "optional": {
+                  "const": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "properties": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][A-Za-z]*$"
+      },
+      "additionalProperties": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/form"
+          }
+        ],
+        "required": [
+          "args",
+          "input",
+          "member"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "result"
+              ]
+            },
+            {
+              "required": [
+                "receivers"
+              ]
+            },
+            {
+              "required": [
+                "issues"
+              ]
+            },
+            {
+              "required": [
+                "flow"
+              ]
+            },
+            {
+              "required": [
+                "requires"
+              ]
+            },
+            {
+              "required": [
+                "symbols_from"
+              ]
+            }
+          ]
+        },
+        "properties": {
+          "args": {
+            "items": {
+              "properties": {
+                "optional": {
+                  "const": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "form": {
+      "type": "object",
+      "required": [
+        "doc"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]*$"
+        },
+        "doc": {
+          "type": "string",
+          "minLength": 1
+        },
+        "receivers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "result": {
+          "$ref": "#/$defs/type"
+        },
+        "input": {
+          "$ref": "#/$defs/type"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/arg"
+          }
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/issue"
+          }
+        },
+        "symbols_from": {
+          "type": "string",
+          "description": "The value argument whose strings are the alternatives of the symbol type the form gives."
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "check",
+              "args"
+            ],
+            "properties": {
+              "check": {
+                "enum": [
+                  "ordered",
+                  "nonzero",
+                  "nonempty",
+                  "distinct",
+                  "distinct_ascii_fold",
+                  "named_fields",
+                  "distinct_members",
+                  "pattern"
+                ]
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "flow": {
+          "$ref": "#/$defs/flow"
+        },
+        "member": {
+          "type": "string",
+          "description": "For a property, the string value argument that names the member it writes."
+        }
+      },
+      "additionalProperties": false
+    },
+    "arg": {
+      "type": "object",
+      "required": [
+        "name",
+        "kind"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z]*$"
+        },
+        "kind": {
+          "enum": [
+            "decoder",
+            "decoders",
+            "fields",
+            "variants",
+            "value",
+            "message",
+            "fixture",
+            "encoder",
+            "properties"
+          ]
+        },
+        "type": {
+          "$ref": "#/$defs/type",
+          "description": "The type of a value, the result type of a decoder, the type an encoder encodes, or the type the properties read; it may mention type parameters."
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "Only a value or message argument of an operation may be left out: a value argument left out stands for its default, and a message argument left out gives no message."
+        },
+        "default": {
+          "description": "What an optional argument left out stands for, as an observation of its type."
+        },
+        "one_of": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "The values a string value argument allows."
+        },
+        "fixture": {
+          "enum": [
+            "map",
+            "refine",
+            "flatMap",
+            "recover",
+            "getter"
+          ]
+        },
+        "input": {
+          "$ref": "#/$defs/type"
+        },
+        "output": {
+          "$ref": "#/$defs/type"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "decoder",
+                  "decoders",
+                  "variants",
+                  "value",
+                  "encoder",
+                  "properties"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "type"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "fixture"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fixture",
+              "input"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "default"
+            ]
+          },
+          "then": {
+            "required": [
+              "optional"
+            ],
+            "properties": {
+              "optional": {
+                "const": true
+              },
+              "kind": {
+                "const": "value"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "optional"
+            ],
+            "properties": {
+              "optional": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "value",
+                  "message"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "optional",
+              "kind"
+            ],
+            "properties": {
+              "optional": {
+                "const": true
+              },
+              "kind": {
+                "const": "value"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "default"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "one_of"
+            ]
+          },
+          "then": {
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "kind": {
+                "const": "value"
+              },
+              "type": {
+                "const": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "fields",
+                  "message",
+                  "fixture"
+                ]
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "type"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "not": {
+                  "const": "fixture"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "fixture"
+                  ]
+                },
+                {
+                  "required": [
+                    "input"
+                  ]
+                },
+                {
+                  "required": [
+                    "output"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "kind",
+              "fixture"
+            ],
+            "properties": {
+              "kind": {
+                "const": "fixture"
+              },
+              "fixture": {
+                "const": "refine"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "output"
+              ]
+            }
+          },
+          "else": {
+            "if": {
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "fixture"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "output"
+              ]
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "issue": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "required": [
+            "key"
+          ],
+          "properties": {
+            "key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "omit": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "meta": {
+              "type": "object"
+            }
+          },
+          "patternProperties": {
+            "^[A-Z]$": {
+              "$ref": "#/$defs/type"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "flow": {
+      "description": "How a form gives its issues. See spec/issues.md.",
+      "oneOf": [
+        {
+          "enum": [
+            "own",
+            "none"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "arg"
+          ],
+          "properties": {
+            "arg": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "cat"
+          ],
+          "properties": {
+            "cat": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/flow"
+              },
+              "minItems": 2
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "chain"
+          ],
+          "properties": {
+            "chain": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/flow"
+              },
+              "minItems": 2
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "each_element"
+          ],
+          "properties": {
+            "each_element": {
+              "$ref": "#/$defs/flow"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "each_member"
+          ],
+          "properties": {
+            "each_member": {
+              "$ref": "#/$defs/flow"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "at"
+          ],
+          "properties": {
+            "at": {
+              "type": "object",
+              "required": [
+                "member",
+                "flow"
+              ],
+              "properties": {
+                "member": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "flow": {
+                  "$ref": "#/$defs/flow"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "unknown_members"
+          ],
+          "properties": {
+            "unknown_members": {
+              "type": "object",
+              "required": [
+                "known",
+                "issue"
+              ],
+              "properties": {
+                "known": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "arg"
+                      ],
+                      "properties": {
+                        "arg": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "fields"
+                      ],
+                      "properties": {
+                        "fields": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "issue": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "candidates"
+          ],
+          "properties": {
+            "candidates": {
+              "type": "object",
+              "required": [
+                "decoders",
+                "issue",
+                "meta"
+              ],
+              "properties": {
+                "decoders": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "issue": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "meta": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The metadata entry of the issue that lists the candidates."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "fixture"
+          ],
+          "properties": {
+            "fixture": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "discard"
+          ],
+          "properties": {
+            "discard": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "form"
+          ],
+          "properties": {
+            "form": {
+              "type": "array",
+              "minItems": 1,
+              "prefixItems": [
+                {
+                  "type": "string"
+                }
+              ],
+              "description": "A decoder form written in the catalogue, whose flow the flow includes; it is part of the embedding form's meaning, not a feature."
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
