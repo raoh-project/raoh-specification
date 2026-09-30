@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
@@ -118,6 +119,11 @@ type exprResolver struct {
 }
 
 func (r *exprResolver) arg(n *jsontext.Node, kinds ...string) (ArgRef, error) {
+	return r.argWhere(n, fmt.Sprintf("of kind %v", kinds), func(a Arg) bool { return slices.Contains(kinds, a.Kind) })
+}
+
+// argWhere resolves the argument a flow names, which has to be one that is what describes.
+func (r *exprResolver) argWhere(n *jsontext.Node, describes string, is func(Arg) bool) (ArgRef, error) {
 	if n.Kind != jsontext.String {
 		return NoArg, fmt.Errorf("the flow names an argument with a string")
 	}
@@ -125,8 +131,8 @@ func (r *exprResolver) arg(n *jsontext.Node, kinds ...string) (ArgRef, error) {
 	if !ok {
 		return NoArg, fmt.Errorf("the flow names %s, which is not an argument", n.Text)
 	}
-	if a := r.f.Args[i.Index()]; !slices.Contains(kinds, a.Kind) {
-		return NoArg, fmt.Errorf("argument %s is a %s argument, and the flow needs one of %v", a.Name, a.Kind, kinds)
+	if a := r.f.Args[i.Index()]; !is(a) {
+		return NoArg, fmt.Errorf("argument %s is a %s argument, and the flow needs one %s", a.Name, a.Kind, describes)
 	}
 	return i, nil
 }
@@ -166,7 +172,7 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 	v := m.Value
 	switch m.Name {
 	case "arg":
-		i, err := r.arg(v, "decoder", "variants", "fields")
+		i, err := r.argWhere(v, "whose issues {\"arg\": ...} places", func(a Arg) bool { return argKinds[a.Kind].FlowArg })
 		if err != nil {
 			return nil, err
 		}
@@ -304,12 +310,9 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		}
 		x := ExprDiscard{}
 		for _, e := range v.Elems {
-			i, err := r.arg(e, "decoder", "decoders", "variants", "fields", "fixture")
+			i, err := r.argWhere(e, "that gives issues", producesIssues)
 			if err != nil {
 				return nil, err
-			}
-			if a := r.f.Args[i.Index()]; !producesIssues(a) {
-				return nil, fmt.Errorf("discard names %s, which gives no issue", a.Name)
 			}
 			r.flowRefs[i]++
 			x.Args = append(x.Args, i)
@@ -317,19 +320,6 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		return x, nil
 	}
 	return nil, fmt.Errorf("%q is not a flow", m.Name)
-}
-
-// producesIssues reports whether an argument gives issues the form has to place or discard: the
-// decoders of a decoder, decoders, variants or fields argument, and a fixture whose kind gives an
-// issue.
-func producesIssues(a Arg) bool {
-	switch a.Kind {
-	case "decoder", "decoders", "variants", "fields":
-		return true
-	case "fixture":
-		return fixtureSignatures[a.FixtureKind].Issue
-	}
-	return false
 }
 
 // resolveFlow reads a form's flow expression and checks that it accounts for the form: every
@@ -367,7 +357,8 @@ func resolveFlow(f *Form, n *jsontext.Node) (Expr, error) {
 		}
 	})
 	for i, ref := range f.Issues {
-		for name, src := range ref.Meta {
+		for _, name := range slices.Sorted(maps.Keys(ref.Meta)) {
+			src := ref.Meta[name]
 			if src.Kind == "member" && !unknown[i] {
 				return nil, fmt.Errorf("issue %s: %s is the name of a member only for an issue given at members", ref.Key, name)
 			}

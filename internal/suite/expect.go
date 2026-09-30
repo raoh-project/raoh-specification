@@ -2,6 +2,7 @@ package suite
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -176,7 +177,8 @@ func fits(is surface, slot dsl.Slot) bool {
 
 func typesOf(m map[string]value.Value) string {
 	var parts []string
-	for k, v := range m {
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		v := m[k]
 		parts = append(parts, k+":"+v.Type.String())
 	}
 	sort.Strings(parts)
@@ -206,14 +208,15 @@ func instance(is surface, slot dsl.Slot, cat *catalog.Catalog, mode Mode, agains
 		}
 		e.Meta[m.Name] = v
 	}
-	for name := range slot.Meta {
+	for _, name := range slices.Sorted(maps.Keys(slot.Meta)) {
 		_, typed := e.Meta[name]
 		listed := e.Candidates != nil && name == slot.Candidates.Meta
 		if !typed && !listed && !slices.Contains(slot.Optional, name) {
 			return e, fmt.Errorf("%s needs metadata %s", slot.Key, name)
 		}
 	}
-	for name, want := range slot.Values {
+	for _, name := range slices.Sorted(maps.Keys(slot.Values)) {
+		want := slot.Values[name]
 		got, ok := e.Meta[name]
 		if !ok || !value.Equal(want, got) {
 			return e, fmt.Errorf("the form gives %s the %s %s", slot.Key, name, describeValue(want))
@@ -386,7 +389,8 @@ func matchOne(e TypedIssue, o surface, cat *catalog.Catalog) (TypedIssue, string
 	if len(t.Meta) != len(e.Meta) {
 		return TypedIssue{}, fmt.Sprintf("metadata %s, observed %s", metaNames(e), metaNames(t))
 	}
-	for name, v := range e.Meta {
+	for _, name := range slices.Sorted(maps.Keys(e.Meta)) {
+		v := e.Meta[name]
 		w, ok := t.Meta[name]
 		if !ok {
 			return TypedIssue{}, fmt.Sprintf("metadata %s, observed %s", metaNames(e), metaNames(t))
@@ -404,7 +408,7 @@ func matchOne(e TypedIssue, o surface, cat *catalog.Catalog) (TypedIssue, string
 
 func metaNames(t TypedIssue) string {
 	var names []string
-	for k := range t.Meta {
+	for _, k := range slices.Sorted(maps.Keys(t.Meta)) {
 		names = append(names, k)
 	}
 	if t.Candidates != nil {

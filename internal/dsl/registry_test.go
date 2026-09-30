@@ -51,6 +51,11 @@ func section(ops doc, sec, name string) doc { return ops[sec].(doc)[name].(doc) 
 
 func arg(form doc, i int) doc { return form["args"].([]any)[i].(doc) }
 
+// positiveMin is the const_by_type that gives positive's minimum.
+func positiveMin(c catalogs) doc {
+	return operation(c.ops, "positive")["issues"].([]any)[0].(doc)["meta"].(doc)["min"].(doc)["const_by_type"].(doc)
+}
+
 // probe is an operation with the receivers given.
 func probe(receivers ...string) doc {
 	var rs []any
@@ -227,7 +232,7 @@ func TestRegistryInvariants(t *testing.T) {
 		}, false, false, "gives no issue"},
 		{"a map fixture discarded", func(c catalogs) {
 			operation(c.ops, "map")["flow"] = doc{"discard": []any{"function"}}
-		}, false, false, "gives no issue"},
+		}, false, false, "the flow needs one that gives issues"},
 		{"a symbol without alternatives in a result", func(c catalogs) {
 			operation(c.ops, "minLength")["result"] = "list<symbol>"
 		}, false, false, "a symbol type lists its alternatives"},
@@ -250,6 +255,30 @@ func TestRegistryInvariants(t *testing.T) {
 		{"symbols_from for a declared result", func(c catalogs) {
 			section(c.ops, "constructors", "enum")["result"] = "string"
 		}, false, false, "symbols_from says the alternatives of a symbol result, and its result is string"},
+		{"const_by_type without a receiver's type", func(c catalogs) {
+			delete(positiveMin(c), "decimal")
+		}, false, true, "const_by_type gives values for [float32 float64 int32 int64], and the entry can be [decimal float32 float64 int32 int64]"},
+		{"const_by_type for a type no receiver gives", func(c catalogs) {
+			positiveMin(c)["string"] = "x"
+		}, false, true, "const_by_type gives values for [decimal float32 float64 int32 int64 string]"},
+		{"const_by_type of the wrong type", func(c catalogs) {
+			positiveMin(c)["decimal"] = json.Number("0")
+		}, false, true, "the value for decimal"},
+		{"const_by_type for a type a case decides", func(c catalogs) {
+			operation(c.ops, "contains")["issues"].([]any)[0].(doc)["meta"].(doc)["expected"] = doc{"const_by_type": doc{"int32": json.Number("1")}}
+		}, false, true, "const_by_type for a E, which a case decides"},
+		{"a constant for a type a case decides", func(c catalogs) {
+			operation(c.ops, "contains")["issues"].([]any)[0].(doc)["meta"].(doc)["expected"] = doc{"const": json.Number("1")}
+		}, false, true, "a constant for a E, which a case decides"},
+		{"a sort of elements with no order", func(c catalogs) {
+			f := operation(c.ops, "containsAll")
+			f["issues"].([]any)[0].(doc)["meta"].(doc)["expected"] = doc{"sorted": "elements"}
+		}, false, true, "sorts a list<E>, whose elements have no order it can tell"},
+		{"an ill-formed metadata type in a receiver's context", func(c catalogs) {
+			c.issues["probe"] = doc{"code": "probe", "params": []any{"T"}, "meta": doc{"x": "optional<T>"}}
+			c.ops["operations"] = append(c.ops["operations"].([]any), doc{"name": "probe", "doc": "x", "receivers": []any{"string"}, "result": "R",
+				"issues": []any{doc{"key": "probe", "T": "nullable<R>"}}, "flow": "own"})
+		}, false, true, "operation probe on string: issue probe meta x is a optional<nullable<string>>"},
 		{name: "a fixture issue with an empty message", edit: func(c catalogs) {
 			c.fixtures["even"].(doc)["issue"].(doc)["message"] = ""
 		}},

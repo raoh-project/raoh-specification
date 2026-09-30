@@ -199,7 +199,9 @@ func (t Type) Params() []string {
 	return names
 }
 
-// Subst replaces the type parameters of t with the types args gives them.
+// Subst replaces the type parameters of t with the types args gives them, once: a replacement is not
+// substituted again. It gives a type expression, which may still mention parameters or be ill
+// formed; use Instantiate for the type of a value.
 func (t Type) Subst(args map[string]Type) Type {
 	if t.Kind == Param {
 		if a, ok := args[t.Name]; ok {
@@ -217,31 +219,68 @@ func (t Type) Subst(args map[string]Type) Type {
 	return out
 }
 
-// Unify matches a pattern that may mention type parameters against a concrete type, adding to
-// bound the parameters it fixes. It reports whether they match.
+// MatchResult is what matching two types found.
+type MatchResult int
+
+const (
+	// Mismatch is two types that no bindings make the same.
+	Mismatch MatchResult = iota + 1
+	// Incomplete is two types that agree as far as they are known, with a parameter on each side
+	// still unbound where they meet.
+	Incomplete
+	// Complete is two types the bindings make the same.
+	Complete
+)
+
+// Match matches two types whose parameters belong to two separate namespaces, a's bound in ab and
+// b's in bb, adding to each the bindings it can derive, and reports what it found and whether it
+// added any. It binds a parameter only to a type that mentions no parameter, so the values of a
+// binding map never mention one, and Subst with it gives the final type: this is the invariant
+// Match, Unify and Instantiate share. Bindings are only ever added: what Match derives holds
+// whatever is bound later, so a caller that keeps matching until nothing is added reaches the one
+// fixed point there is.
+func Match(a Type, ab map[string]Type, b Type, bb map[string]Type) (result MatchResult, progress bool) {
+	a, b = a.Subst(ab), b.Subst(bb)
+	aFree, bFree := len(a.Params()) == 0, len(b.Params()) == 0
+	switch {
+	case a.Kind == Param && bFree:
+		ab[a.Name] = b
+		return Complete, true
+	case b.Kind == Param && aFree:
+		bb[b.Name] = a
+		return Complete, true
+	case a.Kind == Param || b.Kind == Param:
+		return Incomplete, false
+	}
+	if a.Kind != b.Kind || len(a.Args) != len(b.Args) || (a.Kind == Symbol && !a.Same(b)) {
+		return Mismatch, false
+	}
+	result = Complete
+	for i := range a.Args {
+		if a.Kind == Record && a.Fields[i] != b.Fields[i] {
+			return Mismatch, progress
+		}
+		r, p := Match(a.Args[i], ab, b.Args[i], bb)
+		progress = progress || p
+		switch r {
+		case Mismatch:
+			return Mismatch, progress
+		case Incomplete:
+			result = Incomplete
+		}
+	}
+	return result, progress
+}
+
+// Unify matches a pattern that may mention type parameters against a type that mentions none,
+// adding to bound the parameters it fixes, and reports whether they match. It is Match with
+// nothing to bind on the right.
 func Unify(pattern, t Type, bound map[string]Type) bool {
-	if pattern.Kind == Param {
-		if b, ok := bound[pattern.Name]; ok {
-			return b.Same(t)
-		}
-		bound[pattern.Name] = t
-		return true
-	}
-	if pattern.Kind != t.Kind || len(pattern.Args) != len(t.Args) {
+	if len(t.Params()) > 0 {
 		return false
 	}
-	if pattern.Kind == Symbol && !pattern.Same(t) {
-		return false
-	}
-	for i := range pattern.Args {
-		if pattern.Kind == Record && pattern.Fields[i] != t.Fields[i] {
-			return false
-		}
-		if !Unify(pattern.Args[i], t.Args[i], bound) {
-			return false
-		}
-	}
-	return true
+	r, _ := Match(pattern, bound, t, map[string]Type{})
+	return r == Complete
 }
 
 // ParseType reads a type written as in spec/value-model.md: "int32", "list<float32>",
@@ -269,6 +308,14 @@ func nullObservable(t Type) bool {
 		return true
 	}
 	return false
+}
+
+// Instantiate substitutes bound for the parameters of t and checks that the result is a type values
+// have (see Concrete). It is how a type written with parameters becomes the type of a value; Subst
+// alone is for types still used as patterns. The values of bound mention no parameter (see Match).
+func (t Type) Instantiate(bound map[string]Type) (Type, error) {
+	u := t.Subst(bound)
+	return u, u.Concrete()
 }
 
 // Concrete checks that a type is one values have: it mentions no type parameter and is well

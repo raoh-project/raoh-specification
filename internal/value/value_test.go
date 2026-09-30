@@ -239,3 +239,31 @@ func TestSymbolsHaveTheirAlternatives(t *testing.T) {
 		}
 	}
 }
+
+// Match binds a parameter only to a type without parameters, keeps what it derives even when the
+// match is incomplete, and tells a mismatch from what is not known yet.
+func TestMatch(t *testing.T) {
+	ab, bb := map[string]Type{}, map[string]Type{}
+	r, progress := Match(MustParseType("product<X,Y,list<Z>>"), ab, MustParseType("product<int32,T,list<U>>"), bb)
+	if r != Incomplete || !progress || !ab["X"].Same(Of(Int32)) || len(bb) != 0 {
+		t.Errorf("partial match: %v %v %v %v", r, progress, ab, bb)
+	}
+	for _, v := range ab {
+		if len(v.Params()) > 0 {
+			t.Errorf("a binding mentions a parameter: %s", v)
+		}
+	}
+	if r, progress := Match(MustParseType("product<X,Y,list<Z>>"), ab, MustParseType("product<int32,T,list<U>>"), bb); r != Incomplete || progress {
+		t.Errorf("a second match adds nothing: %v %v", r, progress)
+	}
+	ab["Y"] = Of(String)
+	if r, _ := Match(MustParseType("product<X,Y>"), ab, MustParseType("product<int32,T>"), bb); r != Complete || !bb["T"].Same(Of(String)) {
+		t.Errorf("once Y is known: %v %v", r, bb)
+	}
+	if r, _ := Match(MustParseType("list<X>"), ab, MustParseType("list<string>"), map[string]Type{}); r != Mismatch {
+		t.Errorf("X is int32, not string: %v", r)
+	}
+	if r, _ := Match(MustParseType(`symbol<"A">`), ab, MustParseType(`symbol<"B">`), bb); r != Mismatch {
+		t.Errorf("two symbols: %v", r)
+	}
+}

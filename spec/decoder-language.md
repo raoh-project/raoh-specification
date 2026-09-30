@@ -67,10 +67,14 @@ Whether a case gives enough to bind them is the case's matter: a form that leave
 such as a generic fixture where nothing fixes its input, does not type-check.
 
 The types are bound in that order. The decoders, fields, encoders and properties a case gives bind
-theirs first. Then the fixtures: each is matched with the types its argument declares, and a
-fixture whose types are not yet known waits until another fixture binds them, so the order in which
-a form lists its fixtures does not matter. Only then are the value arguments read, as observations
-of types that are known by now.
+theirs first. Then the fixtures, together: each type a fixture argument declares is matched with
+the fixture's own, part by part, and whatever a match fixes is kept, even while the rest of that
+fixture is unknown, since another fixture may need it. `product<X,string>` matched with a fixture's
+`product<int32,T>` fixes both `X` and `T`. The matches repeat until they fix nothing more; every
+type on both sides has to be known by then, whatever order the form lists its fixtures in. Only
+then are the value arguments read, as observations of types that are known by now. Wherever a
+type written with parameters becomes the type of a value, it is checked once they are bound, as
+`optional<T>` with `T` bound to `nullable<string>` is not a type values have.
 
 A value argument is read as an observation of the type the argument has where it is used. In
 `["float", ["min", 0.1]]` the bound is the float32 nearest 0.1; in `["decimal", ["min", "0.5"]]` it

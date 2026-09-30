@@ -2,6 +2,8 @@ package dsl
 
 import (
 	"fmt"
+	"iter"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -186,6 +188,18 @@ func (gs groups) of(f *Unordered, at []string) *Group {
 	return &g
 }
 
+// inOrder gives the ends of partial parses by position, so that which parses a node keeps, and so
+// every reading and message built from them, does not depend on map order.
+func inOrder(ends map[int][]partial) iter.Seq2[int, []partial] {
+	return func(yield func(int, []partial) bool) {
+		for _, end := range slices.Sorted(maps.Keys(ends)) {
+			if !yield(end, ends[end]) {
+				return
+			}
+		}
+	}
+}
+
 // add records a partial parse ending at end, unless one with the same signature is there or the
 // limit is reached.
 func add(ends map[int][]partial, end int, pp partial) {
@@ -224,7 +238,7 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, start int) map[in
 			add(ends, start, partial{})
 		}
 		for _, item := range f.Items {
-			for end, pps := range p.parse(item, in, at, start) {
+			for end, pps := range inOrder(p.parse(item, in, at, start)) {
 				for _, pp := range pps {
 					add(ends, end, pp)
 				}
@@ -234,8 +248,8 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, start int) map[in
 		ends[start] = []partial{{}}
 		for _, item := range f.Items {
 			next := map[int][]partial{}
-			for mid, heads := range ends {
-				for end, tails := range p.parse(item, in, at, mid) {
+			for mid, heads := range inOrder(ends) {
+				for end, tails := range inOrder(p.parse(item, in, at, mid)) {
 					for _, h := range heads {
 						for _, t := range tails {
 							add(next, end, join(h, t))
@@ -266,8 +280,8 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, start int) map[in
 		ends[start] = []partial{{}}
 		for k, item := range items {
 			next := map[int][]partial{}
-			for mid, heads := range ends {
-				for end, tails := range p.parse(item, inputs[k], ats[k], mid) {
+			for mid, heads := range inOrder(ends) {
+				for end, tails := range inOrder(p.parse(item, inputs[k], ats[k], mid)) {
 					for _, h := range heads {
 						for _, t := range tails {
 							add(next, end, join(h, t))
@@ -311,7 +325,7 @@ func (p *parser) chain(items []Flow, in *jsontext.Node, at []string, start int) 
 		add(ends, start, partial{})
 		return ends
 	}
-	for end, pps := range p.parse(items[0], in, at, start) {
+	for end, pps := range inOrder(p.parse(items[0], in, at, start)) {
 		if end == start {
 			continue
 		}
@@ -320,7 +334,7 @@ func (p *parser) chain(items []Flow, in *jsontext.Node, at []string, start int) 
 		}
 	}
 	for _, empty := range p.parse(items[0], in, at, start)[start] {
-		for end, pps := range p.chain(items[1:], in, at, start) {
+		for end, pps := range inOrder(p.chain(items[1:], in, at, start)) {
 			for _, pp := range pps {
 				add(ends, end, join(empty, pp))
 			}

@@ -29,7 +29,11 @@ an argument (`{"arg": "min"}`), an argument sorted in ascending order (`{"sorted
 strings by code point, other values as the bounding operations order them), an argument with A-Z
 read as a-z and then sorted (`{"ascii_lower_sorted": "symbols"}`), the sorted names of a
 `variants` argument (`{"sorted_keys": "variants"}`), or the name of the member the issue is at
-(`{"member": true}`). A case's value for such an entry must be that value. An entry with no source,
+(`{"member": true}`). A case's value for such an entry must be that value. A source has to fit its
+entry for every receiver an operation applies to, and this is checked when the catalogue is read:
+a `const_by_type` gives a value for exactly the types the entry can have, and where the case
+decides the entry's type (`contains` on `list<E>`), only an argument of that same type can give
+it. An entry with no source,
 such as the `actual` of a failed bound, is known only when a decoder runs; see
 [conformance.md](conformance.md#what-the-verifier-checks).
 

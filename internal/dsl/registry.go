@@ -388,10 +388,59 @@ func typeOf(n *jsontext.Node, name string) (value.Type, bool, error) {
 	return t, true, err
 }
 
-var argKinds = []string{"decoder", "decoders", "fields", "variants", "value", "message", "fixture", "encoder", "properties"}
+// binding says how the types of an argument's kind are bound when a form is checked.
+type binding int
 
-// typedKinds are the argument kinds that have a type, and only they.
-var typedKinds = []string{"decoder", "decoders", "variants", "value", "encoder", "properties"}
+const (
+	// bindsNothing is an argument whose type, if it has one, has to be known when it is read.
+	bindsNothing binding = iota + 1
+	// bindsByForms is an argument whose decoders, fields, encoder or properties a case writes: their
+	// types bind the argument's.
+	bindsByForms
+	// bindsByFixture is a fixture argument: the fixture a case names binds its input and output.
+	bindsByFixture
+)
+
+// argKind is what every argument of a kind is. The rules about arguments read it from here; what
+// depends on the form or on the argument's type as well (only an operation leaves arguments out,
+// only a string value has one_of) is checked where the form is read.
+type argKind struct {
+	// Typed is an argument that declares a type.
+	Typed bool
+	// Binding is how its types are bound.
+	Binding binding
+	// Issues is an argument whose decoders give issues the form places or discards; a fixture
+	// argument gives issues when its fixture kind does (see producesIssues).
+	Issues bool
+	// FlowArg is an argument whose issues the flow places with {"arg": ...}.
+	FlowArg bool
+	// Omittable is an argument an operation may leave out.
+	Omittable bool
+	// Valued is an argument whose value the case writes, which one_of and default constrain.
+	Valued bool
+}
+
+// argKinds are the kinds of argument.
+var argKinds = map[string]argKind{
+	"decoder":    {Typed: true, Binding: bindsByForms, Issues: true, FlowArg: true},
+	"decoders":   {Typed: true, Binding: bindsByForms, Issues: true},
+	"variants":   {Typed: true, Binding: bindsByForms, Issues: true, FlowArg: true},
+	"fields":     {Binding: bindsByForms, Issues: true, FlowArg: true},
+	"encoder":    {Typed: true, Binding: bindsByForms},
+	"properties": {Typed: true, Binding: bindsByForms},
+	"fixture":    {Binding: bindsByFixture},
+	"value":      {Typed: true, Binding: bindsNothing, Omittable: true, Valued: true},
+	"message":    {Binding: bindsNothing, Omittable: true},
+}
+
+// producesIssues reports whether an argument gives issues the form has to place or discard: the
+// decoders of an argument whose kind gives issues, and a fixture whose kind gives an issue.
+func producesIssues(a Arg) bool {
+	if a.Kind == "fixture" {
+		return fixtureSignatures[a.FixtureKind].Issue
+	}
+	return argKinds[a.Kind].Issues
+}
 
 func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 	if err := object(n, section, sectionMembers[section]...); err != nil {
@@ -577,10 +626,10 @@ func (f *Form) checkBindings(section string) error {
 		}
 	}
 	for _, a := range f.Args {
-		switch a.Kind {
-		case "decoder", "decoders", "variants", "encoder", "properties":
+		switch argKinds[a.Kind].Binding {
+		case bindsByForms:
 			bind(a.Type)
-		case "fixture":
+		case bindsByFixture:
 			bind(a.FixtureInput)
 			if a.FixtureOutput != nil {
 				bind(*a.FixtureOutput)
@@ -666,7 +715,8 @@ func (f *Form) parseIssues(n *jsontext.Node) error {
 				return fmt.Errorf("issue %s is declared twice", ref.Key)
 			}
 		}
-		for name, src := range ref.Meta {
+		for _, name := range slices.Sorted(maps.Keys(ref.Meta)) {
+			src := ref.Meta[name]
 			if slices.Contains(ref.Omit, name) {
 				return fmt.Errorf("issue %s both omits %s and gives it a source", ref.Key, name)
 			}
@@ -717,14 +767,15 @@ func parseArg(section string, n *jsontext.Node) (Arg, error) {
 	if a.Kind, err = n.String("kind"); err != nil {
 		return a, err
 	}
-	if !slices.Contains(argKinds, a.Kind) {
+	kind, ok := argKinds[a.Kind]
+	if !ok {
 		return a, fmt.Errorf("argument %s has unknown kind %q", a.Name, a.Kind)
 	}
 	t, ok, err := typeOf(n, "type")
 	if err != nil {
 		return a, err
 	}
-	switch typed := slices.Contains(typedKinds, a.Kind); {
+	switch typed := kind.Typed; {
 	case typed && !ok:
 		return a, fmt.Errorf("argument %s needs a type", a.Name)
 	case !typed && ok:
@@ -740,11 +791,11 @@ func parseArg(section string, n *jsontext.Node) (Arg, error) {
 	if a.Optional && section != "operation" {
 		return a, fmt.Errorf("argument %s is optional, and only an operation has optional arguments", a.Name)
 	}
-	if a.Optional && a.Kind != "value" && a.Kind != "message" {
+	if a.Optional && !kind.Omittable {
 		return a, fmt.Errorf("argument %s is a %s argument, which cannot be left out", a.Name, a.Kind)
 	}
 	if _, ok := n.Get("one_of"); ok {
-		if a.Kind != "value" || a.Type.Kind != value.String {
+		if !kind.Valued || a.Type.Kind != value.String {
 			return a, fmt.Errorf("argument %s restricts its values, and only a string value argument can", a.Name)
 		}
 		if a.OneOf, err = strs(n, "one_of"); err != nil {
@@ -755,7 +806,7 @@ func parseArg(section string, n *jsontext.Node) (Arg, error) {
 		}
 	}
 	if d, ok := n.Get("default"); ok {
-		if !a.Optional || a.Kind != "value" {
+		if !a.Optional || !kind.Valued {
 			return a, fmt.Errorf("argument %s has a default, and only an optional value argument has one", a.Name)
 		}
 		if ps := a.Type.Params(); len(ps) > 0 {
@@ -769,7 +820,7 @@ func parseArg(section string, n *jsontext.Node) (Arg, error) {
 			return a, fmt.Errorf("argument %s: the default %s is not one of its values", a.Name, v.Str)
 		}
 		a.Default = &v
-	} else if a.Optional && a.Kind == "value" {
+	} else if a.Optional && kind.Valued {
 		return a, fmt.Errorf("argument %s may be left out, and has no default to stand for it", a.Name)
 	}
 	_, hasFixture := n.Get("fixture")
@@ -984,24 +1035,25 @@ func fixtureParams(what string, t, input value.Type) error {
 // Features returns every feature ID the registry defines, sorted.
 func (r *Registry) Features() []string {
 	var ids []string
-	for name := range r.Constructors {
+	for _, name := range slices.Sorted(maps.Keys(r.Constructors)) {
 		ids = append(ids, "decoder."+name)
 	}
-	for name := range r.Fields {
+	for _, name := range slices.Sorted(maps.Keys(r.Fields)) {
 		ids = append(ids, "field."+name)
 	}
-	for name, overloads := range r.Operations {
-		for key := range overloads {
+	for _, name := range slices.Sorted(maps.Keys(r.Operations)) {
+		overloads := r.Operations[name]
+		for _, key := range slices.Sorted(maps.Keys(overloads)) {
 			ids = append(ids, operationFeature(key, name))
 		}
 	}
-	for name := range r.Encoders {
+	for _, name := range slices.Sorted(maps.Keys(r.Encoders)) {
 		ids = append(ids, "encoder."+name)
 	}
-	for name := range r.Properties {
+	for _, name := range slices.Sorted(maps.Keys(r.Properties)) {
 		ids = append(ids, "property."+name)
 	}
-	for name := range r.Fixtures {
+	for _, name := range slices.Sorted(maps.Keys(r.Fixtures)) {
 		ids = append(ids, "fixture."+name)
 	}
 	sort.Strings(ids)

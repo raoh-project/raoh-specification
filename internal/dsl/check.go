@@ -58,7 +58,7 @@ func (c *Checker) newState() *state {
 
 func (s *state) done(result value.Type, flow Flow) *Checked {
 	out := &Checked{Result: result, Flow: flow}
-	for f := range s.features {
+	for _, f := range slices.Sorted(maps.Keys(s.features)) {
 		out.Features = append(out.Features, f)
 	}
 	sort.Strings(out.Features)
@@ -100,13 +100,22 @@ func abbreviate(n *jsontext.Node) string {
 	return s
 }
 
-// concrete checks that a type, with the bindings substituted, is one values have (see
-// value.Type.Concrete).
+// concrete checks that a type the checker computed is one values have (see value.Type.Concrete).
 func concrete(t value.Type, what string) error {
 	if err := t.Concrete(); err != nil {
 		return fmt.Errorf("%s: %w", what, err)
 	}
 	return nil
+}
+
+// instantiate is the type of a value that a type written with parameters has for the bindings
+// (see value.Type.Instantiate).
+func instantiate(t value.Type, bound map[string]value.Type, what string) (value.Type, error) {
+	u, err := t.Instantiate(bound)
+	if err != nil {
+		return u, fmt.Errorf("%s: %w", what, err)
+	}
+	return u, nil
 }
 
 // checkedArgs is what checking a form's arguments gives besides the types it binds, by the
@@ -219,7 +228,7 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 			}
 			return &Cat{Items: items}, nil
 		}
-		return nil, fmt.Errorf("%s: argument %s gives no flow", owner, f.Args[x.Arg.Index()].Name)
+		panic("registry invariant: argument " + f.Args[x.Arg.Index()].Name + " of " + owner + " gives no flow")
 	case ExprCat:
 		items, err := all(x.Items)
 		return &Cat{Items: items}, err
@@ -262,11 +271,12 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 	case ExprFixture:
 		fx := ca.fixtures[x.Arg]
 		meta := map[string]value.Type{}
-		for name, t := range fx.Issue.Meta {
-			meta[name] = t.Subst(fx.bound)
-			if err := concrete(meta[name], "fixture "+fx.Name+" meta "+name); err != nil {
+		for _, name := range slices.Sorted(maps.Keys(fx.Issue.Meta)) {
+			t, err := instantiate(fx.Issue.Meta[name], fx.bound, "fixture "+fx.Name+" meta "+name)
+			if err != nil {
 				return nil, fmt.Errorf("%s: %w", owner, err)
 			}
+			meta[name] = t
 		}
 		message := fx.Issue.Message
 		var fl Flow = &Site{Key: fx.Issue.Key, Code: fx.Issue.Code, Meta: meta, Message: &message}
@@ -275,7 +285,7 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 		}
 		return &Alt{Items: []Flow{Success, fl}}, nil
 	}
-	return nil, fmt.Errorf("%s: an unknown flow expression", owner)
+	panic(fmt.Sprintf("registry invariant: %s has a flow expression %T", owner, x))
 }
 
 // field checks a field form. A field whose flow is at a member reads that member.
@@ -317,7 +327,7 @@ func resultOf(name string, r Result, bound map[string]value.Type, ca checkedArgs
 	var t value.Type
 	switch r := r.(type) {
 	case ResultType:
-		t = r.Type.Subst(bound)
+		return instantiate(r.Type, bound, name)
 	case ResultProduct:
 		var types []value.Type
 		for _, fl := range ca.fields[r.Fields] {
@@ -397,8 +407,7 @@ func (s *state) encoder(n *jsontext.Node) (value.Type, error) {
 	if _, err := s.args(f, n.Elems[1:], bound); err != nil {
 		return value.Type{}, fmt.Errorf("%s: %w", name, err)
 	}
-	input := f.Input.Subst(bound)
-	return input, concrete(input, name)
+	return instantiate(f.Input, bound, name)
 }
 
 func (s *state) property(n *jsontext.Node) (value.Type, error) {
@@ -418,8 +427,7 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 	if _, err := s.args(f, n.Elems[1:], bound); err != nil {
 		return value.Type{}, fmt.Errorf("%s: %w", name, err)
 	}
-	input := f.Input.Subst(bound)
-	return input, concrete(input, name)
+	return instantiate(f.Input, bound, name)
 }
 
 // args checks the arguments given, the first of the form's, in the order their types are bound:
@@ -433,7 +441,7 @@ func (s *state) args(f *Form, nodes []*jsontext.Node, bound map[string]value.Typ
 		keys: map[ArgRef][]string{}, fixtures: map[ArgRef]checkedFixture{}}
 	given := func(i int) bool { return i < len(nodes) }
 	for i, a := range f.Args {
-		if !given(i) {
+		if !given(i) || argKinds[a.Kind].Binding != bindsByForms {
 			continue
 		}
 		if err := s.binder(a, argRef(i), nodes[i], bound, &ca); err != nil {
@@ -542,36 +550,61 @@ func (s *state) binder(a Arg, ref ArgRef, v *jsontext.Node, bound map[string]val
 	return nil
 }
 
-// fixtures resolves the fixture arguments given, whatever order they come in. Each try works on a
-// copy of the bindings and commits them only when it binds every type the fixture and the argument
-// mention; a fixture that cannot yet tell its types waits for another to bind them, and the round
-// repeats until every fixture is resolved or a round resolves none.
+// fixtures resolves the fixture arguments given as one set of constraints: each type a fixture
+// argument declares, in the form's bindings, has to match the fixture's own type, in that
+// fixture's bindings. Every binding a match derives is kept, even when its fixture is not resolved
+// yet, since another fixture may need it; the matches repeat until none adds a binding. Then every
+// type on both sides has to be known, or the case does not give enough to tell them.
 func (s *state) fixtures(f *Form, nodes []*jsontext.Node, bound map[string]value.Type, ca *checkedArgs) error {
-	var pending []int
+	type port struct {
+		what      string
+		form, fix value.Type
+	}
+	type use struct {
+		ref   ArgRef
+		fx    *Fixture
+		local map[string]value.Type
+		ports []port
+	}
+	var uses []use
 	for i, a := range f.Args {
-		if a.Kind == "fixture" && i < len(nodes) {
-			pending = append(pending, i)
+		if argKinds[a.Kind].Binding != bindsByFixture || i >= len(nodes) {
+			continue
+		}
+		fx, err := s.fixture(a, nodes[i])
+		if err != nil {
+			return err
+		}
+		// A fixture argument and the fixture have the same signature (see fixtureSignatures).
+		u := use{ref: argRef(i), fx: fx, local: map[string]value.Type{}, ports: []port{{"takes", a.FixtureInput, fx.Input}}}
+		if a.FixtureOutput != nil {
+			u.ports = append(u.ports, port{"gives", *a.FixtureOutput, *fx.Output})
+		}
+		uses = append(uses, u)
+	}
+	for progress := true; progress; {
+		progress = false
+		for _, u := range uses {
+			for _, p := range u.ports {
+				r, added := value.Match(p.form, bound, p.fix, u.local)
+				if r == value.Mismatch {
+					return fmt.Errorf("fixture %s %s %s, not %s", u.fx.Name, p.what, p.fix.Subst(u.local), p.form.Subst(bound))
+				}
+				progress = progress || added
+			}
 		}
 	}
-	for len(pending) > 0 {
-		var waiting []int
-		for _, i := range pending {
-			cf, trial, err := s.fixture(f.Args[i], nodes[i], bound)
-			if err != nil {
-				return err
+	for _, u := range uses {
+		for _, p := range u.ports {
+			formT, fixT := p.form.Subst(bound), p.fix.Subst(u.local)
+			if len(formT.Params()) > 0 || len(fixT.Params()) > 0 {
+				return fmt.Errorf("%s: cannot tell the types of fixture %s", f.Args[u.ref.Index()].Name, u.fx.Name)
 			}
-			if trial == nil {
-				waiting = append(waiting, i)
-				continue
+			if _, err := p.form.Instantiate(bound); err != nil {
+				return fmt.Errorf("fixture %s: %w", u.fx.Name, err)
 			}
-			maps.Copy(bound, trial)
-			ca.fixtures[argRef(i)] = cf
 		}
-		if len(waiting) == len(pending) {
-			a := f.Args[waiting[0]]
-			return fmt.Errorf("%s: cannot tell the types of fixture %s", a.Name, nodes[waiting[0]].Text)
-		}
-		pending = waiting
+		ca.fixtures[u.ref] = checkedFixture{Fixture: u.fx, bound: u.local}
 	}
 	return nil
 }
@@ -623,8 +656,8 @@ func asciiLower(s string) string {
 }
 
 func (s *state) literal(a Arg, n *jsontext.Node, bound map[string]value.Type) (value.Value, error) {
-	t := a.Type.Subst(bound)
-	if err := concrete(t, a.Name); err != nil {
+	t, err := instantiate(a.Type, bound, a.Name)
+	if err != nil {
 		return value.Value{}, err
 	}
 	v, err := value.Observe(t, n)
@@ -637,101 +670,50 @@ func (s *state) literal(a Arg, n *jsontext.Node, bound map[string]value.Type) (v
 	return v, nil
 }
 
-// fixture tries to resolve a fixture argument against the bindings so far: it matches the types
-// the argument declares with the fixture's own, each side binding the other's parameters, until
-// every type on both sides is concrete. It returns the bindings to commit, a copy, or nil when the
-// types are not yet known; it changes nothing it was given.
-func (s *state) fixture(a Arg, n *jsontext.Node, bound map[string]value.Type) (checkedFixture, map[string]value.Type, error) {
+// fixture reads the fixture a fixture argument names, of the argument's kind.
+func (s *state) fixture(a Arg, n *jsontext.Node) (*Fixture, error) {
 	if n.Kind != jsontext.String {
-		return checkedFixture{}, nil, fmt.Errorf("%s must name a fixture", a.Name)
+		return nil, fmt.Errorf("%s must name a fixture", a.Name)
 	}
 	fx, ok := s.registry.Fixtures[n.Text]
 	if !ok {
-		return checkedFixture{}, nil, fmt.Errorf("unknown fixture %q", n.Text)
+		return nil, fmt.Errorf("unknown fixture %q", n.Text)
 	}
 	if fx.Kind != a.FixtureKind {
-		return checkedFixture{}, nil, fmt.Errorf("%s needs a %s fixture, and %s is a %s fixture", a.Name, a.FixtureKind, fx.Name, fx.Kind)
+		return nil, fmt.Errorf("%s needs a %s fixture, and %s is a %s fixture", a.Name, a.FixtureKind, fx.Name, fx.Kind)
 	}
 	s.features["fixture."+fx.Name] = true
-	// A fixture argument and the fixture have the same signature (see fixtureSignatures).
-	type port struct {
-		what      string
-		form, fix value.Type
-	}
-	ports := []port{{"takes", a.FixtureInput, fx.Input}}
-	if a.FixtureOutput != nil {
-		ports = append(ports, port{"gives", *a.FixtureOutput, *fx.Output})
-	}
-	trial, fb := maps.Clone(bound), map[string]value.Type{}
-	known := func(t value.Type) bool { return len(t.Params()) == 0 }
-	for changed := true; changed; {
-		changed = false
-		for _, p := range ports {
-			formT, fixT := p.form.Subst(trial), p.fix.Subst(fb)
-			switch {
-			case known(formT) && known(fixT):
-				if !formT.Same(fixT) {
-					return checkedFixture{}, nil, fmt.Errorf("fixture %s %s %s, not %s", fx.Name, p.what, fixT, formT)
-				}
-			case known(formT):
-				if !value.Unify(p.fix, formT, fb) {
-					return checkedFixture{}, nil, fmt.Errorf("fixture %s %s %s, not %s", fx.Name, p.what, p.fix, formT)
-				}
-				changed = true
-			case known(fixT):
-				if !value.Unify(p.form, fixT, trial) {
-					return checkedFixture{}, nil, fmt.Errorf("fixture %s %s %s, not %s", fx.Name, p.what, fixT, p.form.Subst(trial))
-				}
-				changed = true
-			}
-		}
-	}
-	for _, p := range ports {
-		formT, fixT := p.form.Subst(trial), p.fix.Subst(fb)
-		if !known(formT) || !known(fixT) {
-			return checkedFixture{}, nil, nil
-		}
-		if err := concrete(formT, "fixture "+fx.Name); err != nil {
-			return checkedFixture{}, nil, err
-		}
-	}
-	return checkedFixture{Fixture: fx, bound: fb}, trial, nil
+	return fx, nil
 }
 
 // site instantiates an issue reference with the types bound gives the form's parameters and the
 // values its arguments give its metadata. NewChecker has checked that the catalogue has the
-// variant, and that the reference binds its parameters and names only metadata it has.
+// variant, that the reference binds its parameters and names only metadata it has, and that every
+// source fits its entry.
 func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) (*Site, error) {
 	v := s.catalog.Variants[ref.Key]
 	args := map[string]value.Type{}
 	for _, p := range v.Params {
-		args[p] = ref.Bind[p].Subst(bound)
-		if err := concrete(args[p], "issue "+ref.Key); err != nil {
+		t, err := instantiate(ref.Bind[p], bound, "issue "+ref.Key)
+		if err != nil {
 			return nil, err
 		}
+		args[p] = t
 	}
 	meta, err := v.Instantiate(args)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("issue %s: %w", ref.Key, err)
 	}
 	site := &Site{Key: v.Key, Code: v.Code, Meta: meta, Values: map[string]value.Value{}, Message: ca.message}
 	for _, o := range ref.Omit {
 		delete(meta, o)
 	}
-	for name, src := range ref.Meta {
-		t := meta[name]
-		if src.Kind == "member" {
-			if t.Kind != value.String {
-				return nil, fmt.Errorf("issue %s: %s is a member name, and a %s", ref.Key, name, t)
-			}
+	for _, name := range slices.Sorted(maps.Keys(ref.Meta)) {
+		if src := ref.Meta[name]; src.Kind == "member" {
 			site.MemberMeta = append(site.MemberMeta, name)
-			continue
+		} else {
+			site.Values[name] = metaValue(src, meta[name], ca)
 		}
-		val, err := metaValue(src, t, ca)
-		if err != nil {
-			return nil, fmt.Errorf("issue %s meta %s: %w", ref.Key, name, err)
-		}
-		site.Values[name] = val
 	}
 	for _, o := range v.Optional {
 		if _, ok := meta[o]; ok {
@@ -744,177 +726,244 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) 
 // candidatesType is the type of the metadata entry that lists the candidates of an issue.
 var candidatesType = value.MustParseType("list<record<candidate:int32,issues:issues>>")
 
-// Validate checks a registry against the issue catalogue: every issue a form declares is in it,
-// with its parameters bound and nothing else, and every metadata entry the form omits or gives a
-// source is one the variant has. An issue that lists candidates lists them in an entry of exactly
-// the candidates' type that every such issue has.
+// Validate checks a registry against the issue catalogue, so that checking a form never finds
+// them wrong. What a form decides by itself is checked once (checkIssues): every issue it declares
+// is in the catalogue, with its parameters bound and nothing else, every metadata entry it omits
+// or gives a source is one the variant has, and an issue that lists candidates lists them in an
+// entry of exactly the candidates' type that it cannot leave out. What depends on the receiver an
+// operation applies to is checked in the context of each receiver pattern (checkSources).
 func Validate(r *Registry, c *catalog.Catalog) error {
 	var problems []string
-	check := func(owner string, f *Form) {
-		for _, ref := range f.Issues {
-			v, ok := c.Variants[ref.Key]
-			if !ok {
-				problems = append(problems, fmt.Sprintf("%s: issue %s is not in the catalogue", owner, ref.Key))
-				continue
-			}
-			for _, p := range v.Params {
-				if _, ok := ref.Bind[p]; !ok {
-					problems = append(problems, fmt.Sprintf("%s: issue %s does not bind %s", owner, ref.Key, p))
-				}
-			}
-			for p := range ref.Bind {
-				if !slices.Contains(v.Params, p) {
-					problems = append(problems, fmt.Sprintf("%s: issue %s has no parameter %s to bind", owner, ref.Key, p))
-				}
-			}
-			for name, src := range ref.Meta {
-				t, ok := v.Meta[name]
-				if !ok {
-					problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to give a source", owner, ref.Key, name))
-					continue
-				}
-				if err := sourceFits(f, src, t.Subst(ref.Bind)); err != nil {
-					problems = append(problems, fmt.Sprintf("%s: issue %s meta %s: %v", owner, ref.Key, name, err))
-				}
-			}
-			for _, name := range ref.Omit {
-				if _, ok := v.Meta[name]; !ok {
-					problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to omit", owner, ref.Key, name))
-				}
-			}
+	form := func(owner string, f *Form, contexts []context) {
+		if p := checkIssues(owner, f, c); len(p) > 0 {
+			problems = append(problems, p...)
+			return
 		}
-		walkExpr(f.Flow, func(e Expr) {
-			x, ok := e.(ExprCandidates)
-			if !ok {
-				return
-			}
-			ref := f.Issues[x.Issue.Index()]
-			v, ok := c.Variants[ref.Key]
-			if !ok {
-				return
-			}
-			switch t, ok := v.Meta[x.Meta]; {
-			case !ok:
-				problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to list the candidates", owner, ref.Key, x.Meta))
-			case !t.Same(candidatesType):
-				problems = append(problems, fmt.Sprintf("%s: issue %s lists the candidates in %s, which is a %s, not a %s", owner, ref.Key, x.Meta, t, candidatesType))
-			case slices.Contains(v.Optional, x.Meta):
-				problems = append(problems, fmt.Sprintf("%s: issue %s may leave out %s, and an issue that lists candidates lists them all", owner, ref.Key, x.Meta))
-			}
-		})
+		problems = append(problems, checkSources(owner, f, c, contexts)...)
 	}
-	for name, f := range r.Constructors {
-		check("constructor "+name, f)
+	for _, name := range slices.Sorted(maps.Keys(r.Constructors)) {
+		form("constructor "+name, r.Constructors[name], []context{{where: "constructor " + name}})
 	}
-	for name, f := range r.Fields {
-		check("field "+name, f)
+	for _, name := range slices.Sorted(maps.Keys(r.Fields)) {
+		form("field "+name, r.Fields[name], []context{{where: "field " + name}})
 	}
-	for name, overloads := range r.Operations {
-		seen := map[*Form]bool{}
-		for _, o := range overloads {
-			if !seen[o.Form] {
-				seen[o.Form] = true
-				check("operation "+name, o.Form)
+	for _, name := range slices.Sorted(maps.Keys(r.Operations)) {
+		overloads := r.Operations[name]
+		var forms []*Form
+		contexts := map[*Form][]context{}
+		for _, key := range slices.Sorted(maps.Keys(overloads)) {
+			o := overloads[key]
+			if _, ok := contexts[o.Form]; !ok {
+				forms = append(forms, o.Form)
 			}
+			contexts[o.Form] = append(contexts[o.Form], receiverContext("operation "+name, o.Receiver))
+		}
+		for _, f := range forms {
+			form("operation "+name, f, contexts[f])
 		}
 	}
 	if len(problems) > 0 {
-		sort.Strings(problems)
 		return fmt.Errorf("%s", strings.Join(problems, "\n"))
 	}
 	return nil
 }
 
-// sourceFits checks what of a metadata source the forms alone decide: a constant is an
-// observation of the entry's type, and an argument has the entry's type, wherever neither
-// mentions a type parameter a decoder binds.
-func sourceFits(f *Form, src MetaSource, t value.Type) error {
-	concrete := len(t.Params()) == 0
+// context is what the form's parameters are known to be before a case applies it: R bound to an
+// operation's receiver pattern, which may itself mention parameters (list<E>), or nothing; where
+// names it in a problem.
+type context struct {
+	where string
+	bound map[string]value.Type
+}
+
+func receiverContext(owner string, rc Receiver) context {
+	if rc.Pattern == nil {
+		return context{where: owner + " on any type"}
+	}
+	return context{where: owner + " on " + rc.Pattern.String(), bound: map[string]value.Type{"R": *rc.Pattern}}
+}
+
+// checkIssues checks what a form decides of its issues by itself.
+func checkIssues(owner string, f *Form, c *catalog.Catalog) []string {
+	var problems []string
+	for _, ref := range f.Issues {
+		v, ok := c.Variants[ref.Key]
+		if !ok {
+			problems = append(problems, fmt.Sprintf("%s: issue %s is not in the catalogue", owner, ref.Key))
+			continue
+		}
+		for _, p := range v.Params {
+			if _, ok := ref.Bind[p]; !ok {
+				problems = append(problems, fmt.Sprintf("%s: issue %s does not bind %s", owner, ref.Key, p))
+			}
+		}
+		for _, p := range slices.Sorted(maps.Keys(ref.Bind)) {
+			if !slices.Contains(v.Params, p) {
+				problems = append(problems, fmt.Sprintf("%s: issue %s has no parameter %s to bind", owner, ref.Key, p))
+			}
+		}
+		for _, name := range slices.Sorted(maps.Keys(ref.Meta)) {
+			if _, ok := v.Meta[name]; !ok {
+				problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to give a source", owner, ref.Key, name))
+			}
+		}
+		for _, name := range ref.Omit {
+			if _, ok := v.Meta[name]; !ok {
+				problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to omit", owner, ref.Key, name))
+			}
+		}
+	}
+	walkExpr(f.Flow, func(e Expr) {
+		x, ok := e.(ExprCandidates)
+		if !ok {
+			return
+		}
+		ref := f.Issues[x.Issue.Index()]
+		v, ok := c.Variants[ref.Key]
+		if !ok {
+			return
+		}
+		switch t, ok := v.Meta[x.Meta]; {
+		case !ok:
+			problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to list the candidates", owner, ref.Key, x.Meta))
+		case !t.Same(candidatesType):
+			problems = append(problems, fmt.Sprintf("%s: issue %s lists the candidates in %s, which is a %s, not a %s", owner, ref.Key, x.Meta, t, candidatesType))
+		case slices.Contains(v.Optional, x.Meta):
+			problems = append(problems, fmt.Sprintf("%s: issue %s may leave out %s, and an issue that lists candidates lists them all", owner, ref.Key, x.Meta))
+		}
+	})
+	return problems
+}
+
+// checkSources checks, in each context the form can be used in, the types of its issues'
+// bindings and metadata and the metadata sources it gives. A type the context fixes has to be one
+// values have. A source has to fit its entry for every type a case can give it: where the context
+// fixes the entry's type, it is checked for that type, and where the type is left to the case, a
+// source is accepted only if it fits whatever the case gives (an argument of the same type), never
+// one that needs the type (a constant, a constant by type, a sort).
+func checkSources(owner string, f *Form, c *catalog.Catalog, contexts []context) []string {
+	var problems []string
+	for _, ref := range f.Issues {
+		v := c.Variants[ref.Key]
+		byType := map[string][]string{}
+		for _, ctx := range contexts {
+			bad := func(format string, args ...any) {
+				problems = append(problems, fmt.Sprintf("%s: issue %s ", ctx.where, ref.Key)+fmt.Sprintf(format, args...))
+			}
+			for _, p := range v.Params {
+				if t := ref.Bind[p].Subst(ctx.bound); len(t.Params()) == 0 {
+					if err := t.Concrete(); err != nil {
+						bad("binds %s to %s: %v", p, t, err)
+					}
+				}
+			}
+			for _, name := range slices.Sorted(maps.Keys(v.Meta)) {
+				t := v.Meta[name].Subst(ref.Bind).Subst(ctx.bound)
+				known := len(t.Params()) == 0
+				if known {
+					if err := t.Concrete(); err != nil {
+						bad("meta %s is a %s: %v", name, t, err)
+						continue
+					}
+				}
+				src, ok := ref.Meta[name]
+				if !ok {
+					continue
+				}
+				if err := sourceFits(f, src, t, ctx); err != nil {
+					bad("meta %s: %v", name, err)
+				}
+				if src.Kind == "const_by_type" && known {
+					byType[name] = append(byType[name], t.String())
+				}
+			}
+		}
+		for _, name := range slices.Sorted(maps.Keys(byType)) {
+			reached := byType[name]
+			keys := slices.Sorted(maps.Keys(ref.Meta[name].ByType))
+			slices.Sort(reached)
+			reached = slices.Compact(reached)
+			if !slices.Equal(keys, reached) {
+				problems = append(problems, fmt.Sprintf("%s: issue %s meta %s: const_by_type gives values for %v, and the entry can be %v", owner, ref.Key, name, keys, reached))
+			}
+		}
+	}
+	return problems
+}
+
+// sourceFits checks a metadata source against the type its entry has in a context.
+func sourceFits(f *Form, src MetaSource, t value.Type, ctx context) error {
+	known := len(t.Params()) == 0
 	switch src.Kind {
 	case "const":
-		if concrete {
-			if _, err := value.Observe(t, src.Const); err != nil {
-				return err
-			}
+		if !known {
+			return fmt.Errorf("a constant for a %s, which a case decides", t)
+		}
+		if _, err := value.Observe(t, src.Const); err != nil {
+			return err
 		}
 	case "const_by_type":
-		for name, n := range src.ByType {
-			bt, err := value.ParseType(name)
-			if err != nil {
-				return err
-			}
-			if _, err := value.Observe(bt, n); err != nil {
-				return fmt.Errorf("the value for %s: %w", name, err)
-			}
+		if !known {
+			return fmt.Errorf("const_by_type for a %s, which a case decides", t)
 		}
-		if concrete {
-			if _, ok := src.ByType[t.String()]; !ok {
-				return fmt.Errorf("const_by_type has no value for %s", t)
-			}
+		n, ok := src.ByType[t.String()]
+		if !ok {
+			return fmt.Errorf("const_by_type has no value for %s", t)
+		}
+		if _, err := value.Observe(t, n); err != nil {
+			return fmt.Errorf("the value for %s: %w", t, err)
 		}
 	case "arg", "sorted", "ascii_lower_sorted":
-		at := f.Args[src.Arg.Index()].Type
-		if concrete && len(at.Params()) == 0 && !at.Same(t) {
-			return fmt.Errorf("argument %s is a %s, and the entry a %s", f.Args[src.Arg.Index()].Name, at, t)
+		a := f.Args[src.Arg.Index()]
+		if at := a.Type.Subst(ctx.bound); !at.Same(t) {
+			return fmt.Errorf("argument %s is a %s, and the entry a %s", a.Name, at, t)
+		}
+		if src.Kind == "sorted" {
+			if e := t.Args[0]; len(e.Params()) > 0 || !(e.Kind == value.String || e.IsNumeric() || e.IsTemporal()) {
+				return fmt.Errorf("sorts a %s, whose elements have no order it can tell", t)
+			}
 		}
 	case "sorted_keys":
-		if t.Kind != value.List || t.Args[0].Kind != value.String {
+		if !t.Same(value.MustParseType("list<string>")) {
 			return fmt.Errorf("sorted_keys gives a list<string>, and the entry is a %s", t)
 		}
 	case "member":
-		if concrete && t.Kind != value.String {
+		if !t.Same(value.Of(value.String)) {
 			return fmt.Errorf("the name of a member is a string, and the entry a %s", t)
 		}
 	}
 	return nil
 }
 
-// metaValue computes the value a metadata source decides.
-func metaValue(src MetaSource, t value.Type, ca checkedArgs) (value.Value, error) {
+// metaValue computes the value a metadata source decides. Validate has checked that the source fits
+// the entry for every type a case can give it, so nothing here can fail.
+func metaValue(src MetaSource, t value.Type, ca checkedArgs) value.Value {
 	var v value.Value
 	var err error
 	switch src.Kind {
 	case "const":
 		v, err = value.Observe(t, src.Const)
 	case "const_by_type":
-		n, ok := src.ByType[t.String()]
-		if !ok {
-			return value.Value{}, fmt.Errorf("const_by_type has no value for %s", t)
-		}
-		v, err = value.Observe(t, n)
-	case "arg", "sorted", "ascii_lower_sorted":
-		a := ca.values[src.Arg]
-		v = a
-		if src.Kind == "ascii_lower_sorted" {
-			v = asciiLowered(a)
-			v.Type = t
-		}
-		if src.Kind != "arg" {
-			if err := sortElems(&v); err != nil {
-				return value.Value{}, err
-			}
-		}
-		if !v.Type.Same(t) {
-			return value.Value{}, fmt.Errorf("the source is a %s, and the entry a %s", v.Type, t)
-		}
+		v, err = value.Observe(t, src.ByType[t.String()])
+	case "arg":
+		v = ca.values[src.Arg]
+	case "sorted":
+		v = sortElems(ca.values[src.Arg])
+	case "ascii_lower_sorted":
+		v = sortElems(asciiLowered(ca.values[src.Arg]))
 	case "sorted_keys":
-		if t.Kind != value.List || t.Args[0].Kind != value.String {
-			return value.Value{}, fmt.Errorf("sorted_keys gives a list<string>, and the entry is a %s", t)
-		}
 		v = value.Value{Type: t}
 		for _, k := range ca.keys[src.Arg] {
 			v.Elems = append(v.Elems, value.Value{Type: t.Args[0], Str: k})
 		}
-		if err := sortElems(&v); err != nil {
-			return value.Value{}, err
-		}
+		v = sortElems(v)
 	default:
-		return value.Value{}, fmt.Errorf("%s is not a metadata source", src.Kind)
+		panic("registry invariant: metadata source " + src.Kind)
 	}
-	if err != nil {
-		return value.Value{}, err
+	if err != nil || !v.Type.Same(t) {
+		panic(fmt.Sprintf("registry invariant: the %s source of a %s gives %s (%v)", src.Kind, t, v.Type, err))
 	}
-	return v, nil
+	return v
 }
 
 // asciiLowered returns a list of strings with A-Z read as a-z.
@@ -928,23 +977,19 @@ func asciiLowered(v value.Value) value.Value {
 }
 
 // sortElems sorts a list in ascending order: strings by code point, numbers and temporal values as
-// Compare orders them.
-func sortElems(v *value.Value) error {
-	if v.Type.Kind != value.List && v.Type.Kind != value.Set {
-		return fmt.Errorf("only a list can be sorted, not a %s", v.Type)
-	}
+// Compare orders them. Validate has checked that the elements have that order.
+func sortElems(v value.Value) value.Value {
 	elems := slices.Clone(v.Elems)
-	var err error
 	slices.SortStableFunc(elems, func(a, b value.Value) int {
 		if a.Type.Kind == value.String {
 			return strings.Compare(a.Str, b.Str)
 		}
-		c, e := value.Compare(a, b)
-		if e != nil {
-			err = e
+		c, err := value.Compare(a, b)
+		if err != nil {
+			panic("registry invariant: " + err.Error())
 		}
 		return c
 	})
 	v.Elems = elems
-	return err
+	return v
 }

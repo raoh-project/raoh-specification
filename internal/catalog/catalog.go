@@ -4,6 +4,7 @@ package catalog
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -95,7 +96,8 @@ func ParseMessages(text string) (map[string]string, error) {
 		return nil, err
 	}
 	messages := map[string]string{}
-	for k, v := range props {
+	for _, k := range slices.Sorted(maps.Keys(props)) {
+		v := props[k]
 		key, ok := strings.CutPrefix(k, KeyPrefix)
 		if !ok {
 			return nil, fmt.Errorf("key %q does not start with %q", k, KeyPrefix)
@@ -213,7 +215,8 @@ func (c *Catalog) Check() error {
 	var problems []string
 	for _, locale := range Locales {
 		messages := c.Messages[locale]
-		for key, v := range c.Variants {
+		for _, key := range slices.Sorted(maps.Keys(c.Variants)) {
+			v := c.Variants[key]
 			template, ok := messages[key]
 			if !ok {
 				problems = append(problems, fmt.Sprintf("%s: no template for %s", locale, key))
@@ -227,7 +230,7 @@ func (c *Catalog) Check() error {
 				}
 			}
 		}
-		for key := range messages {
+		for _, key := range slices.Sorted(maps.Keys(messages)) {
 			if _, ok := c.Variants[key]; !ok {
 				problems = append(problems, fmt.Sprintf("%s: the template for %s belongs to no variant", locale, key))
 			}
@@ -240,7 +243,8 @@ func (c *Catalog) Check() error {
 	return nil
 }
 
-// Instantiate returns the metadata types of a variant with its type parameters bound to args.
+// Instantiate returns the metadata types of a variant with its type parameters bound to args,
+// each a type values have (see value.Type.Instantiate).
 func (v *Variant) Instantiate(args map[string]value.Type) (map[string]value.Type, error) {
 	for _, p := range v.Params {
 		if _, ok := args[p]; !ok {
@@ -248,8 +252,12 @@ func (v *Variant) Instantiate(args map[string]value.Type) (map[string]value.Type
 		}
 	}
 	out := map[string]value.Type{}
-	for k, t := range v.Meta {
-		out[k] = t.Subst(args)
+	for _, k := range slices.Sorted(maps.Keys(v.Meta)) {
+		t, err := v.Meta[k].Instantiate(args)
+		if err != nil {
+			return nil, fmt.Errorf("meta %s: %w", k, err)
+		}
+		out[k] = t
 	}
 	return out, nil
 }

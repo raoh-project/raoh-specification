@@ -483,8 +483,9 @@ func checkerWith(t *testing.T, fixtures doc) *Checker {
 	return checkerWithOps(t, nil, fixtures)
 }
 
-// checkerWithOps is the checker for the catalogues with operations and fixtures added.
-func checkerWithOps(t *testing.T, operations []doc, fixtures doc) *Checker {
+// checkerWithOps is the checker for the catalogues with operations, fixtures and issue variants
+// added.
+func checkerWithOps(t *testing.T, operations []doc, fixtures doc, variants ...doc) *Checker {
 	t.Helper()
 	fx := readDoc(t, "../../catalog/fixtures.json")
 	for name, f := range fixtures {
@@ -502,6 +503,17 @@ func checkerWithOps(t *testing.T, operations []doc, fixtures doc) *Checker {
 	cat, err := catalog.Load("../..", schemasFor(t))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(variants) > 0 {
+		is := readDoc(t, "../../catalog/issues.json")
+		for _, v := range variants {
+			for k, e := range v {
+				is[k] = e
+			}
+		}
+		if cat.Variants, err = catalog.ParseVariants(encode(t, is)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	c, err := NewChecker(reg, cat)
 	if err != nil {
@@ -595,4 +607,44 @@ func TestFixturesBindTypesInAnyOrder(t *testing.T) {
 	if got := decoder(t, c, `["enum", ["A", "B"], ["string"], ["map", "same"]]`).Result.String(); got != `symbol<"A","B">` {
 		t.Errorf("a generic fixture gives %s for a symbol", got)
 	}
+}
+
+// Fixtures are one set of constraints: a type is known once anything fixes it, whether the types
+// on both sides of a match mention parameters or two fixtures each fix part of it.
+func TestFixturesSolveTogether(t *testing.T) {
+	fixture := func(name, in, out string) doc {
+		return doc{"name": name, "kind": "fixture", "fixture": "map", "input": in, "output": out}
+	}
+	op := func(name, result string, args ...any) doc {
+		return doc{"name": name, "doc": "x", "receivers": []any{"*"}, "result": result, "args": args, "issues": []any{}, "flow": "none"}
+	}
+	c := checkerWithOps(t, []doc{
+		op("infer", "Y", fixture("function", "product<X,string>", "Y")),
+		op("joinAB", "product<X,Y>", fixture("a", "product<X,Y>", "Z"), fixture("b", "product<X,Y>", "W")),
+		op("joinBA", "product<X,Y>", fixture("b", "product<X,Y>", "W"), fixture("a", "product<X,Y>", "Z")),
+	}, doc{
+		"pair":  doc{"kind": "map", "doc": "x", "input": "product<int32,T>", "output": "T"},
+		"left":  doc{"kind": "map", "doc": "x", "input": "product<int32,T>", "output": "T"},
+		"right": doc{"kind": "map", "doc": "x", "input": "product<U,string>", "output": "U"},
+	})
+	for form, want := range map[string]string{
+		`["int", ["infer", "pair"]]`:           "string",
+		`["int", ["joinAB", "left", "right"]]`: "product<int32,string>",
+		`["int", ["joinBA", "right", "left"]]`: "product<int32,string>",
+	} {
+		if got := decoder(t, c, form).Result.String(); got != want {
+			t.Errorf("%s gives %s, want %s", form, got, want)
+		}
+	}
+	rejected(t, c, `["int", ["joinAB", "left", "left"]]`, "cannot tell the types of fixture")
+	rejected(t, c, `["int", ["infer", "decimal_string"]]`, "fixture decimal_string takes int32, not product<X,string>")
+}
+
+// A type written with parameters is checked once they are bound, wherever it is used: an issue's
+// metadata as well as a result.
+func TestInstantiatedTypesAreWellFormed(t *testing.T) {
+	c := checkerWithOps(t, []doc{{"name": "probe", "doc": "x", "receivers": []any{"*"}, "result": "R",
+		"issues": []any{doc{"key": "probe", "T": "nullable<R>"}}, "flow": "own"}}, nil,
+		doc{"probe": doc{"code": "probe", "params": []any{"T"}, "meta": doc{"x": "optional<T>"}}})
+	rejected(t, c, `["string", ["probe"]]`, "optional<nullable<string>> cannot tell its own null")
 }
