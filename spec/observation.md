@@ -57,15 +57,15 @@ The forms of a time of day are alternatives: `09:00` and `09:00:00.000` are the 
 | `product<T1,...,Tn>` | a JSON array of n observations, the i-th of type `Ti` |
 | `presence<T>` | `"absent"`, `"null"`, or `{"present": v}` with `v` the observation of the value |
 | `optional<T>`, `nullable<T>` | `null`, or the observation of the value |
+| `record<...>` | a JSON object with exactly the fields of the type |
+| `json` | the value itself |
+| `issues` | a JSON array of issues, as [issues.md](issues.md) describes the ones `one_of_failed` lists |
 
 Because an empty optional and a null are observed as `null`, `T` in `optional<T>` and
 `nullable<T>` must not be a type that observes anything as `null` (`optional`, `nullable`,
 `json`). A type such as `optional<nullable<int32>>` is not well formed: its observation could not
 tell an empty optional from one holding null. The type checker rejects every form whose result
 would be such a type.
-| `record<...>` | a JSON object with exactly the fields of the type |
-| `json` | the value itself |
-| `issues` | a JSON array of issues, as [issues.md](issues.md) describes the ones `one_of_failed` lists |
 
 ## Outcomes
 
@@ -86,5 +86,4 @@ observation is.
 Encoding cases give the encoder's input as an observation. A runner materialises it: it builds the
 value of its own language that the observation denotes. Every type above except `json` and `issues`
 can be materialised. A value no observation can denote, such as a domain object that a decoder's
-`map` built, is out of reach of encoding cases; a case that needs one uses a constructor fixture
-from `catalog/fixtures.json`.
+`map` built, is out of reach of encoding cases.

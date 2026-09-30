@@ -82,10 +82,23 @@ is the decimal 0.5 with scale 1; `["int", ["min", 0.5]]` does not type-check.
 
 Some forms put conditions on their arguments, listed as `requires` in `catalog/operations.json`:
 the bounds of `range` and `between` must be in order, the divisor of `multipleOf` must not be
-zero, the elements of `containsAll` must not be empty, and the symbols of `enum` must stay
-distinct when A-Z are read as a-z. A `strictObject` cannot have a `flat` field, since it could not
-tell which members that field reads. raoh-java refuses to construct a decoder that breaks one of
-them, so such a form is not a decoder of this language either.
+zero, the elements of `containsAll` must not be empty, the allowed values of `oneOf` must be
+distinct as the value model compares them, the symbols of `enum` must stay distinct when A-Z are
+read as a-z, the pattern of `pattern` must be one of [pattern.md](pattern.md), a `strictObject`
+cannot have a `flat` field, since it could not tell which members that field reads, and no two
+properties of an `object` encoder may write the same member. A form that breaks one is not a
+decoder of this language. Each is a condition on what the arguments mean, and raoh-java 0.8.0
+refuses to construct a decoder that breaks one; a restriction that only a host language's API
+imposes, such as a Java method refusing null, is not one of them.
+
+A message writes only metadata whose type has a message form ([issues.md](issues.md#message-forms)).
+An operation on elements of any type, such as `unique` or `contains`, therefore cannot be applied
+where an issue would have to write an element that has none: `["list", ["dict", ["int"]],
+["unique"]]` does not type-check.
+
+The operations that read text by Unicode properties or mappings (`trim`, `nonBlank`,
+`toLowerCase`, `toUpperCase`, `normalize`) use Unicode 18.0.0, whatever version the platform an
+implementation runs on has.
 
 A form's result type follows from its arguments. `catalog/operations.json` writes it as a type,
 which may mention the form's parameters; as `"product"`, the product of the types of the fields its
@@ -136,11 +149,21 @@ version may decide otherwise:
 - Floats are ordered as `Double.compare` orders them, so `negative` accepts -0 and `nonNegative`
   rejects it.
 - `strict` inside `strict` reports an unknown member once for each.
+- `iso8601` reads 24:00:00 as the start of the next day, where `time`, `dateTime` and
+  `offsetDateTime` refuse 24:00; `offsetDateTime` reads the offset -00:00 as Z, which RFC 3339
+  gives another meaning.
+- `email` checks a loose ASCII grammar, not RFC 5321's.
+- `unique` lists the duplicates in the order in which each first occurs again.
 
-One meaning differs from what raoh-java 0.8.0 gives with Jackson's default configuration: `decimal`
-keeps the scale the lexeme is written with, so `0.0001` gives scale 4. raoh-json documents that its
-result depends on how the JSON library parsed the number (a fractional number parsed as a binary64
-double comes back with the scale `Double.toString` writes, 0.00010), which makes it adapter
-behaviour; the input model keeps the lexeme.
+The numbers a decoder reads differ from what raoh-java 0.8.0 gives with Jackson's default
+configuration, because raoh-json reads a number with a fraction or an exponent as a binary64 double
+first, while the input model keeps the lexeme. `decimal` keeps the scale the lexeme is written with,
+so `0.0001` gives scale 4 where raoh-json gives 0.00010, keeps every digit where raoh-json keeps
+17, and reads `1e400` where raoh-json gives type_mismatch. `float` rounds the lexeme to the nearest
+float32 once, where raoh-json rounds it to a double and that to a float32, so
+`1.000000059604644775390625000000001` gives 1.0000001 and not 1.0. raoh-json documents that its
+result depends on how the JSON library parsed the number, which makes this adapter behaviour.
+Enabling Jackson's `USE_BIG_DECIMAL_FOR_FLOATS` gives these meanings, and makes `float` and `double`
+read `-0.0` as +0 instead.
 
 Each is an open issue in this repository.
