@@ -79,7 +79,9 @@ disagree, the specification has a defect; report it.
 Several meanings in version 0.8.0 are raoh-java 0.8.0's behaviour written down, where a later
 version may decide otherwise:
 
-- Lengths (`minLength`, `maxLength`, `fixedLength`) count UTF-16 code units.
+- Offset date-times are ordered by instant and, at the same instant, by local date-time
+  (`OffsetDateTime.compareTo`), so `before`, `after` and `between` tell apart two values that
+  denote the same instant.
 - `float` and `double` read the number `-0` as +0 and `-0.0` as -0.
 - Floats are ordered as `Double.compare` orders them, so `negative` accepts -0 and `nonNegative`
   rejects it.

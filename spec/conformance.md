@@ -29,7 +29,7 @@ conformed can stop conforming without changing.
 
 ## Case IDs
 
-Every case has an ID that names what it checks, such as `string.min_length.counts_utf16_units`.
+Every case has an ID that names what it checks, such as `string.min_length.counts_code_points`.
 An ID is permanent: it does not change when the outcome the case expects changes, and it is not
 reused for a case that checks something else. When what a case checks changes, the case gets a new
 ID and the old one is retired. Conformance declarations refer to cases by ID.

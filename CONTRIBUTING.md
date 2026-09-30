@@ -9,7 +9,7 @@ the pull request against `develop`. `main` receives releases only.
 
 A case lives in a file under `suite/<profile>/`, grouped by the constructor it exercises. Each case
 has an ID of the form `<subject>.<what it checks>`, in lower snake case separated by dots, such as
-`string.min_length.counts_utf16_units`. Choose the ID for what the case checks, not for its input:
+`string.min_length.counts_code_points`. Choose the ID for what the case checks, not for its input:
 the ID stays when the expected outcome changes, and a case that comes to check something else gets
 a new ID. An ID that has been released is never reused.
 
