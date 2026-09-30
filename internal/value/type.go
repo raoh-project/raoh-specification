@@ -5,6 +5,8 @@ package value
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -74,6 +76,17 @@ type Type struct {
 	Fields []string
 	// Name is the name of a Param.
 	Name string
+	// Symbols are the alternatives of a Symbol. A Symbol with no alternatives stands for one whose
+	// alternatives a form gives from its arguments; it is not a concrete type.
+	Symbols []string
+}
+
+// SymbolOf returns the symbol type with the given alternatives.
+func SymbolOf(alternatives ...string) Type {
+	if alternatives == nil {
+		alternatives = []string{}
+	}
+	return Type{Kind: Symbol, Symbols: alternatives}
 }
 
 // Of returns the type of a kind that takes no arguments.
@@ -93,6 +106,13 @@ func (t Type) String() string {
 		return t.Name
 	}
 	name := kindNames[t.Kind]
+	if t.Kind == Symbol && t.Symbols != nil {
+		quoted := make([]string, len(t.Symbols))
+		for i, s := range t.Symbols {
+			quoted[i] = strconv.Quote(s)
+		}
+		return name + "<" + strings.Join(quoted, ",") + ">"
+	}
 	if len(t.Args) == 0 {
 		return name
 	}
@@ -128,6 +148,34 @@ func (t Type) IsTemporal() bool {
 	return false
 }
 
+// symbols reads the alternatives of a symbol type, <"A","B">, or none.
+func (p *typeParser) symbols() (Type, error) {
+	t := Type{Kind: Symbol}
+	if p.pos >= len(p.s) || p.s[p.pos] != '<' {
+		return t, nil
+	}
+	p.pos++
+	t.Symbols = []string{}
+	for {
+		q, err := strconv.QuotedPrefix(p.s[p.pos:])
+		if err != nil {
+			return Type{}, fmt.Errorf("expected a quoted alternative at %d", p.pos)
+		}
+		s, _ := strconv.Unquote(q)
+		t.Symbols = append(t.Symbols, s)
+		p.pos += len(q)
+		if p.pos < len(p.s) && p.s[p.pos] == ',' {
+			p.pos++
+			continue
+		}
+		if p.pos < len(p.s) && p.s[p.pos] == '>' {
+			p.pos++
+			return t, nil
+		}
+		return Type{}, fmt.Errorf("unterminated alternatives")
+	}
+}
+
 // Params returns the names of the type parameters t mentions.
 func (t Type) Params() []string {
 	var names []string
@@ -160,7 +208,7 @@ func (t Type) Subst(args map[string]Type) Type {
 	if len(t.Args) == 0 {
 		return t
 	}
-	out := Type{Kind: t.Kind, Fields: t.Fields, Args: make([]Type, len(t.Args))}
+	out := Type{Kind: t.Kind, Fields: t.Fields, Symbols: t.Symbols, Args: make([]Type, len(t.Args))}
 	for i, a := range t.Args {
 		out.Args[i] = a.Subst(args)
 	}
@@ -178,6 +226,9 @@ func Unify(pattern, t Type, bound map[string]Type) bool {
 		return true
 	}
 	if pattern.Kind != t.Kind || len(pattern.Args) != len(t.Args) {
+		return false
+	}
+	if pattern.Kind == Symbol && pattern.Symbols != nil && !pattern.Same(t) {
 		return false
 	}
 	for i := range pattern.Args {
@@ -226,6 +277,16 @@ func nullObservable(t Type) bool {
 func WellFormed(t Type) error {
 	if t.Kind == Invalid {
 		return fmt.Errorf("the type is missing")
+	}
+	if t.Kind == Symbol && t.Symbols != nil {
+		if len(t.Symbols) == 0 {
+			return fmt.Errorf("a symbol type has at least one alternative")
+		}
+		for i, s := range t.Symbols {
+			if slices.Contains(t.Symbols[:i], s) {
+				return fmt.Errorf("%s lists %q twice", t, s)
+			}
+		}
 	}
 	if (t.Kind == Optional || t.Kind == Nullable) && nullObservable(t.Args[0]) {
 		return fmt.Errorf("%s cannot tell its own null from a null of %s", t, t.Args[0])
@@ -278,6 +339,9 @@ func (p *typeParser) parse() (Type, error) {
 		return Type{}, fmt.Errorf("unknown type %q", name)
 	}
 	t := Type{Kind: k}
+	if k == Symbol {
+		return p.symbols()
+	}
 	want, generic := arity[k]
 	if p.pos >= len(p.s) || p.s[p.pos] != '<' {
 		if generic {

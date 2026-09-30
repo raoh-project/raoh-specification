@@ -80,7 +80,7 @@ func TestResultTypes(t *testing.T) {
 		`["object", [["field", "name", ["string"]], ["optionalField", "nick", ["int"]]]]`:                        "product<string,optional<int32>>",
 		`["object", [["optionalNullableField", "n", ["long"]]]]`:                                                 "product<presence<int64>>",
 		`["dict", ["nullable", ["bool"]]]`:                                                                       "map<nullable<bool>>",
-		`["enum", ["RED", "GREEN"], ["string", ["trim"]]]`:                                                       "symbol",
+		`["enum", ["RED", "GREEN"], ["string", ["trim"]]]`:                                                       `symbol<"RED","GREEN">`,
 		`["oneOf", [["int", ["map", "decimal_string"]], ["string", ["minLength", 3]]]]`:                          "string",
 		`["object", [["field", "w", ["int"]], ["field", "h", ["int"]]], ["map", "area"]]`:                        "int32",
 		`["object", [["field", "k", ["string"]]], ["map", "first"]]`:                                             "string",
@@ -277,5 +277,12 @@ func TestMissingTypesAreErrors(t *testing.T) {
 		if _, err := Parse([]byte(broken), fx); err == nil {
 			t.Errorf("%s: the parser accepts it", name)
 		}
+	}
+}
+
+func TestEnumsGiveTheirSymbols(t *testing.T) {
+	c := checker(t)
+	if got := decoder(t, c, `["enum", ["RED", "GREEN"], ["string"]]`).Result.String(); got != `symbol<"RED","GREEN">` {
+		t.Errorf("enum gives %s", got)
 	}
 }

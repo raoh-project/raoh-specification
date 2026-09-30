@@ -94,6 +94,9 @@ type Form struct {
 	Issues []IssueRef
 	// InputOrder marks a form whose issues at members come in the order of the input's members.
 	InputOrder bool
+	// SymbolsFrom names the argument whose strings are the alternatives of the symbol type the
+	// form gives.
+	SymbolsFrom string
 	// Requires are the conditions its arguments have to meet for the form to exist at all, as
 	// raoh-java refuses to construct the decoder otherwise.
 	Requires []Require
@@ -322,6 +325,12 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 			}
 			f.Args = append(f.Args, arg)
 		}
+	}
+	if from, ok := str(n, "symbols_from"); ok {
+		if f.Result.Kind != value.Symbol || !slices.ContainsFunc(f.Args, func(a Arg) bool { return a.Name == from && a.Kind == "value" }) {
+			return nil, fmt.Errorf("symbols_from %s needs a symbol result and a value argument %s", from, from)
+		}
+		f.SymbolsFrom = from
 	}
 	for i, a := range f.Args {
 		if !a.Optional && i > 0 && f.Args[i-1].Optional {

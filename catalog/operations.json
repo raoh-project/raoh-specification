@@ -83,6 +83,7 @@
         {"name": "string", "kind": "decoder", "type": "string"}
       ],
       "result": "symbol",
+      "symbols_from": "symbols",
       "issues": ["invalid_format.enum"],
       "requires": [{"check": "distinct_ascii_fold", "args": ["symbols"]}]
     },

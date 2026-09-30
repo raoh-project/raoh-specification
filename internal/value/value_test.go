@@ -205,3 +205,32 @@ func TestZeroValuesAreInvalid(t *testing.T) {
 		t.Errorf("a nullable holding 1 has state %v", v.State)
 	}
 }
+
+// A symbol type is the alternatives it has; a symbol outside them is not an observation of it.
+func TestSymbolsHaveTheirAlternatives(t *testing.T) {
+	colour := SymbolOf("RED", "GREEN")
+	if colour.String() != `symbol<"RED","GREEN">` {
+		t.Errorf("printed as %s", colour)
+	}
+	back, err := ParseType(colour.String())
+	if err != nil || !back.Same(colour) {
+		t.Errorf("parsed back as %s, %v", back, err)
+	}
+	if _, err := Observe(colour, jsontext.MustParse(`"RED"`)); err != nil {
+		t.Error(err)
+	}
+	if _, err := Observe(colour, jsontext.MustParse(`"BLUE"`)); err == nil || !strings.Contains(err.Error(), "not one of") {
+		t.Errorf("BLUE: %v", err)
+	}
+	if colour.Same(SymbolOf("YES", "NO")) {
+		t.Error("two symbol types with different alternatives are the same")
+	}
+	for _, bad := range []Type{SymbolOf(), SymbolOf("A", "A")} {
+		if WellFormed(bad) == nil {
+			t.Errorf("%s is well formed", bad)
+		}
+	}
+	if WellFormed(Of(Symbol)) != nil {
+		t.Error("a symbol pattern whose alternatives come from elsewhere is not well formed")
+	}
+}

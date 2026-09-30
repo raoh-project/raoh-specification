@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/big"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -77,9 +78,20 @@ func observe(t Type, n *jsontext.Node) (Value, error) {
 			return v, fmt.Errorf("a decimal zero is written without a minus sign")
 		}
 		v.Dec = d
-	case String, Symbol, URI:
+	case String, URI:
 		if err := want(jsontext.String); err != nil {
 			return v, err
+		}
+		v.Str = n.Text
+	case Symbol:
+		if err := want(jsontext.String); err != nil {
+			return v, err
+		}
+		if t.Symbols == nil {
+			return v, fmt.Errorf("a symbol type whose alternatives are not known has no observation")
+		}
+		if !slices.Contains(t.Symbols, n.Text) {
+			return v, fmt.Errorf("%q is not one of the alternatives %s", n.Text, strings.Join(t.Symbols, ", "))
 		}
 		v.Str = n.Text
 	case UUID:

@@ -89,6 +89,9 @@ func concrete(t value.Type, what string) error {
 	if err := value.WellFormed(t); err != nil {
 		return fmt.Errorf("%s: %w", what, err)
 	}
+	if t.Kind == value.Symbol && t.Symbols == nil {
+		return fmt.Errorf("%s: cannot tell the alternatives of the symbol", what)
+	}
 	return nil
 }
 
@@ -127,6 +130,13 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
 	result := f.Result.Subst(bound)
 	if f.Result.Kind == value.Product && len(f.Result.Args) == 0 {
 		result = value.ProductOf(ca.product...)
+	}
+	if f.SymbolsFrom != "" {
+		var alternatives []string
+		for _, e := range ca.values[f.SymbolsFrom].Elems {
+			alternatives = append(alternatives, e.Str)
+		}
+		result = value.SymbolOf(alternatives...)
 	}
 	if err := concrete(result, name); err != nil {
 		return value.Type{}, nil, err

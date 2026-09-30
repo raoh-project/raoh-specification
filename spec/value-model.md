@@ -19,9 +19,13 @@ type arguments in angle brackets. A single upper-case letter is a type parameter
 | `float64` | IEEE 754 binary64 values, likewise | see below |
 | `decimal` | a coefficient (an integer) and a scale (an integer): coefficient × 10^-scale | coefficient and scale both equal |
 | `string` | sequences of Unicode scalar values | equal |
-| `symbol` | the name of one of a fixed set of alternatives, as the decoder that produced it lists them | equal |
+| `symbol<"A","B",...>` | one of the listed alternatives; the alternatives are part of the type, so `symbol<"RED","GREEN">` and `symbol<"YES","NO">` are different types. `enum` gives the symbol type of the names it lists. | equal |
 | `uuid` | 128-bit UUIDs | equal |
 | `uri` | URI references | equal as written |
+
+The domain of `uri` is URI references. Version 0.8.0 does not yet say which grammar defines them
+(see the issue on the URI domain); its observation is a JSON string, and the verifier compares the
+text without checking that it belongs to the domain.
 
 Two floats are the same when they are the same IEEE 754 value, with two exceptions to what the
 IEEE 754 comparison says: +0 and -0 are different values, and every NaN is the same value as every

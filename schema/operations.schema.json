@@ -53,6 +53,7 @@
         "args": {"type": "array", "items": {"$ref": "#/$defs/arg"}},
         "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}},
         "issue_order": {"const": "input"},
+        "symbols_from": {"type": "string", "description": "The value argument whose strings are the alternatives of the symbol type the form gives."},
         "requires": {
           "type": "array",
           "items": {
