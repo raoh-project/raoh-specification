@@ -64,8 +64,9 @@
       "flow": {"arg": "fields"}
     },
     "strictObject": {
-      "doc": "As object, and in addition gives unknown_field, at the member's path, for every member of an object input that no field names, in the order of the input's members.",
+      "doc": "As object, and in addition gives unknown_field, at the member's path, for every member of an object input that no field names, in the order of the input's members. Every field names its member: a flat field, which reads the whole input, would leave the members it reads unknown.",
       "args": [{"name": "fields", "kind": "fields"}],
+      "requires": [{"check": "named_fields", "args": ["fields"]}],
       "result": "product",
       "issues": [{"key": "unknown_field", "meta": {"field": {"member": true}}}],
       "flow": {"cat": [{"arg": "fields"}, {"unknown_members": {"known": {"fields": "fields"}, "issue": "unknown_field"}}]}
@@ -110,14 +111,14 @@
       "flow": {"chain": [{"arg": "string"}, "own"]}
     },
     "discriminate": {
-      "doc": "Reads the tag, the string at the tag field, and decodes the whole input with the variant the tag names. A non-object input gives type_mismatch (expected \"object\") and a missing or null tag gives required, both at the tag field's path. A tag that names no variant gives not_allowed at the tag field's path, with allowed listing the variant names in code point order and no actual.",
+      "doc": "Reads the tag, the member the tag field names, with the string decoder, and decodes the whole input with the variant the tag names. At the tag field's path, a non-object input gives type_mismatch (expected \"object\"), and a missing, null or non-string tag gives what the string decoder gives for it: required, or type_mismatch (expected \"string\"). A tag that names no variant gives not_allowed at the tag field's path, with allowed listing the variant names in code point order and no actual.",
       "args": [
         {"name": "field", "kind": "value", "type": "string"},
         {"name": "variants", "kind": "variants", "type": "T"}
       ],
       "result": "T",
-      "issues": [{"key": "required"}, {"key": "type_mismatch", "meta": {"expected": {"const": "object"}}}, {"key": "not_allowed", "T": "string", "omit": ["actual"], "meta": {"allowed": {"sorted_keys": "variants"}}}],
-      "flow": {"chain": [{"at": {"member": "field", "flow": "own"}}, {"arg": "variants"}]}
+      "issues": [{"key": "type_mismatch", "meta": {"expected": {"const": "object"}}}, {"key": "not_allowed", "T": "string", "omit": ["actual"], "meta": {"allowed": {"sorted_keys": "variants"}}}],
+      "flow": {"chain": [{"at": {"member": "field", "flow": {"chain": ["own", {"form": ["string"]}]}}}, {"arg": "variants"}]}
     },
     "discriminateBy": {
       "doc": "As discriminate, except that the tag is what the tag decoder gives for the whole input; the tag decoder's issues are given as they are. A tag that names no variant gives not_allowed at the tag field's path, as discriminate does.",
@@ -244,7 +245,8 @@
     {"name": "oneOf", "receivers": ["string"], "result": "string",
      "issues": [{"key": "not_allowed", "T": "string", "meta": {"allowed": {"sorted": "allowed"}}}],
      "args": [{"name": "allowed", "kind": "value", "type": "list<string>"}],
-     "doc": "Gives not_allowed, with allowed in code point order, when the string is none of the allowed ones.",
+     "requires": [{"check": "distinct", "args": ["allowed"]}],
+     "doc": "Gives not_allowed, with allowed in code point order, when the string is none of the allowed ones. The allowed strings are distinct.",
      "flow": "own"},
     {"name": "startsWith", "receivers": ["string"], "result": "string",
      "issues": [{"key": "invalid_format.starts_with", "meta": {"prefix": {"arg": "prefix"}}}],
@@ -377,7 +379,8 @@
     {"name": "oneOf", "receivers": ["int32", "int64", "float32", "float64"], "result": "R",
      "issues": [{"key": "not_allowed", "T": "R", "meta": {"allowed": {"sorted": "allowed"}}}],
      "args": [{"name": "allowed", "kind": "value", "type": "list<R>"}],
-     "doc": "Gives not_allowed, with allowed in ascending order, when the value is none of the allowed ones, compared as the value model compares them (for floats, +0 and -0 differ).",
+     "requires": [{"check": "distinct", "args": ["allowed"]}],
+     "doc": "Gives not_allowed, with allowed in ascending order, when the value is none of the allowed ones, compared as the value model compares them (for floats, +0 and -0 differ, and NaN is NaN). The allowed values are distinct as the value model compares them.",
      "flow": "own"},
     {"name": "multipleOf", "receivers": ["int32", "int64", "decimal"], "result": "R",
      "issues": [{"key": "not_multiple_of", "T": "R", "meta": {"divisor": {"arg": "divisor"}}}],
@@ -471,15 +474,17 @@
       "input": "string"
     },
     "object": {
-      "doc": "Encodes the value as a JSON object with one member per property, in declaration order.",
+      "doc": "Encodes the value as a JSON object with one member per property, in declaration order. No two properties write the same member.",
       "args": [{"name": "properties", "kind": "properties", "type": "T"}],
+      "requires": [{"check": "distinct_members", "args": ["properties"]}],
       "input": "T"
     }
   },
   "properties": {
     "propertyWithDefault": {
-      "doc": "A member whose value is the getter's result encoded, or the default when the getter gives null.",
+      "doc": "The member name, whose value is what the encoder gives for the getter's result, or for the default when the getter gives null.",
       "input": "T",
+      "member": "name",
       "args": [
         {"name": "name", "kind": "value", "type": "string"},
         {"name": "getter", "kind": "fixture", "fixture": "getter", "input": "T", "output": "nullable<P>"},

@@ -279,6 +279,15 @@ func TestRegistryInvariants(t *testing.T) {
 			c.ops["operations"] = append(c.ops["operations"].([]any), doc{"name": "probe", "doc": "x", "receivers": []any{"string"}, "result": "R",
 				"issues": []any{doc{"key": "probe", "T": "nullable<R>"}}, "flow": "own"})
 		}, false, true, "operation probe on string: issue probe meta x is a optional<nullable<string>>"},
+		{"members known by fields not required to be named", func(c catalogs) {
+			delete(section(c.ops, "constructors", "strictObject"), "requires")
+		}, false, false, "does not require to be named_fields"},
+		{"a property that names no member", func(c catalogs) {
+			delete(section(c.ops, "properties", "propertyWithDefault"), "member")
+		}, true, false, "does not say which argument names the member"},
+		{"a condition of the wrong kind of argument", func(c catalogs) {
+			operation(c.ops, "minLength")["requires"] = []any{doc{"check": "distinct", "args": []any{"min"}}}
+		}, false, false, "and it reads a list"},
 		{name: "a fixture issue with an empty message", edit: func(c catalogs) {
 			c.fixtures["even"].(doc)["issue"].(doc)["message"] = ""
 		}},
