@@ -24,7 +24,7 @@ type arguments in angle brackets. A single upper-case letter is a type parameter
 | `uri` | URI references | equal as written |
 
 The domain of `uri` is URI references. Version 0.8.0 does not yet say which grammar defines them
-(see the issue on the URI domain); its observation is a JSON string, and the verifier compares the
+(raoh-project/raoh-specification#9); its observation is a JSON string, and the verifier compares the
 text without checking that it belongs to the domain.
 
 Two floats are the same when they are the same IEEE 754 value, with two exceptions to what the
