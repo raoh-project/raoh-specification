@@ -5,6 +5,8 @@
 package compare
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -21,25 +23,25 @@ func Expected(c *suite.Case, observed suite.Outcome) (bool, string) {
 			return false, "the encoder failed"
 		}
 		if !value.EqualJSON(c.OK, observed.OK) {
-			return false, fmt.Sprintf("expected %s, observed %s", c.OK.Raw, observed.OK.Raw)
+			return false, fmt.Sprintf("expected %s, observed %s", compact(c.OK), compact(observed.OK))
 		}
 		return true, ""
 	}
 	if c.OK != nil {
 		if observed.Failed() {
-			return false, fmt.Sprintf("expected ok %s, observed issues %s", c.OK.Raw, describe(observed.Issues))
+			return false, fmt.Sprintf("expected ok %s, observed issues %s", compact(c.OK), describe(observed.Issues))
 		}
 		v, err := value.Observe(c.Checked.Result, observed.OK)
 		if err != nil {
 			return false, fmt.Sprintf("the observation is not a %s: %v", c.Checked.Result, err)
 		}
 		if !value.Equal(c.OKValue, v) {
-			return false, fmt.Sprintf("expected ok %s, observed ok %s", c.OK.Raw, observed.OK.Raw)
+			return false, fmt.Sprintf("expected ok %s, observed ok %s", compact(c.OK), compact(observed.OK))
 		}
 		return true, ""
 	}
 	if !observed.Failed() {
-		return false, fmt.Sprintf("expected issues, observed ok %s", observed.OK.Raw)
+		return false, fmt.Sprintf("expected issues, observed ok %s", compact(observed.OK))
 	}
 	if why := suite.Match(c.Issues, observed.Issues, c.Catalog); why != "" {
 		return false, why
@@ -70,7 +72,7 @@ func Same(c *suite.Case, declared, observed suite.Outcome) (bool, string) {
 	if !declared.Failed() {
 		if c.Encoder {
 			if !value.EqualJSON(declared.OK, observed.OK) {
-				return false, fmt.Sprintf("declared %s, observed %s", declared.OK.Raw, observed.OK.Raw)
+				return false, fmt.Sprintf("declared %s, observed %s", compact(declared.OK), compact(observed.OK))
 			}
 			return true, ""
 		}
@@ -83,7 +85,7 @@ func Same(c *suite.Case, declared, observed suite.Outcome) (bool, string) {
 			return false, fmt.Sprintf("the observation is not a %s: %v", c.Checked.Result, err)
 		}
 		if !value.Equal(a, b) {
-			return false, fmt.Sprintf("declared ok %s, observed ok %s", declared.OK.Raw, observed.OK.Raw)
+			return false, fmt.Sprintf("declared ok %s, observed ok %s", compact(declared.OK), compact(observed.OK))
 		}
 		return true, ""
 	}
@@ -113,9 +115,19 @@ func asWritten(d, o suite.Issue) string {
 		return "the messages differ"
 	}
 	if !value.EqualJSON(d.Meta, o.Meta) {
-		return fmt.Sprintf("meta %s, observed %s", d.Meta.Raw, o.Meta.Raw)
+		return fmt.Sprintf("meta %s, observed %s", compact(d.Meta), compact(o.Meta))
 	}
 	return ""
+}
+
+// compact writes a JSON value on one line, whatever the whitespace it was written with, so that a
+// reason reads the same whichever file the value came from.
+func compact(n *jsontext.Node) string {
+	var b bytes.Buffer
+	if err := json.Compact(&b, n.Raw); err != nil {
+		return string(n.Raw)
+	}
+	return b.String()
 }
 
 func describe(issues []suite.Issue) string {

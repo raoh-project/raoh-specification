@@ -22,5 +22,6 @@
   {"id": "R000187", "title": "list(int).toSet() accepts []", "decoder": ["list",["int"],["toSet"]], "input": [], "ok": []},
   {"id": "R000188", "title": "list(int).toSet() rejects [1,\"a\"] with type_mismatch at /1", "decoder": ["list",["int"],["toSet"]], "input": [1,"a"], "issues": [{"path":"/1","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"string","expected":"integer"}}]},
   {"id": "R000189", "title": "list(int).maxSize(2).toSet() accepts [1,2]", "decoder": ["list",["int"],["maxSize",2],["toSet"]], "input": [1,2], "ok": [1,2]},
-  {"id": "R000190", "title": "list(int).maxSize(2).toSet() rejects [1,2,3] with too_big", "decoder": ["list",["int"],["maxSize",2],["toSet"]], "input": [1,2,3], "issues": [{"path":"","code":"too_big","message_key":"too_big","meta":{"actual":3,"max":2}}]}
+  {"id": "R000190", "title": "list(int).maxSize(2).toSet() rejects [1,2,3] with too_big", "decoder": ["list",["int"],["maxSize",2],["toSet"]], "input": [1,2,3], "issues": [{"path":"","code":"too_big","message_key":"too_big","meta":{"actual":3,"max":2}}]},
+  {"id": "R000834", "title": "list(int).unique() rejects [1,2,2,1] with duplicate_element, listing 2 before 1", "decoder": ["list",["int"],["unique"]], "input": [1,2,2,1], "issues": [{"path":"","code":"duplicate_element","message_key":"duplicate_element","meta":{"duplicates":[2,1]}}]}
 ]
