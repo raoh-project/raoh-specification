@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/raoh-project/raoh-specification/internal/catalog"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
@@ -50,32 +52,51 @@ func rejected(t *testing.T, c *Checker, form, why string) {
 
 func issue(t *testing.T, checked *Checked, key string) *Site {
 	t.Helper()
-	var all []*Site
+	var found *Site
 	var walk func(f Flow)
 	walk = func(f Flow) {
 		switch f := f.(type) {
 		case *Site:
-			all = append(all, f)
-		case Seq:
+			if f.Key == key && found == nil {
+				found = f
+			}
+		case *Alt:
 			for _, i := range f.Items {
 				walk(i)
 			}
+		case *Cat:
+			for _, i := range f.Items {
+				walk(i)
+			}
+		case *Chain:
+			for _, i := range f.Items {
+				walk(i)
+			}
+		case *Repeat:
+			walk(f.Body)
+		case *At:
+			walk(f.Body)
 		case *Unordered:
-			walk(f.Body)
-		case Repeat:
-			walk(f.Body)
-		case At:
-			walk(f.Body)
+			walk(f.Site)
 		}
 	}
 	walk(checked.Flow)
-	for _, p := range all {
-		if p.Key == key {
-			return p
-		}
+	if found == nil {
+		t.Fatalf("no site %s in %s", key, Describe(checked.Flow))
 	}
-	t.Fatalf("no site %s among %v", key, Describe(checked.Flow))
-	return nil
+	return found
+}
+
+// gives reports whether a decoder can give a list of issues, each written "path key", for an
+// input, reading an issue at a site by its path and key alone.
+func gives(t *testing.T, c *Checker, form, input string, issues ...string) bool {
+	t.Helper()
+	d := decoder(t, c, form)
+	fit := func(i int, slot Slot) (string, bool) {
+		want := JoinPath(slot.Path) + " " + slot.Key
+		return slot.Group, issues[i] == want
+	}
+	return len(ParseIssues(d.Flow, jsontext.MustParse(input), nil, len(issues), fit)) > 0
 }
 
 func TestResultTypes(t *testing.T) {
@@ -170,71 +191,88 @@ func TestPossibleIssuesAreInstantiated(t *testing.T) {
 
 func TestReplacedIssuesAreNotPossible(t *testing.T) {
 	c := checker(t)
-	d := decoder(t, c, `["recover", ["int", ["min", 1]], 1]`)
-	if got := Describe(d.Flow); len(got) != 0 {
-		t.Errorf("recover can give %v", got)
+	if got := Describe(decoder(t, c, `["recover", ["int", ["min", 1]], 1]`).Flow); got != "alt()" {
+		t.Errorf("recover gives %s", got)
 	}
-	d = decoder(t, c, `["oneOf", [["int", ["map", "decimal_string"]], ["string", ["minLength", 3]]]]`)
+	d := decoder(t, c, `["oneOf", [["int", ["map", "decimal_string"]], ["string", ["minLength", 3]]]]`)
 	one := issue(t, d, "one_of_failed")
-	if got := Describe(d.Flow); len(got) != 1 || len(one.Candidates) != 2 {
-		t.Errorf("oneOf can give %v", got)
+	if len(one.Candidates) != 2 {
+		t.Errorf("oneOf has %d candidates", len(one.Candidates))
 	}
-	if got := strings.Join(Describe(one.Candidates[1]), "|"); got != " required| type_mismatch| too_short" {
-		t.Errorf("the second candidate's sites: %s", got)
+	if got := Describe(one.Candidates[1]); got != "chain(alt(alt(), required, type_mismatch), alt(alt(), too_short))" {
+		t.Errorf("the second candidate: %s", got)
 	}
 }
 
-// A flow keeps where each issue arises and which issues come in the input's order, so that
-// neither is lost to the rest of the decoder. Within a form, the flows of its arguments come
-// first and its own issues after them; each Unordered has its own ID.
-func TestFlowsKeepPathsAndOrder(t *testing.T) {
+// A flow follows the expressions operations.json declares: a form's own issues exclude each
+// other, an operation runs only if what comes before it succeeded, fields aggregate, variants
+// exclude each other, and a strict form reports every member it does not know.
+func TestFlowsFollowTheDeclaredExpressions(t *testing.T) {
 	c := checker(t)
 	for form, want := range map[string]string{
-		`["object", [["field", "name", ["string"]], ["optionalField", "nick", ["int", ["min", 1]]]]]`: "" +
-			"/name required|/name type_mismatch|/name type_mismatch|/nick required|/nick type_mismatch|/nick type_mismatch.numeric_range|/nick out_of_range.minimum",
-		`["list", ["object", [["field", "q", ["int", ["positive"]]]]], ["nonempty"]]`: "" +
-			"/*/q required|/*/q type_mismatch|/*/q type_mismatch.numeric_range|/*/q out_of_range.positive|/*/q type_mismatch|" +
-			" required| type_mismatch| too_small.nonempty",
-		`["strict", ["object", [["field", "w", ["int"]]]], ["kind", "w"]]`: "" +
-			"/w required|/w type_mismatch|/w type_mismatch.numeric_range|/w type_mismatch|/*-{kind,w} unknown_field (unordered#1)",
+		`["int"]`: "alt(alt(), required, type_mismatch, type_mismatch.numeric_range)",
+		`["string", ["minLength", 3], ["email"]]`: "chain(chain(alt(alt(), required, type_mismatch), alt(alt(), too_short)), alt(alt(), invalid_format.email))",
+		`["list", ["int"]]`:                       "alt(alt(alt(), required, type_mismatch), each_elements(alt(alt(), required, type_mismatch, type_mismatch.numeric_range)))",
 		`["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a", "x"]], ["a", "y"]]`: "" +
-			"/a required|/a type_mismatch|/a type_mismatch.numeric_range|/a type_mismatch|" +
-			"/*-{a,x} unknown_field (unordered#1)|/*-{a,y} unknown_field (unordered#2)",
-		`["discriminate", "kind", {"a": ["strictObject", [["field", "x", ["int"]]]]}]`: "" +
-			"/x required|/x type_mismatch|/x type_mismatch.numeric_range|/x type_mismatch|/*-{x} unknown_field (unordered#1)|" +
-			"/kind required|/kind type_mismatch|/kind not_allowed",
-		`["object", [["field", "p", ["object", [["field", "s", ["int"]], ["field", "e", ["int"]]], ["flatMap", "ordered_period"]]]]]`: "" +
-			"/p/s required|/p/s type_mismatch|/p/s type_mismatch.numeric_range|/p/s type_mismatch|" +
-			"/p/e required|/p/e type_mismatch|/p/e type_mismatch.numeric_range|/p/e type_mismatch|/p/end invalid_value|/p type_mismatch",
+			"cat(cat(cat(at(a, alt(alt(alt(), type_mismatch), alt(alt(), required, type_mismatch, type_mismatch.numeric_range)))), unknown#1(except a,x: unknown_field)), unknown#2(except a,y: unknown_field))",
+		`["recover", ["int"], 1]`: "alt()",
 	} {
-		if got := strings.Join(Describe(decoder(t, c, form).Flow), "|"); got != want {
+		if got := Describe(decoder(t, c, form).Flow); got != want {
 			t.Errorf("%s:\n got %s\nwant %s", form, got, want)
 		}
 	}
-	rejected(t, c, `["strictObject", [["flat", ["object", [["field", "a", ["int"]]]]]]]`, "flat field")
+	rejected(t, c, `["strictObject", [["flat", ["object", [["field", "a", ["int"]]]]]]]`, "reads the whole input")
 }
 
-// For an input, a flow's repeats expand over its elements and members, and a strict form's
-// unknown members are the ones it does not know.
-func TestInstantiate(t *testing.T) {
+// The flow is the language of the issue lists a decoder can give: nothing more.
+func TestFlowsAreExactLanguages(t *testing.T) {
 	c := checker(t)
-	d := decoder(t, c, `["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a", "x"]], ["a", "y"]]`)
-	var got []string
-	for _, s := range Instantiate(d.Flow, jsontext.MustParse(`{"a": 1, "x": 1, "y": 1, "z": 1}`), nil) {
-		if s.Key == "unknown_field" {
-			got = append(got, JoinPath(s.Path)+" "+s.Group)
+	for _, x := range []struct {
+		form, input string
+		issues      []string
+		ok          bool
+	}{
+		{`["int"]`, `null`, []string{" required"}, true},
+		{`["int"]`, `null`, []string{" required", " type_mismatch"}, false},
+		{`["int"]`, `null`, nil, true},
+		{`["string", ["minLength", 3], ["email"]]`, `"a"`, []string{" too_short"}, true},
+		{`["string", ["minLength", 3], ["email"]]`, `"a"`, []string{" invalid_format.email"}, true},
+		{`["string", ["minLength", 3], ["email"]]`, `"a"`, []string{" too_short", " invalid_format.email"}, false},
+		{`["object", [["field", "a", ["int"]], ["field", "b", ["int"]]]]`, `{}`, []string{"/a required", "/b required"}, true},
+		{`["object", [["field", "a", ["int"]], ["field", "b", ["int"]]]]`, `{}`, []string{"/b required", "/a required"}, false},
+		{`["discriminate", "kind", {"a": ["object", [["field", "x", ["int"]]]], "b": ["object", [["field", "y", ["int"]]]]}]`, `{"kind": "a"}`, []string{"/x required"}, true},
+		{`["discriminate", "kind", {"a": ["object", [["field", "x", ["int"]]]], "b": ["object", [["field", "y", ["int"]]]]}]`, `{"kind": "a"}`, []string{"/x required", "/y required"}, false},
+		{`["list", ["int", ["min", 1]]]`, `[0, 0]`, []string{"/0 out_of_range.minimum", "/1 out_of_range.minimum"}, true},
+		{`["list", ["int"]]`, `[1]`, []string{" type_mismatch", "/0 required"}, false},
+		// Every member a strict form does not know is reported, in any order within its group.
+		{`["strictObject", [["field", "a", ["int"]]]]`, `{"a": 1, "b": 1, "c": 1}`, []string{"/c unknown_field", "/b unknown_field"}, true},
+		{`["strictObject", [["field", "a", ["int"]]]]`, `{"a": 1, "b": 1, "c": 1}`, []string{"/b unknown_field"}, false},
+		{`["strictObject", [["field", "a", ["int"]]]]`, `{"a": 1, "b": 1}`, nil, false},
+		// Two strict forms on one object are two groups, the inner first.
+		{`["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a", "x"]], ["a", "y"]]`, `{"a": 1, "x": 1, "y": 1}`, []string{"/y unknown_field", "/x unknown_field"}, true},
+		{`["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a", "x"]], ["a", "y"]]`, `{"a": 1, "x": 1, "y": 1}`, []string{"/x unknown_field", "/y unknown_field"}, false},
+	} {
+		if got := gives(t, c, x.form, x.input, x.issues...); got != x.ok {
+			t.Errorf("%s on %s gives %v: %v, want %v", x.form, x.input, x.issues, got, x.ok)
 		}
 	}
-	want := []string{`/y unordered#1 at ""`, `/z unordered#1 at ""`, `/x unordered#2 at ""`, `/z unordered#2 at ""`}
-	if !slices.Equal(got, want) {
-		t.Errorf("got %v", got)
+}
+
+// The parser keeps, for each node, path and position, where its parses end, so a decoder with
+// many alternatives over many elements is parsed quickly.
+func TestParsingDoesNotExplode(t *testing.T) {
+	c := checker(t)
+	var elems, issues []string
+	for i := 0; i < 200; i++ {
+		elems = append(elems, "0")
+		issues = append(issues, "/"+strconv.Itoa(i)+" out_of_range.minimum")
 	}
-	d = decoder(t, c, `["list", ["int"]]`)
-	if n := len(Instantiate(d.Flow, jsontext.MustParse(`[1, 2, 3]`), nil)); n != 3*3+2 {
-		t.Errorf("a list of three gives %d slots", n)
+	start := time.Now()
+	if !gives(t, c, `["list", ["int", ["min", 1], ["max", 5], ["multipleOf", 2]]]`, "["+strings.Join(elems, ",")+"]", issues...) {
+		t.Error("200 failing elements are not a list the decoder gives")
 	}
-	if n := len(Instantiate(d.Flow, jsontext.MustParse(`{"a": 1}`), nil)); n != 2 {
-		t.Errorf("a list decoder given an object gives %d slots", n)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("took %v", d)
 	}
 }
 
@@ -324,5 +362,62 @@ func TestEnumsGiveTheirSymbols(t *testing.T) {
 	c := checker(t)
 	if got := decoder(t, c, `["enum", ["RED", "GREEN"], ["string"]]`).Result.String(); got != `symbol<"RED","GREEN">` {
 		t.Errorf("enum gives %s", got)
+	}
+}
+
+// Every reference in operations.json is resolved when the registry is loaded, and a reference
+// that does not resolve is an error there, never a meaning the checker falls back to.
+func TestReferencesResolveWhenLoaded(t *testing.T) {
+	ops, err := os.ReadFile("../../catalog/operations.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx, _ := os.ReadFile("../../catalog/fixtures.json")
+	operation := func(doc map[string]any, name, receiver string) map[string]any {
+		for _, o := range doc["operations"].([]any) {
+			op := o.(map[string]any)
+			if op["name"] == name && slices.Contains(op["receivers"].([]any), any(receiver)) {
+				return op
+			}
+		}
+		t.Fatalf("no operation %s on %s", name, receiver)
+		return nil
+	}
+	for name, x := range map[string]struct {
+		edit func(doc map[string]any)
+		why  string
+	}{
+		"a metadata source naming no argument": {func(doc map[string]any) {
+			op := operation(doc, "min", "int32")
+			op["issues"].([]any)[0].(map[string]any)["meta"] = map[string]any{"min": map[string]any{"arg": "mni"}}
+		}, "reads mni"},
+		"a flow naming no argument": {func(doc map[string]any) {
+			doc["constructors"].(map[string]any)["strict"].(map[string]any)["flow"] = map[string]any{"cat": []any{
+				map[string]any{"arg": "inner"}, map[string]any{"unknown_members": map[string]any{"known": map[string]any{"arg": "knwon"}, "issue": "unknown_field"}}}}
+		}, "knwon"},
+		"a decoder argument the flow leaves out": {func(doc map[string]any) {
+			doc["constructors"].(map[string]any)["nullable"].(map[string]any)["flow"] = "none"
+		}, "places the issues of argument inner 0 times"},
+		"an issue the flow never gives": {func(doc map[string]any) {
+			doc["constructors"].(map[string]any)["enum"].(map[string]any)["flow"] = map[string]any{"arg": "string"}
+		}, "gives none of the issues"},
+		"a member name outside unknown members": {func(doc map[string]any) {
+			op := operation(doc, "min", "int32")
+			op["issues"].([]any)[0].(map[string]any)["meta"] = map[string]any{"min": map[string]any{"member": true}}
+		}, "only for an issue given at members"},
+		"lower-casing a list that is not of strings": {func(doc map[string]any) {
+			op := operation(doc, "oneOf", "int32")
+			op["issues"].([]any)[0].(map[string]any)["meta"] = map[string]any{"allowed": map[string]any{"ascii_lower_sorted": "allowed"}}
+		}, "not a list<string>"},
+	} {
+		var doc map[string]any
+		if err := json.Unmarshal(ops, &doc); err != nil {
+			t.Fatal(err)
+		}
+		x.edit(doc)
+		broken, _ := json.Marshal(doc)
+		if _, err := Parse(broken, fx); err == nil || !strings.Contains(err.Error(), x.why) {
+			t.Errorf("%s: %v, want it to say %q", name, err, x.why)
+		}
 	}
 }

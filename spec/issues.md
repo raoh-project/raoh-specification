@@ -79,38 +79,46 @@ later version.
 
 ## Where issues arise, and in what order
 
-Every decoder has an issue flow, which the verifier builds from the decoder's form and
-`catalog/operations.json`. The flow is a grammar of the issue lists the decoder can give:
+Every form of `catalog/operations.json` declares in its `flow` how it gives its issues. A flow is
+an expression over the lists of issues a decoder can give; the empty list is success.
 
-- A form gives the issues of its decoder arguments first, then its own. A field gives its issues at
-  the path of the member it names; the elements of `list` and the members of `dict` give theirs at
-  each element's or member's path, in order.
-- An operation's own issues arise where it runs, except where `catalog/operations.json` places
-  them at the tag field (`"at": "tag"`, for `discriminate`) or at members of the input
-  (`"at": "member"`): `strict` and `strictObject` report each member they do not know, which is
-  every member not named in `strict`'s `known` argument or among `strictObject`'s fields.
-- A form marked `"issue_order": "input"` gives its issues at members in the order of the input's
-  members. They form an unordered group: one for each such form, and for each object it runs on.
-  Two strict forms on the same object are two groups.
+| Flow | Issue lists |
+|------|-------------|
+| `"own"` | none, or one of the form's own issues (those no other part of the flow names), where the form runs |
+| `"none"` | none |
+| `{"arg": a}` | the lists of decoder argument `a`: of one of its variants, for a variants argument; of its fields one after the other, for a fields argument |
+| `{"cat": [x, y, ...]}` | a list of `x`, then a list of `y`, ... |
+| `{"alt": [x, y, ...]}` | a list of one of `x`, `y`, ... |
+| `{"chain": [x, y, ...]}` | a non-empty list of `x`; or, when `x` gives none, a list of `{"chain": [y, ...]}` |
+| `{"each_element": x}`, `{"each_member": x}` | a list of `x` for each element of an array input, or each member of an object input, in order, at its path |
+| `{"at": {"member": a, "flow": x}}` | a list of `x` at the member the string argument `a` names |
+| `{"unknown_members": {"known": ..., "issue": k}}` | issue `k` for every member of an object input not among the known names (a list argument, or the members the fields of a fields argument read), in any order, at its path |
+| `{"candidates": {"decoders": a, "issue": k}}` | none, or issue `k` listing, for every decoder of argument `a`, the issues it gave |
+| `{"fixture": a}` | none, or the issue the fixture argument `a` declares |
+| `{"discard": [a, ...]}` | none: the issues of the arguments listed never reach the caller |
 
-For a case, the verifier instantiates the flow on the case's input: repeats expand over the
-input's elements and members, and each place an issue can arise at gets its concrete path. The
-case's issues must fit these places in order, each place used at most once, except that the
-issues of one unordered group may come in any order among themselves; the group keeps its place
-among the others, so the unknown members `strict` reports come after the issues of the decoder
-it wraps. Each issue is typed, and its metadata and message settled, at the place it fits. If no
-assignment fits, or two assignments fit that type, word or group an issue differently, the case is
-rejected.
+A decoder's operations run in order, each only if what came before succeeded: the flow of a form
+followed by operations is the chain of the form's flow and each operation's.
 
-A runner's issues are compared with the case's in order, except that consecutive issues of one
-unordered group are compared as a multiset: the same issues, each the same number of times, in
-any order.
+The flow says which issues can come together and in what order; it does not say which of a form's
+own issues arise for an input, and a form may always succeed. `unknown_members` is the one part
+that follows from the input alone: every member the form does not know is reported, so a case must
+list them all, and cannot expect success when there is one. Two `unknown_members` are two groups,
+even on the same object.
+
+For a case, the verifier parses the expected issues with the flow for the case's input: each issue
+takes its place in the flow, where it is typed and its metadata and message are settled. A case
+whose issues the flow does not give, or give in two ways that type, word or group an issue
+differently, is rejected; so is a case that expects success where the flow cannot give the empty
+list. An implementation's issues are parsed the same way, and a list the flow does not give is a
+failure. The two readings are then compared in order, except that the consecutive issues of one
+`unknown_members` group are compared as a multiset.
 
 `one_of_failed` is given only when every candidate failed, and it lists every candidate exactly
-once, by index; the order of the list does not matter. Each candidate's issues are read by that
-candidate's flow on the same input. As raoh-java writes them, they have a path, a code, a message
-and metadata, and no message key. Their message is the one their place gives, as for any other
-issue; a case may write it, and then it has to be that message.
+once, by index; the order of the list does not matter. Each candidate's issues are parsed with
+that candidate's flow on the same input. As raoh-java writes them, they have a path, a code, a
+message and metadata, and no message key. Their message is the one their place gives, as for any
+other issue; a case may write it, and then it has to be that message.
 
 ## Issues from fixtures
 

@@ -28,51 +28,16 @@ type Arg struct {
 	Default *value.Value
 	// OneOf restricts a string value to the values listed.
 	OneOf []string
-	// Flows says where the issues of a decoder argument go.
-	Flows Flows
 	// FixtureKind, FixtureInput and FixtureOutput constrain a fixture argument.
 	FixtureKind   string
 	FixtureInput  value.Type
 	FixtureOutput *value.Type
 }
 
-// Flows says where the issues of a decoder argument go in the form's flow.
-type Flows int
-
-// The placements of an argument's issues.
-const (
-	// FlowsHere puts them where the form runs.
-	FlowsHere Flows = iota
-	// FlowsEachElement repeats them for each element or member, at its path.
-	FlowsEachElement
-	// FlowsCandidates makes them the candidates of the form's one_of_failed.
-	FlowsCandidates
-	// FlowsNone drops them: the form gives something else instead of any failure.
-	FlowsNone
-)
-
-var flowsNames = map[string]Flows{"here": FlowsHere, "each_element": FlowsEachElement, "candidates": FlowsCandidates, "none": FlowsNone}
-
-// Place says where a form gives one of its own issues.
-type Place int
-
-// The places of a form's own issues.
-const (
-	// PlaceHere is where the form runs.
-	PlaceHere Place = iota
-	// PlaceTag is the member its field argument names.
-	PlaceTag
-	// PlaceMember is each member of the input it reports on.
-	PlaceMember
-)
-
-var placeNames = map[string]Place{"here": PlaceHere, "tag": PlaceTag, "member": PlaceMember}
-
 // IssueRef is an issue variant a form can give, with its type parameters bound to types that
 // may mention the form's own parameters.
 type IssueRef struct {
 	Key  string
-	At   Place
 	Bind map[string]value.Type
 	Omit []string
 	// Meta says where the values of metadata entries come from; an entry it does not list is
@@ -88,8 +53,10 @@ type MetaSource struct {
 	Const *jsontext.Node
 	// ByType is the value of a const_by_type, by the type the entry has.
 	ByType map[string]*jsontext.Node
-	// Arg is the argument an arg, sorted, ascii_lower_sorted or sorted_keys source reads.
-	Arg string
+	// Arg is the argument an arg, sorted, ascii_lower_sorted or sorted_keys source reads, by name
+	// as the file writes it and by index once resolved.
+	ArgName string
+	Arg     int
 }
 
 func parseMetaSource(n *jsontext.Node) (MetaSource, error) {
@@ -113,7 +80,7 @@ func parseMetaSource(n *jsontext.Node) (MetaSource, error) {
 		if m.Value.Kind != jsontext.String {
 			return src, fmt.Errorf("%s must name an argument", m.Name)
 		}
-		src.Arg = m.Value.Text
+		src.ArgName = m.Value.Text
 	case "member":
 		if m.Value.Kind != jsontext.Bool || !m.Value.Bool {
 			return src, fmt.Errorf("member must be true")
@@ -137,11 +104,11 @@ type Form struct {
 	// Input is the input type of an encoder.
 	Input  value.Type
 	Issues []IssueRef
-	// InputOrder marks a form whose issues at members come in the order of the input's members.
-	InputOrder bool
-	// SymbolsFrom names the argument whose strings are the alternatives of the symbol type the
-	// form gives.
-	SymbolsFrom string
+	// Flow is how the form gives its issues.
+	Flow Expr
+	// SymbolsFrom is the index of the argument whose strings are the alternatives of the symbol
+	// type the form gives, or -1.
+	SymbolsFrom int
 	// Requires are the conditions its arguments have to meet for the form to exist at all, as
 	// raoh-java refuses to construct the decoder otherwise.
 	Requires []Require
@@ -153,7 +120,7 @@ type Require struct {
 	// nonempty (a list with an element) or distinct_ascii_fold (strings that stay distinct when
 	// A-Z are read as a-z).
 	Check string
-	Args  []string
+	Args  []int
 }
 
 var requireArity = map[string]int{"ordered": 2, "nonzero": 1, "nonempty": 1, "distinct_ascii_fold": 1}
@@ -327,7 +294,7 @@ func typeOf(n *jsontext.Node, name string) (value.Type, bool, error) {
 var argKinds = []string{"decoder", "decoders", "fields", "variants", "value", "message", "fixture", "encoder", "properties"}
 
 func parseForm(name string, n *jsontext.Node) (*Form, error) {
-	f := &Form{Name: name}
+	f := &Form{Name: name, SymbolsFrom: -1}
 	var err error
 	if f.Doc, err = n.String("doc"); err != nil {
 		return nil, err
@@ -356,12 +323,6 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 			}
 		}
 	}
-	if order, ok := str(n, "issue_order"); ok {
-		if order != "input" {
-			return nil, fmt.Errorf("issue_order must be \"input\"")
-		}
-		f.InputOrder = true
-	}
 	if args, ok := n.Get("args"); ok {
 		for _, a := range args.Elems {
 			arg, err := parseArg(a)
@@ -372,10 +333,11 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 		}
 	}
 	if from, ok := str(n, "symbols_from"); ok {
-		if f.Result.Kind != value.Symbol || !slices.ContainsFunc(f.Args, func(a Arg) bool { return a.Name == from && a.Kind == "value" }) {
-			return nil, fmt.Errorf("symbols_from %s needs a symbol result and a value argument %s", from, from)
+		i := f.argIndex(from)
+		if f.Result.Kind != value.Symbol || i < 0 || f.Args[i].Kind != "value" || f.Args[i].Type.String() != "list<string>" {
+			return nil, fmt.Errorf("symbols_from %s needs a symbol result and a list<string> value argument %s", from, from)
 		}
-		f.SymbolsFrom = from
+		f.SymbolsFrom = i
 	}
 	for i, a := range f.Args {
 		if !a.Optional && i > 0 && f.Args[i-1].Optional {
@@ -390,14 +352,15 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 			if err != nil {
 				return nil, err
 			}
-			r.Args = args
-			if want, ok := requireArity[r.Check]; !ok || len(r.Args) != want {
-				return nil, fmt.Errorf("requires %q with %d argument(s) is not a condition", r.Check, len(r.Args))
+			if want, ok := requireArity[r.Check]; !ok || len(args) != want {
+				return nil, fmt.Errorf("requires %q with %d argument(s) is not a condition", r.Check, len(args))
 			}
-			for _, name := range r.Args {
-				if !slices.ContainsFunc(f.Args, func(a Arg) bool { return a.Name == name && a.Kind == "value" }) {
+			for _, name := range args {
+				i := f.argIndex(name)
+				if i < 0 || f.Args[i].Kind != "value" {
 					return nil, fmt.Errorf("requires %s of %s, which is not a value argument", r.Check, name)
 				}
+				r.Args = append(r.Args, i)
 			}
 			f.Requires = append(f.Requires, r)
 		}
@@ -408,10 +371,46 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 			if err != nil {
 				return nil, err
 			}
+			for name, src := range ref.Meta {
+				if src.ArgName == "" {
+					continue
+				}
+				i := f.argIndex(src.ArgName)
+				kind := "value"
+				if src.Kind == "sorted_keys" {
+					kind = "variants"
+				}
+				if i < 0 || f.Args[i].Kind != kind {
+					return nil, fmt.Errorf("issue %s meta %s reads %s, which is not a %s argument", ref.Key, name, src.ArgName, kind)
+				}
+				if src.Kind == "ascii_lower_sorted" && f.Args[i].Type.String() != "list<string>" {
+					return nil, fmt.Errorf("issue %s meta %s lower-cases %s, which is not a list<string>", ref.Key, name, src.ArgName)
+				}
+				if src.Kind == "sorted" && f.Args[i].Type.Kind != value.List {
+					return nil, fmt.Errorf("issue %s meta %s sorts %s, which is not a list", ref.Key, name, src.ArgName)
+				}
+				src.Arg = i
+				ref.Meta[name] = src
+			}
 			f.Issues = append(f.Issues, ref)
 		}
 	}
+	if fl, ok := n.Get("flow"); ok {
+		if f.Flow, err = resolveFlow(f, fl); err != nil {
+			return nil, fmt.Errorf("flow: %w", err)
+		}
+	}
 	return f, nil
+}
+
+// argIndex is the index of the argument with a name, or -1.
+func (f *Form) argIndex(name string) int {
+	for i, a := range f.Args {
+		if a.Name == name {
+			return i
+		}
+	}
+	return -1
 }
 
 // needs checks that a form has the types its section requires, so that a type the file leaves
@@ -419,6 +418,9 @@ func parseForm(name string, n *jsontext.Node) (*Form, error) {
 func (f *Form) needs(name, section string, result, input bool) error {
 	if result && f.Result.Kind == value.Invalid {
 		return fmt.Errorf("operations.json: %s %s has no result type", section, name)
+	}
+	if result && f.Flow == nil {
+		return fmt.Errorf("operations.json: %s %s has no flow", section, name)
 	}
 	if input && f.Input.Kind == value.Invalid {
 		return fmt.Errorf("operations.json: %s %s has no input type", section, name)
@@ -458,13 +460,6 @@ func parseArg(n *jsontext.Node) (Arg, error) {
 	if o, ok := n.Get("optional"); ok && o.Kind == jsontext.Bool {
 		a.Optional = o.Bool
 	}
-	if fl, ok := n.Get("flows"); ok {
-		v, ok := flowsNames[fl.Text]
-		if !ok {
-			return a, fmt.Errorf("argument %s: flows %q is not a placement", a.Name, fl.Text)
-		}
-		a.Flows = v
-	}
 	if d, ok := n.Get("default"); ok {
 		v, err := value.Observe(a.Type, d)
 		if err != nil {
@@ -502,12 +497,6 @@ func parseIssueRef(n *jsontext.Node) (IssueRef, error) {
 		switch {
 		case m.Name == "key":
 			ref.Key = m.Value.Text
-		case m.Name == "at":
-			at, ok := placeNames[m.Value.Text]
-			if !ok {
-				return ref, fmt.Errorf("at %q is not a place", m.Value.Text)
-			}
-			ref.At = at
 		case m.Name == "omit":
 			for _, e := range m.Value.Elems {
 				ref.Omit = append(ref.Omit, e.Text)

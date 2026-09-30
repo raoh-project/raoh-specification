@@ -249,3 +249,30 @@ func TestCandidatesAreComplete(t *testing.T) {
 	rejected(t, "core", c(strings.Replace(zero, "must be at least 1", "banana", 1)+","+one), `not "banana"`)
 	rejected(t, "core", c(strings.Replace(zero, `"min": 1`, `"min": 2`, 1)+","+one), "the min 1")
 }
+
+// A case can only expect an issue list the decoder's flow gives: exclusive issues one at a time,
+// nothing after an operation that failed, one variant's issues, and every member a strict form
+// does not know.
+func TestCasesExpectOnlyWhatTheFlowGives(t *testing.T) {
+	issue := func(path, code, key, meta string) string {
+		return `{"path": "` + path + `", "code": "` + code + `", "message_key": "` + key + `", "meta": ` + meta + `}`
+	}
+	c := func(decoder, input string, issues ...string) string {
+		return `[{"id": "R000001", "title": "t", "decoder": ` + decoder + `, "input": ` + input + `, "issues": [` + strings.Join(issues, ", ") + `]}]`
+	}
+	required := issue("", "required", "required", `{}`)
+	mismatch := issue("", "type_mismatch", "type_mismatch", `{"actual": "null", "expected": "integer"}`)
+	rejected(t, "core", c(`["int"]`, `null`, required, mismatch), "together or in this order")
+	accepted(t, "core", c(`["int"]`, `null`, required))
+	short := issue("", "too_short", "too_short", `{"min": 3, "actual": 1}`)
+	email := issue("", "invalid_format", "invalid_format.email", `{}`)
+	rejected(t, "core", c(`["string", ["minLength", 3], ["email"]]`, `"a"`, short, email), "together or in this order")
+	accepted(t, "core", c(`["string", ["minLength", 3], ["email"]]`, `"a"`, short))
+	variants := `["discriminate", "kind", {"a": ["object", [["field", "x", ["int"]]]], "b": ["object", [["field", "y", ["int"]]]]}]`
+	rejected(t, "core", c(variants, `{"kind": "a"}`, issue("/x", "required", "required", `{}`), issue("/y", "required", "required", `{}`)), "together or in this order")
+	strict := `["strictObject", [["field", "a", ["int"]]]]`
+	unknown := func(f string) string { return issue("/"+f, "unknown_field", "unknown_field", `{"field": "`+f+`"}`) }
+	accepted(t, "core", c(strict, `{"a": 1, "b": 1, "c": 1}`, unknown("c"), unknown("b")))
+	rejected(t, "core", c(strict, `{"a": 1, "b": 1, "c": 1}`, unknown("b")), "together or in this order")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": `+strict+`, "input": {"a": 1, "b": 1}, "ok": [1]}]`, "gives issues for this input whatever it does")
+}

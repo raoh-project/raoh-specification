@@ -17,7 +17,7 @@ type Checked struct {
 	Result value.Type
 	// Features are the feature IDs the form needs, sorted.
 	Features []string
-	// Flow is the issues a decoder can give; empty for an encoder.
+	// Flow is the issue lists a decoder can give; Success for an encoder.
 	Flow Flow
 }
 
@@ -64,7 +64,7 @@ func (c *Checker) CheckEncoder(n *jsontext.Node) (*Checked, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.done(t, Seq{}), nil
+	return s.done(t, Success), nil
 }
 
 func head(n *jsontext.Node, what string) (string, error) {
@@ -95,24 +95,28 @@ func concrete(t value.Type, what string) error {
 	return nil
 }
 
-// checkedArgs is what checking a form's arguments gives besides the types it binds.
+// checkedArgs is what checking a form's arguments gives besides the types it binds, by the
+// index of the argument.
 type checkedArgs struct {
-	values map[string]value.Value
-	// flows are the flows of the decoder arguments, by argument name, in the order of the
-	// decoders within the argument.
-	flows map[string][]Flow
-	// fixtures are the fixtures the arguments name.
-	fixtures []*Fixture
-	// fields are the flows of an object's fields and product their types.
-	fields  []Flow
+	values map[int]value.Value
+	// flows are the flows of a decoder argument (one), a decoders argument or a variants
+	// argument (one for each decoder).
+	flows map[int][]Flow
+	// fields are the fields of a fields argument.
+	fields map[int][]field
+	// product is the types of the fields, in order.
 	product []value.Type
-	// fieldNames are the member names of the fields, and flat is set when a field reads the whole
-	// input without naming a member.
-	fieldNames []string
-	flat       bool
-	message    string
-	// keys are the variant names of a variants argument, by argument name.
-	keys map[string][]string
+	// keys are the variant names of a variants argument.
+	keys     map[int][]string
+	fixtures map[int]*Fixture
+	message  string
+}
+
+// field is a checked field: its flow, and the member it reads, if it names one.
+type field struct {
+	flow   Flow
+	member string
+	named  bool
 }
 
 func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
@@ -137,7 +141,7 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
 	if f.Result.Kind == value.Product && len(f.Result.Args) == 0 {
 		result = value.ProductOf(ca.product...)
 	}
-	if f.SymbolsFrom != "" {
+	if f.SymbolsFrom >= 0 {
 		var alternatives []string
 		for _, e := range ca.values[f.SymbolsFrom].Elems {
 			alternatives = append(alternatives, e.Str)
@@ -147,142 +151,151 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
 	if err := concrete(result, name); err != nil {
 		return value.Type{}, nil, err
 	}
-	flow, err := s.formFlow(name, f, bound, ca)
+	flow, err := s.build(name, f, f.Flow, bound, ca)
 	if err != nil {
 		return value.Type{}, nil, err
 	}
+	// Each operation runs only if everything before it succeeded.
 	for _, step := range n.Elems[1+len(f.Args):] {
 		var stepFlow Flow
 		if result, stepFlow, err = s.operation(step, result); err != nil {
 			return value.Type{}, nil, err
 		}
-		flow = Seq{Items: []Flow{flow, stepFlow}}
+		flow = &Chain{Items: []Flow{flow, stepFlow}}
 	}
 	return result, flow, nil
 }
 
-// formFlow builds the flow of a constructor or operation: the flows of its decoder arguments, as
-// each argument's placement says, then its own issues, then the issues of the fixtures it names.
-func (s *state) formFlow(owner string, f *Form, bound map[string]value.Type, ca checkedArgs) (Flow, error) {
-	var items []Flow
-	var candidates []Flow
-	items = append(items, ca.fields...)
-	for _, a := range f.Args {
-		for _, fl := range ca.flows[a.Name] {
-			switch a.Flows {
-			case FlowsHere:
-				items = append(items, fl)
-			case FlowsEachElement:
-				over := Elements
-				if f.Result.Kind == value.Map {
-					over = Members
-				}
-				items = append(items, Repeat{Over: over, Body: fl})
-			case FlowsCandidates:
-				candidates = append(candidates, fl)
-			case FlowsNone:
-			}
-		}
-	}
-	var members []Flow
-	for _, ref := range f.Issues {
-		site, err := s.site(ref, bound, ca)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", owner, err)
-		}
-		site.Message = ca.message
-		if ref.Key == "one_of_failed" {
-			site.Candidates = candidates
-		}
-		switch ref.At {
-		case PlaceHere:
-			items = append(items, site)
-		case PlaceTag:
-			tag, ok := ca.values["field"]
-			if !ok {
-				return nil, fmt.Errorf("%s: an issue at the tag field needs the argument field", owner)
-			}
-			items = append(items, At{Name: tag.Str, Body: site})
-		case PlaceMember:
-			known, err := knownMembers(owner, ca)
+// build turns a form's flow expression into the flow it gives for these arguments.
+func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type, ca checkedArgs) (Flow, error) {
+	all := func(xs []Expr) ([]Flow, error) {
+		var out []Flow
+		for _, e := range xs {
+			fl, err := s.build(owner, f, e, bound, ca)
 			if err != nil {
 				return nil, err
 			}
-			members = append(members, Repeat{Over: Members, Except: known, Body: site})
+			out = append(out, fl)
 		}
+		return out, nil
 	}
-	if len(members) > 0 {
-		var m Flow = Seq{Items: members}
-		if f.InputOrder {
-			s.unordered++
-			m = &Unordered{ID: s.unordered, Body: m}
+	switch x := x.(type) {
+	case *ExprOwn:
+		items := []Flow{Success}
+		for _, i := range x.Issues {
+			site, err := s.site(f.Issues[i], bound, ca)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", owner, err)
+			}
+			items = append(items, site)
 		}
-		items = append(items, m)
-	}
-	for _, fx := range ca.fixtures {
-		if fx.Issue == nil {
-			continue
+		return &Alt{Items: items}, nil
+	case ExprNone, ExprDiscard:
+		return Success, nil
+	case ExprArg:
+		switch f.Args[x.Arg].Kind {
+		case "decoder":
+			return ca.flows[x.Arg][0], nil
+		case "variants":
+			// One variant runs, whichever the tag names.
+			return &Alt{Items: ca.flows[x.Arg]}, nil
+		case "fields":
+			var items []Flow
+			for _, fl := range ca.fields[x.Arg] {
+				items = append(items, fl.flow)
+			}
+			return &Cat{Items: items}, nil
 		}
+		return nil, fmt.Errorf("%s: argument %s gives no flow", owner, f.Args[x.Arg].Name)
+	case ExprCat:
+		items, err := all(x.Items)
+		return &Cat{Items: items}, err
+	case ExprAlt:
+		items, err := all(x.Items)
+		return &Alt{Items: items}, err
+	case ExprChain:
+		items, err := all(x.Items)
+		return &Chain{Items: items}, err
+	case ExprEach:
+		body, err := s.build(owner, f, x.Body, bound, ca)
+		return &Repeat{Over: x.Over, Body: body}, err
+	case ExprAt:
+		member, ok := ca.values[x.Member]
+		if !ok {
+			return nil, fmt.Errorf("%s: the member argument %s is left out", owner, f.Args[x.Member].Name)
+		}
+		body, err := s.build(owner, f, x.Body, bound, ca)
+		return &At{Name: member.Str, Body: body}, err
+	case ExprUnknown:
+		var known []string
+		if x.KnownArg >= 0 {
+			for _, e := range ca.values[x.KnownArg].Elems {
+				known = append(known, e.Str)
+			}
+		} else {
+			for _, fl := range ca.fields[x.KnownFields] {
+				if !fl.named {
+					return nil, fmt.Errorf("%s: a field that reads the whole input leaves the members it knows unknown", owner)
+				}
+				known = append(known, fl.member)
+			}
+		}
+		site, err := s.site(f.Issues[x.Issue], bound, ca)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", owner, err)
+		}
+		s.unordered++
+		return &Unordered{ID: s.unordered, Known: known, Site: site}, nil
+	case ExprCandidates:
+		site, err := s.site(f.Issues[x.Issue], bound, ca)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", owner, err)
+		}
+		site.Candidates = ca.flows[x.Decoders]
+		return &Alt{Items: []Flow{Success, site}}, nil
+	case ExprFixture:
+		fx := ca.fixtures[x.Arg]
 		var fl Flow = &Site{Key: fx.Issue.Key, Code: fx.Issue.Code, Meta: fx.Issue.Meta, Message: fx.Issue.Message}
 		for i := len(fx.Issue.Path) - 1; i >= 0; i-- {
-			fl = At{Name: fx.Issue.Path[i], Body: fl}
+			fl = &At{Name: fx.Issue.Path[i], Body: fl}
 		}
-		items = append(items, fl)
+		return &Alt{Items: []Flow{Success, fl}}, nil
 	}
-	return Seq{Items: items}, nil
+	return nil, fmt.Errorf("%s: an unknown flow expression", owner)
 }
 
-// field checks a field form, and gives the name of the member it reads, or "" for a field that
-// reads the whole input.
-func (s *state) field(n *jsontext.Node) (value.Type, Flow, string, error) {
+// field checks a field form. A field whose flow is at a member reads that member.
+func (s *state) field(n *jsontext.Node) (value.Type, field, error) {
 	name, err := head(n, "field")
 	if err != nil {
-		return value.Type{}, nil, "", err
+		return value.Type{}, field{}, err
 	}
 	f, ok := s.Registry.Fields[name]
 	if !ok {
-		return value.Type{}, nil, "", fmt.Errorf("unknown field kind %q", name)
+		return value.Type{}, field{}, fmt.Errorf("unknown field kind %q", name)
 	}
 	s.features["field."+name] = true
 	if len(n.Elems)-1 != len(f.Args) {
-		return value.Type{}, nil, "", fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
+		return value.Type{}, field{}, fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
 	}
 	bound := map[string]value.Type{}
 	ca, err := s.args(f, f.Args, n.Elems[1:], bound)
 	if err != nil {
-		return value.Type{}, nil, "", fmt.Errorf("%s: %w", name, err)
+		return value.Type{}, field{}, fmt.Errorf("%s: %w", name, err)
 	}
 	result := f.Result.Subst(bound)
 	if err := concrete(result, name); err != nil {
-		return value.Type{}, nil, "", err
+		return value.Type{}, field{}, err
 	}
-	flow, err := s.formFlow(name, f, bound, ca)
+	flow, err := s.build(name, f, f.Flow, bound, ca)
 	if err != nil {
-		return value.Type{}, nil, "", err
+		return value.Type{}, field{}, err
 	}
-	// A field that names a member gives all its issues at that member's path.
-	member, ok := ca.values["name"]
-	if !ok {
-		return result, flow, "", nil
+	out := field{flow: flow}
+	if at, ok := f.Flow.(ExprAt); ok {
+		out.member, out.named = ca.values[at.Member].Str, true
 	}
-	return result, At{Name: member.Str, Body: flow}, member.Str, nil
-}
-
-// knownMembers are the members a form that reports unknown members knows: its known argument,
-// or the names of its fields. A field that reads the whole input leaves them unknown, and
-// raoh-java refuses to construct such a form.
-func knownMembers(owner string, ca checkedArgs) ([]string, error) {
-	if known, ok := ca.values["known"]; ok {
-		var names []string
-		for _, e := range known.Elems {
-			names = append(names, e.Str)
-		}
-		return names, nil
-	}
-	if ca.flat {
-		return nil, fmt.Errorf("%s: a flat field reads the whole input, so the members it knows are not known", owner)
-	}
-	return ca.fieldNames, nil
+	return result, out, nil
 }
 
 func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, Flow, error) {
@@ -332,7 +345,7 @@ func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, Fl
 	if err := concrete(result, name); err != nil {
 		return value.Type{}, nil, err
 	}
-	flow, err := s.formFlow(name, f, bound, ca)
+	flow, err := s.build(name, f, f.Flow, bound, ca)
 	if err != nil {
 		return value.Type{}, nil, err
 	}
@@ -388,8 +401,9 @@ func (s *state) property(n *jsontext.Node) (value.Type, error) {
 // known when values are read and fixtures are matched, and then the conditions the form
 // requires of them.
 func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[string]value.Type) (checkedArgs, error) {
-	ca := checkedArgs{values: map[string]value.Value{}, flows: map[string][]Flow{}, keys: map[string][]string{}}
-	decoder := func(a Arg, n *jsontext.Node) error {
+	ca := checkedArgs{values: map[int]value.Value{}, flows: map[int][]Flow{}, fields: map[int][]field{},
+		keys: map[int][]string{}, fixtures: map[int]*Fixture{}}
+	decoder := func(i int, a Arg, n *jsontext.Node) error {
 		t, flow, err := s.decoder(n)
 		if err != nil {
 			return err
@@ -397,7 +411,7 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 		if !value.Unify(a.Type, t, bound) {
 			return fmt.Errorf("%s: expected a decoder of %s, found one of %s", a.Name, a.Type.Subst(bound), t)
 		}
-		ca.flows[a.Name] = append(ca.flows[a.Name], flow)
+		ca.flows[i] = append(ca.flows[i], flow)
 		return nil
 	}
 	for pass := 0; pass < 3; pass++ {
@@ -406,21 +420,21 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 			var err error
 			switch {
 			case pass == 0 && a.Kind == "decoder":
-				err = decoder(a, v)
+				err = decoder(i, a, v)
 			case pass == 0 && a.Kind == "decoders":
 				if v.Kind != jsontext.Array || len(v.Elems) == 0 {
 					err = fmt.Errorf("%s must be a non-empty array of decoders", a.Name)
 				}
 				for j := 0; err == nil && j < len(v.Elems); j++ {
-					err = decoder(a, v.Elems[j])
+					err = decoder(i, a, v.Elems[j])
 				}
 			case pass == 0 && a.Kind == "variants":
 				if v.Kind != jsontext.Object || len(v.Members) == 0 {
 					err = fmt.Errorf("%s must be a non-empty object of decoders", a.Name)
 				}
 				for j := 0; err == nil && j < len(v.Members); j++ {
-					err = decoder(a, v.Members[j].Value)
-					ca.keys[a.Name] = append(ca.keys[a.Name], v.Members[j].Name)
+					err = decoder(i, a, v.Members[j].Value)
+					ca.keys[i] = append(ca.keys[i], v.Members[j].Name)
 				}
 			case pass == 0 && a.Kind == "fields":
 				if v.Kind != jsontext.Array || len(v.Elems) == 0 {
@@ -428,16 +442,10 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 				}
 				for j := 0; err == nil && j < len(v.Elems); j++ {
 					var t value.Type
-					var flow Flow
-					var member string
-					if t, flow, member, err = s.field(v.Elems[j]); err == nil {
+					var fl field
+					if t, fl, err = s.field(v.Elems[j]); err == nil {
 						ca.product = append(ca.product, t)
-						ca.fields = append(ca.fields, flow)
-						if member == "" {
-							ca.flat = true
-						} else {
-							ca.fieldNames = append(ca.fieldNames, member)
-						}
+						ca.fields[i] = append(ca.fields[i], fl)
 					}
 				}
 			case pass == 0 && a.Kind == "encoder":
@@ -456,17 +464,14 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 					}
 				}
 			case pass == 1 && a.Kind == "value":
-				ca.values[a.Name], err = s.literal(a, v, bound)
+				ca.values[i], err = s.literal(a, v, bound)
 			case pass == 1 && a.Kind == "message":
 				if v.Kind != jsontext.String {
 					err = fmt.Errorf("%s must be a string", a.Name)
 				}
 				ca.message = v.Text
 			case pass == 2 && a.Kind == "fixture":
-				var fx *Fixture
-				if fx, err = s.fixture(a, v, bound); err == nil {
-					ca.fixtures = append(ca.fixtures, fx)
-				}
+				ca.fixtures[i], err = s.fixture(a, v, bound)
 			}
 			if err != nil {
 				return ca, err
@@ -474,7 +479,7 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 		}
 	}
 	for _, r := range f.Requires {
-		if err := meets(r, ca.values); err != nil {
+		if err := meets(f, r, ca.values); err != nil {
 			return ca, err
 		}
 	}
@@ -482,15 +487,16 @@ func (s *state) args(f *Form, args []Arg, nodes []*jsontext.Node, bound map[stri
 }
 
 // meets checks a condition on argument values. An argument left out is not checked.
-func meets(r Require, values map[string]value.Value) error {
+func meets(f *Form, r Require, values map[int]value.Value) error {
 	var vs []value.Value
-	for _, name := range r.Args {
-		v, ok := values[name]
+	for _, i := range r.Args {
+		v, ok := values[i]
 		if !ok {
 			return nil
 		}
 		vs = append(vs, v)
 	}
+	name := func(k int) string { return f.Args[r.Args[k]].Name }
 	switch r.Check {
 	case "ordered":
 		c, err := value.Compare(vs[0], vs[1])
@@ -498,32 +504,36 @@ func meets(r Require, values map[string]value.Value) error {
 			return err
 		}
 		if c > 0 {
-			return fmt.Errorf("%s must not be after %s", r.Args[0], r.Args[1])
+			return fmt.Errorf("%s must not be after %s", name(0), name(1))
 		}
 	case "nonzero":
 		if value.IsZero(vs[0]) {
-			return fmt.Errorf("%s must not be zero", r.Args[0])
+			return fmt.Errorf("%s must not be zero", name(0))
 		}
 	case "nonempty":
 		if len(vs[0].Elems) == 0 {
-			return fmt.Errorf("%s must not be empty", r.Args[0])
+			return fmt.Errorf("%s must not be empty", name(0))
 		}
 	case "distinct_ascii_fold":
 		seen := map[string]string{}
 		for _, e := range vs[0].Elems {
-			folded := strings.Map(func(c rune) rune {
-				if 'A' <= c && c <= 'Z' {
-					return c - 'A' + 'a'
-				}
-				return c
-			}, e.Str)
+			folded := asciiLower(e.Str)
 			if other, dup := seen[folded]; dup {
-				return fmt.Errorf("%s: %q and %q are the same under ASCII case folding", r.Args[0], other, e.Str)
+				return fmt.Errorf("%s: %q and %q are the same under ASCII case folding", name(0), other, e.Str)
 			}
 			seen[folded] = e.Str
 		}
 	}
 	return nil
+}
+
+func asciiLower(s string) string {
+	return strings.Map(func(c rune) rune {
+		if 'A' <= c && c <= 'Z' {
+			return c - 'A' + 'a'
+		}
+		return c
+	}, s)
 }
 
 func (s *state) literal(a Arg, n *jsontext.Node, bound map[string]value.Type) (value.Value, error) {
@@ -587,7 +597,8 @@ func (s *state) fixture(a Arg, n *jsontext.Node, bound map[string]value.Type) (*
 	return fx, nil
 }
 
-// site instantiates an issue reference with the types bound gives the form's parameters.
+// site instantiates an issue reference with the types bound gives the form's parameters and the
+// values its arguments give its metadata.
 func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) (*Site, error) {
 	v, ok := s.Catalog.Variants[ref.Key]
 	if !ok {
@@ -608,15 +619,21 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) 
 	if err != nil {
 		return nil, err
 	}
-	site := &Site{Key: v.Key, Code: v.Code, Meta: meta, Values: map[string]value.Value{}}
+	site := &Site{Key: v.Key, Code: v.Code, Meta: meta, Values: map[string]value.Value{}, Message: ca.message}
+	for _, o := range ref.Omit {
+		if _, ok := meta[o]; !ok {
+			return nil, fmt.Errorf("issue %s has no metadata %s to omit", ref.Key, o)
+		}
+		delete(meta, o)
+	}
 	for name, src := range ref.Meta {
 		t, ok := meta[name]
 		if !ok {
 			return nil, fmt.Errorf("issue %s has no metadata %s", ref.Key, name)
 		}
 		if src.Kind == "member" {
-			if ref.At != PlaceMember || t.Kind != value.String {
-				return nil, fmt.Errorf("issue %s: %s is a member name only for a string at each member", ref.Key, name)
+			if t.Kind != value.String {
+				return nil, fmt.Errorf("issue %s: %s is a member name, and a %s", ref.Key, name, t)
 			}
 			site.MemberMeta = append(site.MemberMeta, name)
 			continue
@@ -629,12 +646,6 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) 
 			site.Values[name] = *val
 		}
 	}
-	for _, o := range ref.Omit {
-		if _, ok := meta[o]; !ok {
-			return nil, fmt.Errorf("issue %s has no metadata %s to omit", ref.Key, o)
-		}
-		delete(meta, o)
-	}
 	for _, o := range v.Optional {
 		if _, ok := meta[o]; ok {
 			site.Optional = append(site.Optional, o)
@@ -643,8 +654,8 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) 
 	return site, nil
 }
 
-// Validate checks that every issue a form declares is in the catalogue with every parameter
-// bound, and that an issue placed at the tag field belongs to a form with a field argument.
+// Validate checks the registry against the issue catalogue: every issue a form declares is in
+// it, with every parameter bound and every metadata source naming an entry the variant has.
 func (c *Checker) Validate() error {
 	var problems []string
 	check := func(owner string, f *Form) {
@@ -659,8 +670,10 @@ func (c *Checker) Validate() error {
 					problems = append(problems, fmt.Sprintf("%s: issue %s does not bind %s", owner, ref.Key, p))
 				}
 			}
-			if ref.At == PlaceTag && !slices.ContainsFunc(f.Args, func(a Arg) bool { return a.Name == "field" && a.Kind == "value" }) {
-				problems = append(problems, fmt.Sprintf("%s: issue %s is at the tag field, and the form has no field argument", owner, ref.Key))
+			for name := range ref.Meta {
+				if _, ok := v.Meta[name]; !ok {
+					problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to give a source", owner, ref.Key, name))
+				}
 			}
 		}
 	}
@@ -682,8 +695,8 @@ func (c *Checker) Validate() error {
 	return nil
 }
 
-// metaValue computes the value a metadata source decides, or nil when an argument it reads was
-// left out of the form.
+// metaValue computes the value a metadata source decides, or nil when the argument it reads was
+// left out of the form (an optional argument).
 func metaValue(src MetaSource, t value.Type, ca checkedArgs) (*value.Value, error) {
 	var v value.Value
 	var err error
@@ -696,16 +709,7 @@ func metaValue(src MetaSource, t value.Type, ca checkedArgs) (*value.Value, erro
 			return nil, fmt.Errorf("const_by_type has no value for %s", t)
 		}
 		v, err = value.Observe(t, n)
-	case "arg":
-		a, ok := ca.values[src.Arg]
-		if !ok {
-			return nil, nil
-		}
-		if !a.Type.Same(t) {
-			return nil, fmt.Errorf("argument %s is a %s, and the entry a %s", src.Arg, a.Type, t)
-		}
-		v = a
-	case "sorted", "ascii_lower_sorted":
+	case "arg", "sorted", "ascii_lower_sorted":
 		a, ok := ca.values[src.Arg]
 		if !ok {
 			return nil, nil
@@ -715,22 +719,20 @@ func metaValue(src MetaSource, t value.Type, ca checkedArgs) (*value.Value, erro
 			v = asciiLowered(a)
 			v.Type = t
 		}
-		if err := sortElems(&v); err != nil {
-			return nil, err
+		if src.Kind != "arg" {
+			if err := sortElems(&v); err != nil {
+				return nil, err
+			}
 		}
 		if !v.Type.Same(t) {
-			return nil, fmt.Errorf("argument %s sorted is a %s, and the entry a %s", src.Arg, v.Type, t)
+			return nil, fmt.Errorf("the source is a %s, and the entry a %s", v.Type, t)
 		}
 	case "sorted_keys":
-		keys, ok := ca.keys[src.Arg]
-		if !ok {
-			return nil, fmt.Errorf("sorted_keys reads %s, which is not a variants argument", src.Arg)
-		}
 		if t.Kind != value.List || t.Args[0].Kind != value.String {
 			return nil, fmt.Errorf("sorted_keys gives a list<string>, and the entry is a %s", t)
 		}
 		v = value.Value{Type: t}
-		for _, k := range keys {
+		for _, k := range ca.keys[src.Arg] {
 			v.Elems = append(v.Elems, value.Value{Type: t.Args[0], Str: k})
 		}
 		if err := sortElems(&v); err != nil {
@@ -750,12 +752,7 @@ func asciiLowered(v value.Value) value.Value {
 	out := value.Value{Type: v.Type, Elems: make([]value.Value, len(v.Elems))}
 	for i, e := range v.Elems {
 		out.Elems[i] = e
-		out.Elems[i].Str = strings.Map(func(c rune) rune {
-			if 'A' <= c && c <= 'Z' {
-				return c - 'A' + 'a'
-			}
-			return c
-		}, e.Str)
+		out.Elems[i].Str = asciiLower(e.Str)
 	}
 	return out
 }

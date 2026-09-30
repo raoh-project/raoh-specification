@@ -35,11 +35,11 @@ type Case struct {
 	// is JSON.
 	OKValue value.Value
 	// Issues are the issues a case expects, when it expects failure.
-	Issues []ExpectedIssue
+	Issues []TypedIssue
+	// Catalog is the issue catalogue the case was read with, which reads an implementation's
+	// issues for it too.
+	Catalog *catalog.Catalog
 }
-
-// Slots lists the places issues can arise at when the case's decoder reads its input.
-func (c *Case) Slots() []dsl.Slot { return dsl.Instantiate(c.Checked.Flow, c.Input, nil) }
 
 // Features returns the features the case needs.
 func (c *Case) Features() []string { return c.Checked.Features }
@@ -145,7 +145,7 @@ func parseCase(file, profile string, n *jsontext.Node, chk *dsl.Checker) (*Case,
 	if n.Kind != jsontext.Object {
 		return nil, fmt.Errorf("expected an object")
 	}
-	c := &Case{File: file, Profile: profile}
+	c := &Case{File: file, Profile: profile, Catalog: chk.Catalog}
 	id, ok := n.Get("id")
 	if !ok || id.Kind != jsontext.String || !IDPattern.MatchString(id.Text) {
 		return nil, fmt.Errorf("id must be R and six digits, such as R000123")
@@ -207,15 +207,20 @@ func parseCase(file, profile string, n *jsontext.Node, chk *dsl.Checker) (*Case,
 		if c.OKValue, err = value.Observe(c.Checked.Result, okNode); err != nil {
 			return nil, fmt.Errorf("ok: %w", err)
 		}
+		if !Succeeds(c.Checked.Flow, c.Input) {
+			return nil, fmt.Errorf("ok: the decoder gives issues for this input whatever it does")
+		}
 		return c, nil
 	}
 	list, err := ParseIssues(issues)
 	if err != nil {
 		return nil, err
 	}
-	if c.Issues, err = Expect(list, c.Slots(), chk.Catalog); err != nil {
+	readings, err := ReadIssues(list, c.Checked.Flow, c.Input, nil, chk.Catalog, CaseIssues)
+	if err != nil {
 		return nil, err
 	}
+	c.Issues = readings[0]
 	return c, nil
 }
 

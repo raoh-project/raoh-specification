@@ -1,5 +1,6 @@
 // Package compare decides whether an outcome a runner observed is the one a case expects, or the
-// one a declaration says the implementation gives instead.
+// one a declaration says the implementation gives instead. An implementation's issues are read
+// against the decoder's flow exactly as the case's are, and the typed readings are compared.
 package compare
 
 import (
@@ -27,7 +28,7 @@ func Expected(c *suite.Case, observed suite.Outcome) (bool, string) {
 	}
 	if c.OK != nil {
 		if observed.Failed() {
-			return false, fmt.Sprintf("expected ok %s, observed issues %s", c.OK.Raw, describeIssues(observed.Issues))
+			return false, fmt.Sprintf("expected ok %s, observed issues %s", c.OK.Raw, describe(observed.Issues))
 		}
 		v, err := value.Observe(c.Checked.Result, observed.OK)
 		if err != nil {
@@ -39,21 +40,19 @@ func Expected(c *suite.Case, observed suite.Outcome) (bool, string) {
 		return true, ""
 	}
 	if !observed.Failed() {
-		return false, fmt.Sprintf("expected issues %s, observed ok %s", describeExpected(c.Issues), observed.OK.Raw)
+		return false, fmt.Sprintf("expected issues, observed ok %s", observed.OK.Raw)
 	}
-	return matchExpectedList(c.Issues, observed.Issues)
-}
-
-func matchExpectedList(expected []suite.ExpectedIssue, observed []suite.Issue) (bool, string) {
-	groups := make([]string, len(expected))
-	for i, e := range expected {
-		groups[i] = e.Group
+	readings, err := suite.ReadIssues(observed.Issues, c.Checked.Flow, c.Input, nil, c.Catalog, suite.ObservedIssues)
+	if err != nil {
+		return false, fmt.Sprintf("the implementation's issues %s: %v", describe(observed.Issues), err)
 	}
-	return matchRuns(groups, len(observed),
-		func(i, j int) string { return matchExpected(expected[i], observed[j]) },
-		func() string {
-			return fmt.Sprintf("expected %s, observed %s", describeExpected(expected), describeIssues(observed))
-		})
+	var why string
+	for _, r := range readings {
+		if why = Lists(c.Issues, r, againstPlace); why == "" {
+			return true, ""
+		}
+	}
+	return false, why
 }
 
 // Observation checks that an outcome is one a runner could write for the case: an ok that is an
@@ -69,7 +68,8 @@ func Observation(c *suite.Case, o suite.Outcome) error {
 }
 
 // Same reports whether two observed outcomes of a case are the same: a runner's and the one a
-// divergence declares.
+// divergence declares. Issues that fit the decoder's flow are read and compared as the case's are;
+// a divergence's issues need not fit it, and those are compared as written, in order.
 func Same(c *suite.Case, declared, observed suite.Outcome) (bool, string) {
 	if declared.Failed() != observed.Failed() {
 		return false, "one outcome succeeded and the other failed"
@@ -94,26 +94,51 @@ func Same(c *suite.Case, declared, observed suite.Outcome) (bool, string) {
 		}
 		return true, ""
 	}
-	groups := suite.Groups(declared.Issues, c.Slots())
-	return matchRuns(groups, len(observed.Issues),
-		func(i, j int) string { return matchObserved(declared.Issues[i], observed.Issues[j]) },
-		func() string {
-			return fmt.Sprintf("declared %s, observed %s", describeIssues(declared.Issues), describeIssues(observed.Issues))
-		})
+	d, derr := suite.ReadIssues(declared.Issues, c.Checked.Flow, c.Input, nil, c.Catalog, suite.ObservedIssues)
+	o, oerr := suite.ReadIssues(observed.Issues, c.Checked.Flow, c.Input, nil, c.Catalog, suite.ObservedIssues)
+	if derr == nil && oerr == nil {
+		var why string
+		for _, dr := range d {
+			for _, or := range o {
+				if why = Lists(dr, or, asWritten); why == "" {
+					return true, ""
+				}
+			}
+		}
+		return false, why
+	}
+	if len(declared.Issues) != len(observed.Issues) {
+		return false, fmt.Sprintf("declared %s, observed %s", describe(declared.Issues), describe(observed.Issues))
+	}
+	for i := range declared.Issues {
+		if why := asWrittenRaw(declared.Issues[i], observed.Issues[i]); why != "" {
+			return false, fmt.Sprintf("issue %d: %s", i, why)
+		}
+	}
+	return true, ""
 }
 
-// matchRuns compares a list of issues with an observed one. Consecutive issues of the same
-// unordered group form a run, compared with the same number of observed issues as a multiset;
-// every other issue is compared with the observed issue at its position.
-func matchRuns(groups []string, m int, match func(i, j int) string, describe func() string) (bool, string) {
-	n := len(groups)
-	if n != m {
-		return false, fmt.Sprintf("%d issue(s) where %d were expected: %s", m, n, describe())
+// Messages says what an observed issue's message is compared with.
+type Messages int
+
+const (
+	// againstPlace compares it with the message its place gives.
+	againstPlace Messages = iota
+	// asWritten compares it with the message the other issue wrote.
+	asWritten
+)
+
+// Lists compares two readings of issue lists: in order, except that consecutive issues of one
+// unordered group in the first are compared with the same number of issues of the second as a
+// multiset.
+func Lists(want, got []suite.TypedIssue, m Messages) string {
+	if len(want) != len(got) {
+		return fmt.Sprintf("%d issue(s) where %d were expected: expected %s, observed %s", len(got), len(want), describeTyped(want), describeTyped(got))
 	}
-	for i := 0; i < n; {
+	for i := 0; i < len(want); {
 		k := i + 1
-		if groups[i] != "" {
-			for k < n && groups[k] == groups[i] {
+		if want[i].Group != "" {
+			for k < len(want) && want[k].Group == want[i].Group {
 				k++
 			}
 		}
@@ -121,76 +146,90 @@ func matchRuns(groups []string, m int, match func(i, j int) string, describe fun
 	next:
 		for a := i; a < k; a++ {
 			for b := i; b < k; b++ {
-				if !used[b-i] && match(a, b) == "" {
+				if !used[b-i] && sameIssue(want[a], got[b], m) == "" {
 					used[b-i] = true
 					continue next
 				}
 			}
 			if k-i == 1 {
-				return false, fmt.Sprintf("issue %d: %s", i, match(i, i))
+				return fmt.Sprintf("issue %d: %s", i, sameIssue(want[i], got[i], m))
 			}
-			return false, fmt.Sprintf("issue %d has no match among issues %d to %d, which may come in any order: %s", a, i, k-1, describe())
+			return fmt.Sprintf("issue %d has no match among issues %d to %d, which may come in any order: expected %s, observed %s", a, i, k-1, describeTyped(want), describeTyped(got))
 		}
 		i = k
 	}
-	return true, ""
+	return ""
 }
 
-func samePath(a, b string) bool {
-	x, errx := suite.SplitPath(a)
-	y, erry := suite.SplitPath(b)
-	return errx == nil && erry == nil && slices.Equal(x, y)
-}
-
-func matchExpected(e suite.ExpectedIssue, o suite.Issue) string {
-	if !samePath(e.Path, o.Path) {
-		return fmt.Sprintf("path %q, observed %q", e.Path, o.Path)
+// sameIssue compares two typed issues: place, key, message, metadata by type, and candidates.
+func sameIssue(e, o suite.TypedIssue, m Messages) string {
+	if !slices.Equal(e.Slot.Path, o.Slot.Path) || e.Slot.Site != o.Slot.Site || e.Group != o.Group {
+		return fmt.Sprintf("%s at %q, observed %s at %q", e.Slot.Key, e.Path, o.Slot.Key, o.Path)
 	}
-	if e.Code != o.Code || e.Key != o.Key {
-		return fmt.Sprintf("%s (%s), observed %s (%s)", e.Key, e.Code, o.Key, o.Code)
+	if e.Key != o.Key {
+		return fmt.Sprintf("message key %q, observed %q", e.Key, o.Key)
 	}
-	if o.Message == nil {
-		return "the runner wrote no message"
+	want := e.Message
+	if m == asWritten && e.Issue.Message != nil {
+		want = *e.Issue.Message
 	}
-	if *o.Message != e.Message {
-		return fmt.Sprintf("message %q, observed %q", e.Message, *o.Message)
-	}
-	names := o.Meta.Names()
-	expectedNames := len(e.Meta)
-	if e.CandidatesMeta != "" {
-		expectedNames++
-	}
-	if len(names) != expectedNames {
-		return fmt.Sprintf("metadata %s, observed %s", metaNames(e.Meta), strings.Join(sorted(names), ","))
-	}
-	for _, m := range o.Meta.Members {
-		if m.Name == e.CandidatesMeta {
-			if why := matchCandidates(e, m.Value); why != "" {
-				return why
-			}
-			continue
+	if o.Issue.Message == nil || *o.Issue.Message != want {
+		got := "none"
+		if o.Issue.Message != nil {
+			got = fmt.Sprintf("%q", *o.Issue.Message)
 		}
-		want, ok := e.Meta[m.Name]
+		return fmt.Sprintf("message %q, observed %s", want, got)
+	}
+	if len(e.Meta) != len(o.Meta) || e.CandidatesMeta != o.CandidatesMeta {
+		return fmt.Sprintf("metadata %s, observed %s", metaNames(e), metaNames(o))
+	}
+	for name, v := range e.Meta {
+		w, ok := o.Meta[name]
 		if !ok {
-			return fmt.Sprintf("metadata %s, observed %s", metaNames(e.Meta), strings.Join(sorted(names), ","))
+			return fmt.Sprintf("metadata %s, observed %s", metaNames(e), metaNames(o))
 		}
-		got, err := value.Observe(want.Type, m.Value)
-		if err != nil {
-			return fmt.Sprintf("meta %s: %v", m.Name, err)
+		if !value.Equal(v, w) {
+			return fmt.Sprintf("meta %s: observed %s", name, rawMeta(o, name))
 		}
-		if !value.Equal(want, got) {
-			return fmt.Sprintf("meta %s: observed %s", m.Name, m.Value.Raw)
+	}
+	if len(e.Candidates) != len(o.Candidates) {
+		return fmt.Sprintf("meta %s: %d candidates, observed %d", e.CandidatesMeta, len(e.Candidates), len(o.Candidates))
+	}
+	for k, list := range e.Candidates {
+		other, ok := o.Candidates[k]
+		if !ok {
+			return fmt.Sprintf("meta %s: candidate %d is missing", e.CandidatesMeta, k)
+		}
+		if why := Lists(list, other, m); why != "" {
+			return fmt.Sprintf("meta %s candidate %d: %s", e.CandidatesMeta, k, why)
 		}
 	}
 	return ""
 }
 
-func matchObserved(d, o suite.Issue) string {
-	if !samePath(d.Path, o.Path) {
-		return fmt.Sprintf("path %q, observed %q", d.Path, o.Path)
+func rawMeta(o suite.TypedIssue, name string) string {
+	if n, ok := o.Issue.Meta.Get(name); ok {
+		return string(n.Raw)
 	}
-	if d.Code != o.Code || d.Key != o.Key {
-		return fmt.Sprintf("%s (%s), observed %s (%s)", d.Key, d.Code, o.Key, o.Code)
+	return "nothing"
+}
+
+func metaNames(t suite.TypedIssue) string {
+	var names []string
+	for k := range t.Meta {
+		names = append(names, k)
+	}
+	if t.CandidatesMeta != "" {
+		names = append(names, t.CandidatesMeta)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ",")
+}
+
+// asWrittenRaw compares two issues as written, for a divergence whose issues do not fit the flow.
+func asWrittenRaw(d, o suite.Issue) string {
+	if d.Path != o.Path || d.Code != o.Code || d.Key != o.Key {
+		return fmt.Sprintf("%s (%s) at %q, observed %s (%s) at %q", d.Key, d.Code, d.Path, o.Key, o.Code, o.Path)
 	}
 	if d.Message == nil || o.Message == nil || *d.Message != *o.Message {
 		return "the messages differ"
@@ -201,63 +240,15 @@ func matchObserved(d, o suite.Issue) string {
 	return ""
 }
 
-// matchCandidates compares the candidates a one_of_failed reports: each candidate's issues, typed
-// by that candidate's flow.
-func matchCandidates(e suite.ExpectedIssue, n *jsontext.Node) string {
-	if n.Kind != jsontext.Array || len(n.Elems) != len(e.Candidates) {
-		return fmt.Sprintf("meta %s: expected %d candidates", e.CandidatesMeta, len(e.Candidates))
-	}
-	for _, c := range n.Elems {
-		idx, err := c.Member("candidate")
-		if err != nil {
-			return fmt.Sprintf("meta %s: %v", e.CandidatesMeta, err)
-		}
-		i, err := value.Observe(value.Of(value.Int32), idx)
-		if err != nil {
-			return fmt.Sprintf("meta %s: %v", e.CandidatesMeta, err)
-		}
-		want, ok := e.Candidates[int(i.Int.Int64())]
-		if !ok || len(c.Members) != 2 {
-			return fmt.Sprintf("meta %s: candidate %s is not expected", e.CandidatesMeta, idx.Raw)
-		}
-		list, err := c.Member("issues")
-		if err != nil {
-			return fmt.Sprintf("meta %s: %v", e.CandidatesMeta, err)
-		}
-		got, err := suite.ParseNestedIssues(list)
-		if err != nil {
-			return fmt.Sprintf("meta %s: %v", e.CandidatesMeta, err)
-		}
-		if ok, why := matchExpectedList(want, got); !ok {
-			return fmt.Sprintf("meta %s candidate %s: %s", e.CandidatesMeta, idx.Raw, why)
-		}
-	}
-	return ""
-}
-
-func sorted(s []string) []string {
-	s = slices.Clone(s)
-	sort.Strings(s)
-	return s
-}
-
-func metaNames(m map[string]value.Value) string {
-	var names []string
-	for k := range m {
-		names = append(names, k)
-	}
-	return strings.Join(sorted(names), ",")
-}
-
-func describeExpected(issues []suite.ExpectedIssue) string {
+func describeTyped(issues []suite.TypedIssue) string {
 	var parts []string
 	for _, is := range issues {
-		parts = append(parts, fmt.Sprintf("%s at %q", is.Key, is.Path))
+		parts = append(parts, fmt.Sprintf("%s at %q", is.Slot.Key, is.Path))
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }
 
-func describeIssues(issues []suite.Issue) string {
+func describe(issues []suite.Issue) string {
 	var parts []string
 	for _, is := range issues {
 		parts = append(parts, fmt.Sprintf("%s at %q", is.Key, is.Path))

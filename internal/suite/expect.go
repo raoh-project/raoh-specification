@@ -12,139 +12,146 @@ import (
 	"github.com/raoh-project/raoh-specification/internal/value"
 )
 
-// ExpectedIssue is an issue a case expects, with what the verifier needs to compare it.
-type ExpectedIssue struct {
+// Mode says whose issues are read: a case's, which write a message only where the form gives it,
+// or an implementation's, which always write the message they have.
+type Mode int
+
+// The modes of reading issues.
+const (
+	CaseIssues Mode = iota + 1
+	ObservedIssues
+)
+
+// TypedIssue is an issue read against the decoder's flow: its place, its typed metadata and the
+// message its place gives.
+type TypedIssue struct {
 	Issue
-	// Slot is where in the decoder's flow, for the case's input, the issue arises.
+	// Slot is where in the decoder's flow, for the input, the issue arises.
 	Slot dsl.Slot
 	// Meta holds the metadata values, typed.
 	Meta map[string]value.Value
-	// Message is the message the issue has: given by the form, or derived from the catalogue.
+	// Message is the message the issue's place gives: given by the form, or derived from the
+	// catalogue. An observed issue's own message is Issue.Message.
 	Message string
 	// Group identifies the unordered group instance the issue belongs to; empty when it is
 	// ordered.
 	Group string
-	// Candidates are, for one_of_failed, the issues each candidate gave, by candidate index, and
-	// CandidatesMeta the metadata entry that lists them.
-	Candidates     map[int][]ExpectedIssue
+	// Candidates are, for an issue that lists what candidates gave, the issues each candidate
+	// gave, by candidate index, and CandidatesMeta the metadata entry that lists them.
+	Candidates     map[int][]TypedIssue
 	CandidatesMeta string
 }
 
-// searchLimit bounds the assignments Expect tries, so that a pathological case fails instead of
-// running for ever.
-const searchLimit = 1 << 20
+// ReadIssues reads a list of issues as the flow gives them for an input at a path. It fails when
+// the list is not one the flow gives, or, for a case, when it fits the flow in two ways that type,
+// word or group an issue differently. An implementation's issues that fit in two ways give both
+// readings, for the comparison to try.
+func ReadIssues(issues []Issue, flow dsl.Flow, input *jsontext.Node, path []string, cat *catalog.Catalog, mode Mode) ([][]TypedIssue, error) {
+	r := &reader{issues: issues, cat: cat, mode: mode, cache: map[string]fitResult{}}
+	parses := dsl.ParseIssues(flow, input, path, len(issues), r.fit)
+	if len(parses) == 0 {
+		return nil, r.explain(dsl.Places(flow, input, path))
+	}
+	if mode == CaseIssues && len(parses) > 1 {
+		return nil, fmt.Errorf("the issues fit the decoder's flow in two ways that type, word or group them differently")
+	}
+	var out [][]TypedIssue
+	for _, p := range parses {
+		typed := make([]TypedIssue, len(p))
+		for i, slot := range p {
+			typed[i] = r.cache[r.key(i, slot)].issue
+		}
+		out = append(out, typed)
+	}
+	return out, nil
+}
 
-// Expect reads a list of issues as the decoder's flow produces them for the case's input: each
-// issue is assigned a slot, in the order of the slots, where only the issues of one unordered
-// group instance may come in any order among themselves. Each issue is typed, its metadata checked
-// against what the form decides, and its message settled, at its slot. The list is rejected if no
-// assignment fits, or if two assignments fit that type an issue differently.
-func Expect(issues []Issue, slots []dsl.Slot, cat *catalog.Catalog) ([]ExpectedIssue, error) {
-	options := make([][]option, len(issues))
-	for i, is := range issues {
-		var tried []string
-		for j, slot := range slots {
+// Succeeds reports whether the flow can give no issue for the input: whether the decoder can
+// succeed at all.
+func Succeeds(flow dsl.Flow, input *jsontext.Node) bool {
+	return len(dsl.ParseIssues(flow, input, nil, 0, func(int, dsl.Slot) (string, bool) { return "", false })) > 0
+}
+
+type fitResult struct {
+	issue TypedIssue
+	sig   string
+	err   error
+}
+
+type reader struct {
+	issues []Issue
+	cat    *catalog.Catalog
+	mode   Mode
+	cache  map[string]fitResult
+}
+
+func (r *reader) key(i int, slot dsl.Slot) string {
+	return fmt.Sprintf("%d|%p|%s|%s", i, slot.Site, dsl.JoinPath(slot.Path), slot.Group)
+}
+
+// explain says why no parse was found: the first issue that fits no place the flow has for the
+// input, with why it fits none of those with its path, key and code; or, when each fits some
+// place, that the decoder does not give them together or in this order.
+func (r *reader) explain(places []dsl.Slot) error {
+	for i, is := range r.issues {
+		var reasons []string
+		fitted := false
+		for _, slot := range places {
 			if !fits(is, slot) {
 				continue
 			}
-			e, err := instance(is, slot, cat)
-			if err != nil {
-				tried = append(tried, err.Error())
+			if _, err := instance(is, slot, r.cat, r.mode); err != nil {
+				if !slices.Contains(reasons, err.Error()) {
+					reasons = append(reasons, err.Error())
+				}
 				continue
 			}
-			options[i] = append(options[i], option{slot: j, issue: e})
+			fitted = true
+			break
 		}
-		if len(options[i]) == 0 {
-			if len(tried) == 0 {
-				return nil, fmt.Errorf("issue %d: the decoder gives no %s at %q for this input", i, describeKey(is), is.Path)
-			}
-			return nil, fmt.Errorf("issue %d: %s", i, strings.Join(tried, "; "))
+		switch {
+		case fitted:
+		case len(reasons) > 0:
+			return fmt.Errorf("issue %d: %s", i, strings.Join(reasons, "; "))
+		default:
+			return fmt.Errorf("issue %d: the decoder gives no %s at %q for this input", i, describeKey(is), is.Path)
 		}
 	}
-	pos := positions(slots)
-	var found []ExpectedIssue
-	var foundSig string
-	visits := 0
-	used := make([]bool, len(slots))
-	chosen := make([]ExpectedIssue, len(issues))
-	var ambiguous error
-	var search func(k, last int, group string) bool
-	search = func(k, last int, group string) bool {
-		if visits++; visits > searchLimit {
-			ambiguous = fmt.Errorf("the issues cannot be matched with the decoder's flow in reasonable time")
-			return true
-		}
-		if k == len(issues) {
-			sig := signature(chosen)
-			if found == nil {
-				found, foundSig = slices.Clone(chosen), sig
-				return false
-			}
-			if sig != foundSig {
-				ambiguous = fmt.Errorf("the issues fit the decoder's flow in two ways that type or order them differently")
-				return true
-			}
-			return false
-		}
-		for _, o := range options[k] {
-			slot := slots[o.slot]
-			p := pos[o.slot]
-			sameGroup := slot.Group != "" && slot.Group == group
-			if used[o.slot] || (sameGroup && p != last) || (!sameGroup && p <= last) {
-				continue
-			}
-			used[o.slot] = true
-			chosen[k] = o.issue
-			stop := search(k+1, p, slot.Group)
-			used[o.slot] = false
-			if stop {
-				return true
-			}
-		}
-		return false
-	}
-	search(0, -1, "")
-	if ambiguous != nil {
-		return nil, ambiguous
-	}
-	if found == nil {
-		return nil, fmt.Errorf("the issues do not come in an order the decoder's flow gives them in")
-	}
-	return found, nil
+	return fmt.Errorf("each issue fits a place in the decoder's flow, and the decoder does not give them together or in this order: %s", describe(r.issues))
 }
 
-type option struct {
-	slot  int
-	issue ExpectedIssue
+func describeKey(is Issue) string {
+	if is.Key == "" {
+		return is.Code
+	}
+	return is.Key
 }
 
-// positions gives each slot its place in the order: its own index, or for a slot in an unordered
-// group the index of the group's first slot, since the group's issues come in any order.
-func positions(slots []dsl.Slot) []int {
-	pos := make([]int, len(slots))
-	first := map[string]int{}
-	for i, s := range slots {
-		pos[i] = i
-		if s.Group == "" {
-			continue
-		}
-		if f, ok := first[s.Group]; ok {
-			pos[i] = f
+func describe(issues []Issue) string {
+	var parts []string
+	for _, is := range issues {
+		parts = append(parts, fmt.Sprintf("%s at %q", describeKey(is), is.Path))
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+// fit reads issue i at a slot, once per slot.
+func (r *reader) fit(i int, slot dsl.Slot) (string, bool) {
+	k := r.key(i, slot)
+	res, ok := r.cache[k]
+	if !ok {
+		is := r.issues[i]
+		if fits(is, slot) {
+			res.issue, res.err = instance(is, slot, r.cat, r.mode)
+			if res.err == nil {
+				res.sig = res.issue.Group + "\x00" + res.issue.Message + "\x00" + typesOf(res.issue.Meta)
+			}
 		} else {
-			first[s.Group] = i
+			res.err = fmt.Errorf("not here")
 		}
+		r.cache[k] = res
 	}
-	return pos
-}
-
-// signature is what the comparison of an assignment depends on: for each issue its group, message
-// and metadata types.
-func signature(issues []ExpectedIssue) string {
-	var b strings.Builder
-	for _, e := range issues {
-		b.WriteString(e.Group + "\x00" + e.Message + "\x00" + typesOf(e.Meta) + "\x01")
-	}
-	return b.String()
+	return res.sig, res.err == nil
 }
 
 // fits reports whether an issue's path, key and code are the slot's.
@@ -154,13 +161,6 @@ func fits(is Issue, slot dsl.Slot) bool {
 		return false
 	}
 	return is.Key == "" || is.Key == slot.Key
-}
-
-func describeKey(is Issue) string {
-	if is.Key == "" {
-		return is.Code
-	}
-	return is.Key
 }
 
 func typesOf(m map[string]value.Value) string {
@@ -174,8 +174,8 @@ func typesOf(m map[string]value.Value) string {
 
 // instance reads an issue at a slot: its metadata typed and checked against what the form decides,
 // its message settled.
-func instance(is Issue, slot dsl.Slot, cat *catalog.Catalog) (ExpectedIssue, error) {
-	e := ExpectedIssue{Issue: is, Slot: slot, Meta: map[string]value.Value{}, Group: slot.Group}
+func instance(is Issue, slot dsl.Slot, cat *catalog.Catalog, mode Mode) (TypedIssue, error) {
+	e := TypedIssue{Issue: is, Slot: slot, Meta: map[string]value.Value{}, Group: slot.Group}
 	for _, m := range is.Meta.Members {
 		t, ok := slot.Meta[m.Name]
 		if !ok {
@@ -183,7 +183,7 @@ func instance(is Issue, slot dsl.Slot, cat *catalog.Catalog) (ExpectedIssue, err
 		}
 		if slot.Candidates != nil && t.Kind == value.List && t.Args[0].Kind == value.Record {
 			e.CandidatesMeta = m.Name
-			if err := e.candidates(m.Value, slot, cat); err != nil {
+			if err := e.candidates(m.Value, slot, cat, mode); err != nil {
 				return e, fmt.Errorf("%s meta %s: %w", slot.Key, m.Name, err)
 			}
 			continue
@@ -219,10 +219,15 @@ func instance(is Issue, slot dsl.Slot, cat *catalog.Catalog) (ExpectedIssue, err
 			return e, err
 		}
 	}
+	e.Message = want
 	switch {
+	case mode == ObservedIssues:
+		if is.Message == nil {
+			return e, fmt.Errorf("an implementation writes the message of every issue")
+		}
 	case is.Key == "":
-		// An issue a candidate reported, as raoh-java writes it, carries its message; it has to
-		// be the one the slot gives.
+		// An issue a candidate reported, as raoh-java writes it, carries its message; a case may
+		// write it, and then it has to be the one the place gives.
 		if is.Message != nil && *is.Message != want {
 			return e, fmt.Errorf("%s at %q has the message %q, not %q", slot.Key, is.Path, want, *is.Message)
 		}
@@ -233,17 +238,16 @@ func instance(is Issue, slot dsl.Slot, cat *catalog.Catalog) (ExpectedIssue, err
 	case is.Message != nil:
 		return e, fmt.Errorf("the message of %s is derived from the catalogue; leave it out", slot.Key)
 	}
-	e.Message = want
 	return e, nil
 }
 
-// candidates reads the candidates of a one_of_failed: every candidate exactly once, each with the
+// candidates reads the candidates an issue lists: every candidate exactly once, each with the
 // issues it gave, read by the flow of that candidate for the same input.
-func (e *ExpectedIssue) candidates(n *jsontext.Node, slot dsl.Slot, cat *catalog.Catalog) error {
+func (e *TypedIssue) candidates(n *jsontext.Node, slot dsl.Slot, cat *catalog.Catalog, mode Mode) error {
 	if n.Kind != jsontext.Array {
 		return fmt.Errorf("expected an array of candidates")
 	}
-	e.Candidates = map[int][]ExpectedIssue{}
+	e.Candidates = map[int][]TypedIssue{}
 	for _, c := range n.Elems {
 		if c.Kind != jsontext.Object || len(c.Members) != 2 {
 			return fmt.Errorf("a candidate has candidate and issues, and nothing else")
@@ -268,11 +272,11 @@ func (e *ExpectedIssue) candidates(n *jsontext.Node, slot dsl.Slot, cat *catalog
 		if err != nil {
 			return err
 		}
-		expected, err := Expect(nested, dsl.Instantiate(slot.Candidates[k], slot.Input, slot.Path), cat)
+		readings, err := ReadIssues(nested, slot.Candidates[k], slot.Input, slot.Path, cat, mode)
 		if err != nil {
 			return fmt.Errorf("candidate %d: %w", k, err)
 		}
-		e.Candidates[k] = expected
+		e.Candidates[k] = readings[0]
 	}
 	for k := range slot.Candidates {
 		if _, ok := e.Candidates[k]; !ok {
@@ -280,39 +284,6 @@ func (e *ExpectedIssue) candidates(n *jsontext.Node, slot dsl.Slot, cat *catalog
 		}
 	}
 	return nil
-}
-
-// Groups assigns the issues a declaration gives to the unordered groups of the case's flow, by
-// path, key and code only, for comparing them with a runner's; an issue that no assignment in
-// order places is ordered.
-func Groups(issues []Issue, slots []dsl.Slot) []string {
-	groups := make([]string, len(issues))
-	pos := positions(slots)
-	used := make([]bool, len(slots))
-	var search func(k, last int, group string) bool
-	search = func(k, last int, group string) bool {
-		if k == len(issues) {
-			return true
-		}
-		for j, slot := range slots {
-			p := pos[j]
-			sameGroup := slot.Group != "" && slot.Group == group
-			if used[j] || !fits(issues[k], slot) || (sameGroup && p != last) || (!sameGroup && p <= last) {
-				continue
-			}
-			used[j] = true
-			groups[k] = slot.Group
-			if search(k+1, p, slot.Group) {
-				return true
-			}
-			used[j] = false
-		}
-		return false
-	}
-	if !search(0, -1, "") {
-		return make([]string, len(issues))
-	}
-	return groups
 }
 
 // describeValue writes a value for a message, as its message form when it has one.

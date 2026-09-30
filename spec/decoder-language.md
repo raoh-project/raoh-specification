@@ -84,10 +84,11 @@ failed.
 ## Meaning
 
 `catalog/operations.json` gives the meaning of each form in its `doc`, the issues it can give in
-`issues` (with where they arise, in `at`), and where the issues of each decoder argument go, in
-`flows`: where the form runs (`here`), at each element or member (`each_element`), as the
-candidates of a `one_of_failed` (`candidates`), or nowhere, because the form gives something else
-instead of a failure (`none`). [issues.md](issues.md) says how these make the decoder's issue flow. The cases in `suite/` are the specification of the details. Where a `doc` and a case
+`issues`, and how it gives them in `flow`, an expression over its arguments and its issues that
+[issues.md](issues.md) describes. Every argument whose decoders give issues is placed in the flow
+or discarded exactly once, and every issue is given by exactly one part of it; the registry is
+rejected otherwise, as it is when the flow or a metadata source names an argument or an issue the
+form does not have. The cases in `suite/` are the specification of the details. Where a `doc` and a case
 disagree, the specification has a defect; report it.
 
 Several meanings in version 0.8.0 are raoh-java 0.8.0's behaviour written down, where a later
