@@ -70,7 +70,8 @@ var (
 		"suite/retired.json":      RetiredIDs,
 	}
 	required = []string{"specification.json", "catalog/issues.json", "catalog/operations.json", "catalog/fixtures.json", "suite/retired.json",
-		"schema/case.schema.json", "schema/runner-result.schema.json", "schema/conformance.schema.json", "schema/report.schema.json"}
+		"schema/issues.schema.json", "schema/operations.schema.json", "schema/fixtures.schema.json", "schema/case.schema.json",
+		"schema/retired.schema.json", "schema/runner-result.schema.json", "schema/conformance.schema.json", "schema/report.schema.json"}
 )
 
 // Classify says what the file at a relative path is, or that it is not part of the

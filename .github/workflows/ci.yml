@@ -18,3 +18,12 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
       - run: go run ./cmd/raoh-verify check-suite .
+      - name: Case IDs are kept
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --depth=1 origin "${{ github.base_ref }}"
+          git worktree add ../base FETCH_HEAD
+          # A base without a suite (before the first one was added) has no IDs to keep.
+          if [ -f ../base/suite/retired.json ]; then
+            go run ./cmd/raoh-verify check-ids ../base .
+          fi

@@ -13,7 +13,13 @@
   "$defs": {
     "id": {
       "type": "string",
-      "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$"
+      "pattern": "^R[0-9]{6}$",
+      "description": "An identifier with no meaning, unique across the suite and never reused."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What the case checks, for people. It can change freely; the id cannot."
     },
     "form": {
       "type": "array",
@@ -22,9 +28,10 @@
     },
     "decodingCase": {
       "type": "object",
-      "required": ["id", "decoder", "input"],
+      "required": ["id", "title", "decoder", "input"],
       "properties": {
         "id": {"$ref": "#/$defs/id"},
+        "title": {"$ref": "#/$defs/title"},
         "decoder": {"$ref": "#/$defs/form"},
         "input": {"description": "The input, as JSON; its lexemes are part of it."},
         "ok": {"description": "The observation of the result the decoder gives."},
@@ -38,9 +45,10 @@
     },
     "encodingCase": {
       "type": "object",
-      "required": ["id", "encoder", "value", "ok"],
+      "required": ["id", "title", "encoder", "value", "ok"],
       "properties": {
         "id": {"$ref": "#/$defs/id"},
+        "title": {"$ref": "#/$defs/title"},
         "encoder": {"$ref": "#/$defs/form"},
         "value": {"description": "The observation of the value to encode."},
         "ok": {"description": "The JSON the encoder gives."}

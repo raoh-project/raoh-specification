@@ -1,9 +1,9 @@
 [
-  {"id": "literal.accepts_v1", "decoder": ["literal","v1",["string"]], "input": "v1", "ok": "v1"},
-  {"id": "literal.invalid_format_literal_v2", "decoder": ["literal","v1",["string"]], "input": "v2", "issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.literal", "meta": {"expected": "v1"}}]},
-  {"id": "literal.custom_string.accepts_space_v1_upper_space", "decoder": ["literal","v1",["string",["trim"],["toLowerCase"]]], "input": " V1 ", "ok": "v1"},
-  {"id": "literal.custom_string.accepts_v1", "decoder": ["literal","v1",["string",["trim"],["toLowerCase"]]], "input": "v1", "ok": "v1"},
-  {"id": "literal.custom_string.invalid_format_literal_v2", "decoder": ["literal","v1",["string",["trim"],["toLowerCase"]]], "input": "v2", "issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.literal", "meta": {"expected": "v1"}}]},
-  {"id": "literal.custom_string.required_null", "decoder": ["literal","v1",["string",["trim"],["toLowerCase"]]], "input": null, "issues": [{"path": "", "code": "required", "message_key": "required", "meta": {}}]},
-  {"id": "literal.custom_string.type_mismatch_1", "decoder": ["literal","v1",["string",["trim"],["toLowerCase"]]], "input": 1, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "number", "expected": "string"}}]}
+  {"id": "R000191", "title": "literal(\"v1\", string) accepts \"v1\"", "decoder": ["literal","v1",["string"]], "input": "v1", "ok": "v1"},
+  {"id": "R000192", "title": "literal(\"v1\", string) rejects \"v2\" with invalid_format.literal", "decoder": ["literal","v1",["string"]], "input": "v2", "issues": [{"path":"","code":"invalid_format","message_key":"invalid_format.literal","meta":{"expected":"v1"}}]},
+  {"id": "R000193", "title": "literal(\"v1\", string.trim().toLowerCase()) accepts \" V1 \"", "decoder": ["literal","v1",["string",["trim"],["toLowerCase"]]], "input": " V1 ", "ok": "v1"},
+  {"id": "R000194", "title": "literal(\"v1\", string.trim().toLowerCase()) accepts \"v1\"", "decoder": ["literal","v1",["string",["trim"],["toLowerCase"]]], "input": "v1", "ok": "v1"},
+  {"id": "R000195", "title": "literal(\"v1\", string.trim().toLowerCase()) rejects \"v2\" with invalid_format.literal", "decoder": ["literal","v1",["string",["trim"],["toLowerCase"]]], "input": "v2", "issues": [{"path":"","code":"invalid_format","message_key":"invalid_format.literal","meta":{"expected":"v1"}}]},
+  {"id": "R000196", "title": "literal(\"v1\", string.trim().toLowerCase()) rejects null with required", "decoder": ["literal","v1",["string",["trim"],["toLowerCase"]]], "input": null, "issues": [{"path":"","code":"required","message_key":"required","meta":{}}]},
+  {"id": "R000197", "title": "literal(\"v1\", string.trim().toLowerCase()) rejects 1 with type_mismatch", "decoder": ["literal","v1",["string",["trim"],["toLowerCase"]]], "input": 1, "issues": [{"path":"","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"number","expected":"string"}}]}
 ]

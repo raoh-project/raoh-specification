@@ -1,6 +1,6 @@
 [
-  {"id": "refine.accepts_4", "decoder": ["int",["refine","even"]], "input": 4, "ok": 4},
-  {"id": "refine.must_be_even_3", "decoder": ["int",["refine","even"]], "input": 3, "issues": [{"path": "", "code": "must_be_even", "message_key": "must_be_even", "message": "must be even", "meta": {"actual": 3}}]},
-  {"id": "refine.type_mismatch_x", "decoder": ["int",["refine","even"]], "input": "x", "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "integer"}}]},
-  {"id": "refine.required_null", "decoder": ["int",["refine","even"]], "input": null, "issues": [{"path": "", "code": "required", "message_key": "required", "meta": {}}]}
+  {"id": "R000277", "title": "int.refine(\"even\") accepts 4", "decoder": ["int",["refine","even"]], "input": 4, "ok": 4},
+  {"id": "R000278", "title": "int.refine(\"even\") rejects 3 with must_be_even", "decoder": ["int",["refine","even"]], "input": 3, "issues": [{"path":"","code":"must_be_even","message_key":"must_be_even","message":"must be even","meta":{"actual":3}}]},
+  {"id": "R000279", "title": "int.refine(\"even\") rejects \"x\" with type_mismatch", "decoder": ["int",["refine","even"]], "input": "x", "issues": [{"path":"","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"string","expected":"integer"}}]},
+  {"id": "R000280", "title": "int.refine(\"even\") rejects null with required", "decoder": ["int",["refine","even"]], "input": null, "issues": [{"path":"","code":"required","message_key":"required","meta":{}}]}
 ]

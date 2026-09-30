@@ -29,10 +29,16 @@ conformed can stop conforming without changing.
 
 ## Case IDs
 
-Every case has an ID that names what it checks, such as `string.min_length.counts_code_points`.
-An ID is permanent: it does not change when the outcome the case expects changes, and it is not
-reused for a case that checks something else. When what a case checks changes, the case gets a new
-ID and the old one is retired. Conformance declarations refer to cases by ID.
+Every case has an ID, `R` and six digits (`R000412`), and a title. The ID means nothing: it
+identifies the case and nothing else, so that changing the input, the expected outcome, the title
+or the file a case sits in never raises the question whether the ID should change. The title says
+what the case checks, for people, and can change freely.
+
+An ID is used by one case at a time and never again. When a case is removed, its ID goes into
+`suite/retired.json`; a case that comes to check something else is removed and added again under
+a new ID. `raoh-verify check-ids` checks a change against the revision it starts from: every ID of
+that revision is still a case or has been retired, and every retired ID stays retired. Conformance
+declarations refer to cases by ID.
 
 ## Profiles
 

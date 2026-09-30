@@ -8,10 +8,10 @@ the pull request against `develop`. `main` receives releases only.
 ## Adding or changing cases
 
 A case lives in a file under `suite/<profile>/`, grouped by the constructor it exercises. Each case
-has an ID of the form `<subject>.<what it checks>`, in lower snake case separated by dots, such as
-`string.min_length.counts_code_points`. Choose the ID for what the case checks, not for its input:
-the ID stays when the expected outcome changes, and a case that comes to check something else gets
-a new ID. An ID that has been released is never reused.
+has an ID, `R` and six digits, and a title. Give a new case the next number after the highest ID in
+the suite or in `suite/retired.json`; the ID means nothing and never changes. Write in the title
+what the case checks. When you remove a case, add its ID to `suite/retired.json`; when a case comes
+to check something else, remove it and add a new one.
 
 Before opening a pull request, run:
 
@@ -19,6 +19,8 @@ Before opening a pull request, run:
 go run ./cmd/raoh-verify check-suite .
 go test ./...
 ```
+
+CI also runs `raoh-verify check-ids` against the branch the pull request targets.
 
 `check-suite` also fails when a feature of `catalog/operations.json` or `catalog/fixtures.json` is
 needed by no case: a feature is listed only once a case pins it. One case is the least a feature

@@ -1,6 +1,6 @@
 [
-  {"id": "bool.accepts_true", "decoder": ["bool"], "input": true, "ok": true},
-  {"id": "bool.type_mismatch_true", "decoder": ["bool"], "input": "true", "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "string", "expected": "boolean"}}]},
-  {"id": "bool.required_null", "decoder": ["bool"], "input": null, "issues": [{"path": "", "code": "required", "message_key": "required", "meta": {}}]},
-  {"id": "bool.is_true.invalid_value_false", "decoder": ["bool",["isTrue"]], "input": false, "issues": [{"path": "", "code": "invalid_value", "message_key": "invalid_value", "meta": {"actual": false, "expected": true}}]}
+  {"id": "R000001", "title": "bool accepts true", "decoder": ["bool"], "input": true, "ok": true},
+  {"id": "R000002", "title": "bool rejects \"true\" with type_mismatch", "decoder": ["bool"], "input": "true", "issues": [{"path":"","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"string","expected":"boolean"}}]},
+  {"id": "R000003", "title": "bool rejects null with required", "decoder": ["bool"], "input": null, "issues": [{"path":"","code":"required","message_key":"required","meta":{}}]},
+  {"id": "R000004", "title": "bool.isTrue() rejects false with invalid_value", "decoder": ["bool",["isTrue"]], "input": false, "issues": [{"path":"","code":"invalid_value","message_key":"invalid_value","meta":{"actual":false,"expected":true}}]}
 ]

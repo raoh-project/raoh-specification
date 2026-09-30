@@ -11,15 +11,15 @@ import (
 )
 
 const miniCore = `[
-  {"id": "int.accepts_an_integer", "decoder": ["int"], "input": 1, "ok": 1},
-  {"id": "int.min.rejects_a_smaller_value", "decoder": ["int", ["min", 1]], "input": 0,
+  {"id": "R000001", "title": "int accepts 1", "decoder": ["int"], "input": 1, "ok": 1},
+  {"id": "R000002", "title": "int.min(1) rejects 0", "decoder": ["int", ["min", 1]], "input": 0,
    "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "meta": {"min": 1, "actual": 0}}]},
-  {"id": "string.cuid.rejects_a_non_cuid", "decoder": ["string", ["cuid"]], "input": "x",
+  {"id": "R000003", "title": "string.cuid() rejects x", "decoder": ["string", ["cuid"]], "input": "x",
    "issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.cuid", "meta": {}}]}
 ]`
 
 const miniEncode = `[
-  {"id": "property_with_default.null_gives_the_default",
+  {"id": "R000004", "title": "null encodes to the default",
    "encoder": ["object", [["propertyWithDefault", "value", "identity", ["string"], "default"]]],
    "value": null, "ok": {"value": "default"}}
 ]`
@@ -62,10 +62,10 @@ func (s *Spec) run() *run {
 		version: s.Version,
 		bound:   allFeatures,
 		results: map[string]string{
-			"int.accepts_an_integer":                       okInt,
-			"int.min.rejects_a_smaller_value":              minIssue,
-			"string.cuid.rejects_a_non_cuid":               cuidIssue,
-			"property_with_default.null_gives_the_default": defaultJSON,
+			"R000001": okInt,
+			"R000002": minIssue,
+			"R000003": cuidIssue,
+			"R000004": defaultJSON,
 		},
 		catalogs: map[string]map[string]string{"en": s.Catalog.Messages["en"], "ja": s.Catalog.Messages["ja"]},
 	}
@@ -114,7 +114,7 @@ func outcome(rep *Report, id string) CaseResult {
 func TestClassification(t *testing.T) {
 	s := miniSpec(t)
 	v := s.Version
-	divergentMin := `, "divergences": {"int.min.rejects_a_smaller_value": {"category": "design", "reason": "r",
+	divergentMin := `, "divergences": {"R000002": {"category": "design", "reason": "r",
 		"observed": {"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "message": "too small", "meta": {"min": 1, "actual": 0}}]}}}`
 	for _, c := range []struct {
 		name     string
@@ -132,53 +132,53 @@ func TestClassification(t *testing.T) {
 		{
 			name: "a declared divergence",
 			change: func(r *run) {
-				r.results["int.min.rejects_a_smaller_value"] = strings.Replace(minIssue, "must be at least 1", "too small", 1)
+				r.results["R000002"] = strings.Replace(minIssue, "must be at least 1", "too small", 1)
 			},
 			decl:     declare(v, divergentMin),
 			statuses: map[string]string{"core": PartiallyConformant},
-			outcomes: map[string]string{"int.min.rejects_a_smaller_value": Divergent},
+			outcomes: map[string]string{"R000002": Divergent},
 		},
 		{
 			name:     "a stale divergence",
 			decl:     declare(v, divergentMin),
 			statuses: map[string]string{"core": NonConformant},
-			outcomes: map[string]string{"int.min.rejects_a_smaller_value": Failed},
+			outcomes: map[string]string{"R000002": Failed},
 		},
 		{
 			name: "an outcome that is neither expected nor declared",
 			change: func(r *run) {
-				r.results["int.min.rejects_a_smaller_value"] = strings.Replace(minIssue, "must be at least 1", "other", 1)
+				r.results["R000002"] = strings.Replace(minIssue, "must be at least 1", "other", 1)
 			},
 			decl:     declare(v, divergentMin),
 			statuses: map[string]string{"core": NonConformant},
-			outcomes: map[string]string{"int.min.rejects_a_smaller_value": Failed},
+			outcomes: map[string]string{"R000002": Failed},
 		},
 		{
 			name: "a declared unsupported feature",
 			change: func(r *run) {
 				r.bound = without(r.bound, "operation.string.cuid")
-				delete(r.results, "string.cuid.rejects_a_non_cuid")
+				delete(r.results, "R000003")
 			},
 			decl:     declare(v, `, "unsupported_features": {"operation.string.cuid": {"reason": "no CUID library"}}`),
 			statuses: map[string]string{"core": PartiallyConformant, "encode": Conformant},
-			outcomes: map[string]string{"string.cuid.rejects_a_non_cuid": Unsupported},
+			outcomes: map[string]string{"R000003": Unsupported},
 		},
 		{
 			name: "an undeclared unbound feature",
 			change: func(r *run) {
 				r.bound = without(r.bound, "operation.string.cuid")
-				delete(r.results, "string.cuid.rejects_a_non_cuid")
+				delete(r.results, "R000003")
 			},
 			decl:     declare(v, ""),
 			statuses: map[string]string{"core": NonConformant},
-			outcomes: map[string]string{"string.cuid.rejects_a_non_cuid": Failed},
+			outcomes: map[string]string{"R000003": Failed},
 		},
 		{
 			name:     "a missing result",
-			change:   func(r *run) { delete(r.results, "int.accepts_an_integer") },
+			change:   func(r *run) { delete(r.results, "R000001") },
 			decl:     declare(v, ""),
 			statuses: map[string]string{"core": NonConformant},
-			outcomes: map[string]string{"int.accepts_an_integer": Failed},
+			outcomes: map[string]string{"R000001": Failed},
 		},
 		{
 			name: "a mismatched catalogue",
@@ -204,7 +204,7 @@ func TestClassification(t *testing.T) {
 			name: "a divergence for a case that cannot run",
 			change: func(r *run) {
 				r.bound = without(r.bound, "operation.int32.min")
-				delete(r.results, "int.min.rejects_a_smaller_value")
+				delete(r.results, "R000002")
 			},
 			decl:    declare(v, strings.Replace(divergentMin, `}}}`, `}}}, "unsupported_features": {"operation.int32.min": {"reason": "r"}}`, 1)),
 			invalid: "which the runner does not bind",
@@ -227,7 +227,7 @@ func TestClassification(t *testing.T) {
 		},
 		{
 			name:    "a result for an unknown case",
-			change:  func(r *run) { r.results["int.no_such_case"] = okInt },
+			change:  func(r *run) { r.results["R999999"] = okInt },
 			decl:    declare(v, ""),
 			invalid: "which is not a case",
 		},
@@ -237,7 +237,7 @@ func TestClassification(t *testing.T) {
 				r.bound = without(r.bound, "operation.string.cuid")
 			},
 			decl:    declare(v, `, "unsupported_features": {"operation.string.cuid": {"reason": "r"}}`),
-			invalid: "has a result for string.cuid.rejects_a_non_cuid",
+			invalid: "has a result for R000003",
 		},
 		{
 			name:    "a declaration of another implementation",
@@ -246,7 +246,7 @@ func TestClassification(t *testing.T) {
 		},
 		{
 			name:    "a divergence whose outcome is not an observation",
-			decl:    declare(v, `, "divergences": {"int.accepts_an_integer": {"category": "design", "reason": "r", "observed": {"ok": "1"}}}`),
+			decl:    declare(v, `, "divergences": {"R000001": {"category": "design", "reason": "r", "observed": {"ok": "1"}}}`),
 			invalid: "is not an observation",
 		},
 		{

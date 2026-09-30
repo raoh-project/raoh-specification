@@ -49,8 +49,8 @@ func rejected(t *testing.T, profile, text, why string) {
 
 func TestInputsKeepTheirLexemes(t *testing.T) {
 	cases := accepted(t, "core", `[
-		{"id": "double.negative_zero", "decoder": ["double"], "input": -0.0, "ok": {"float": "-0"}},
-		{"id": "long.too_big", "decoder": ["long"], "input": 12345678901234567890,
+		{"id": "R000001", "title": "t", "decoder": ["double"], "input": -0.0, "ok": {"float": "-0"}},
+		{"id": "R000002", "title": "t", "decoder": ["long"], "input": 12345678901234567890,
 		 "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch.numeric_range", "meta": {"expected": "long"}}]}
 	]`)
 	if string(cases[0].Input.Raw) != "-0.0" || string(cases[1].Input.Raw) != "12345678901234567890" {
@@ -62,32 +62,32 @@ func TestInputsKeepTheirLexemes(t *testing.T) {
 }
 
 func TestRepeatedMemberNamesInAnInputAreRejected(t *testing.T) {
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["dict", ["int"]], "input": {"a": 1, "a": 2}, "ok": {"a": 2}}]`, "more than once")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["dict", ["int"]], "input": {"a": 1, "a": 2}, "ok": {"a": 2}}]`, "more than once")
 }
 
 func TestExpectedOutcomesAreTyped(t *testing.T) {
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["int"], "input": 1, "ok": "1"}]`, "expected number")
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["float"], "input": 16777217, "ok": 16777217}]`, "rounds to")
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["int"], "input": 1, "ok": 1, "issues": []}]`, "either ok or issues")
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["int"], "input": "x",
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": 1, "ok": "1"}]`, "expected number")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["float"], "input": 16777217, "ok": 16777217}]`, "rounds to")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": 1, "ok": 1, "issues": []}]`, "either ok or issues")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": "x",
 		"issues": [{"path": "", "code": "too_short", "message_key": "too_short", "meta": {"min": 1, "actual": 0}}]}]`, "gives no too_short")
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["int", ["min", 1]], "input": 0,
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int", ["min", 1]], "input": 0,
 		"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "meta": {"min": 1}}]}]`, "needs metadata actual")
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["double", ["min", 1]], "input": 0,
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["double", ["min", 1]], "input": 0,
 		"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "meta": {"min": 1, "actual": 0, "max": 2}}]}]`, "no metadata max")
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["int", ["refine", "even"]], "input": 3,
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int", ["refine", "even"]], "input": 3,
 		"issues": [{"path": "", "code": "must_be_even", "message_key": "must_be_even", "meta": {"actual": 3}}]}]`, "has to write")
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["int"], "input": "x",
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": "x",
 		"issues": [{"path": "x", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer"}}]}]`, "JSON Pointer")
 }
 
 func TestMessagesAreDerivedOrGiven(t *testing.T) {
 	cases := accepted(t, "core", `[
-		{"id": "a.derived", "decoder": ["double", ["min", 1e7]], "input": 1,
+		{"id": "R000001", "title": "t", "decoder": ["double", ["min", 1e7]], "input": 1,
 		 "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "meta": {"min": 1e7, "actual": 1}}]},
-		{"id": "a.given", "decoder": ["string", ["toInt", "bad"]], "input": "x",
+		{"id": "R000002", "title": "t", "decoder": ["string", ["toInt", "bad"]], "input": "x",
 		 "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "message": "bad", "meta": {"expected": "integer"}}]},
-		{"id": "a.fixture", "decoder": ["int", ["refine", "even"]], "input": 3,
+		{"id": "R000003", "title": "t", "decoder": ["int", ["refine", "even"]], "input": 3,
 		 "issues": [{"path": "", "code": "must_be_even", "message_key": "must_be_even", "message": "must be even", "meta": {"actual": 3}}]}
 	]`)
 	for i, want := range []string{"must be at least 1.0E7", "bad", "must be even"} {
@@ -98,19 +98,21 @@ func TestMessagesAreDerivedOrGiven(t *testing.T) {
 }
 
 func TestCaseShape(t *testing.T) {
-	rejected(t, "core", `[{"id": "A.b", "decoder": ["int"], "input": 1, "ok": 1}]`, "lower snake case")
-	rejected(t, "core", `[{"id": "single", "decoder": ["int"], "input": 1, "ok": 1}]`, "lower snake case")
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["int"], "ok": 1}]`, "needs an input")
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["int"], "input": 1, "ok": 1, "note": ""}]`, "unknown member")
-	rejected(t, "core", `[{"id": "a.b", "encoder": ["string"], "value": "x", "ok": "x"}]`, "suite/encode")
-	accepted(t, "encode", `[{"id": "a.b", "encoder": ["object", [["propertyWithDefault", "value", "identity", ["string"], "default"]]], "value": null, "ok": {"value": "default"}}]`)
-	rejected(t, "encode", `[{"id": "a.b", "encoder": ["string"], "value": 1, "ok": "x"}]`, "value")
+	rejected(t, "core", `[{"id": "int.accepts_1", "title": "t", "decoder": ["int"], "input": 1, "ok": 1}]`, "R and six digits")
+	rejected(t, "core", `[{"id": "R12345", "title": "t", "decoder": ["int"], "input": 1, "ok": 1}]`, "R and six digits")
+	rejected(t, "core", `[{"id": "R000001", "decoder": ["int"], "input": 1, "ok": 1}]`, "title")
+	rejected(t, "core", `[{"id": "R000001", "title": " ", "decoder": ["int"], "input": 1, "ok": 1}]`, "title")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "ok": 1}]`, "needs an input")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": 1, "ok": 1, "note": ""}]`, "unknown member")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "encoder": ["string"], "value": "x", "ok": "x"}]`, "suite/encode")
+	accepted(t, "encode", `[{"id": "R000001", "title": "t", "encoder": ["object", [["propertyWithDefault", "value", "identity", ["string"], "default"]]], "value": null, "ok": {"value": "default"}}]`)
+	rejected(t, "encode", `[{"id": "R000001", "title": "t", "encoder": ["string"], "value": 1, "ok": "x"}]`, "value")
 }
 
 func TestLoadRejectsRepeatedIDs(t *testing.T) {
 	root := artifactstest.Copy(t, "../..", map[string]string{
-		"suite/core/a.json": `[{"id": "int.one", "decoder": ["int"], "input": 1, "ok": 1}]`,
-		"suite/core/b.json": `[{"id": "int.one", "decoder": ["int"], "input": 2, "ok": 2}]`,
+		"suite/core/a.json": `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": 1, "ok": 1}]`,
+		"suite/core/b.json": `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": 2, "ok": 2}]`,
 	})
 	_, err := Load(root, checker(t), schemasFor(t))
 	if err == nil || !strings.Contains(err.Error(), "also used in suite/core/a.json") {
@@ -137,18 +139,18 @@ func TestPaths(t *testing.T) {
 }
 
 func TestMessagesMustBeWhereTheyAreGiven(t *testing.T) {
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["int", ["min", 1]], "input": 0,
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int", ["min", 1]], "input": 0,
 		"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "message": "anything", "meta": {"min": 1, "actual": 0}}]}]`, "derived")
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["string", ["toInt", "bad"]], "input": "x",
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["string", ["toInt", "bad"]], "input": "x",
 		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer"}}]}]`, `"bad"`)
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["string", ["toInt", "bad"]], "input": "x",
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["string", ["toInt", "bad"]], "input": "x",
 		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "message": "worse", "meta": {"expected": "integer"}}]}]`, `"bad"`)
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["int", ["refine", "even"]], "input": 3,
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int", ["refine", "even"]], "input": 3,
 		"issues": [{"path": "", "code": "must_be_even", "message_key": "must_be_even", "message": "totally different", "meta": {"actual": 3}}]}]`, `"must be even"`)
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["object", [["field", "start", ["int"]], ["field", "end", ["int"]]], ["flatMap", "ordered_period"]],
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["object", [["field", "start", ["int"]], ["field", "end", ["int"]]], ["flatMap", "ordered_period"]],
 		"input": {"start": 3, "end": 2},
 		"issues": [{"path": "/zzz", "code": "invalid_value", "message_key": "invalid_value", "message": "end is before start", "meta": {}}]}]`, `no invalid_value at "/zzz"`)
-	accepted(t, "core", `[{"id": "a.b", "decoder": ["object", [["field", "id", ["int"]], ["field", "period",
+	accepted(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["object", [["field", "id", ["int"]], ["field", "period",
 		["object", [["field", "start", ["int"]], ["field", "end", ["int"]]], ["flatMap", "ordered_period"]]]]],
 		"input": {"id": 1, "period": {"start": 3, "end": 2}},
 		"issues": [{"path": "/period/end", "code": "invalid_value", "message_key": "invalid_value", "message": "end is before start", "meta": {}}]}]`)
@@ -156,7 +158,7 @@ func TestMessagesMustBeWhereTheyAreGiven(t *testing.T) {
 
 // The path of an issue says which part of the decoder gave it, and so how its metadata is typed.
 func TestIssuesAreTypedByWhereTheyArise(t *testing.T) {
-	cases := accepted(t, "core", `[{"id": "a.b", "decoder": ["object", [["field", "a", ["int", ["oneOf", [1, 2]]]], ["field", "b", ["double", ["oneOf", [1, 2]]]]]],
+	cases := accepted(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["object", [["field", "a", ["int", ["oneOf", [1, 2]]]], ["field", "b", ["double", ["oneOf", [1, 2]]]]]],
 		"input": {"a": 1, "b": 3},
 		"issues": [{"path": "/b", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": [1, 2], "actual": 3}}]}]`)
 	e := cases[0].Issues[0]
@@ -168,7 +170,7 @@ func TestIssuesAreTypedByWhereTheyArise(t *testing.T) {
 // Two flat fields that read the same member can give an issue at the same path with different
 // types; which one gave it is not in the issue, so the case is rejected.
 func TestAnIssueThatFitsTwoTypingsIsRejected(t *testing.T) {
-	rejected(t, "core", `[{"id": "a.b", "decoder": ["object", [
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["object", [
 		["flat", ["object", [["field", "x", ["int", ["oneOf", [1, 2]]]]]]],
 		["flat", ["object", [["field", "x", ["double", ["oneOf", [1, 2]]]]]]]]],
 		"input": {"x": 3},
@@ -182,4 +184,35 @@ func schemasFor(t *testing.T) *schemas.Set {
 		t.Fatal(err)
 	}
 	return sch
+}
+
+func TestIDsAreKept(t *testing.T) {
+	load := func(files map[string]string) *Suite {
+		t.Helper()
+		s, err := Load(artifactstest.Copy(t, "../..", files), checker(t), schemasFor(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	one := `{"id": "R000001", "title": "t", "decoder": ["int"], "input": 1, "ok": 1}`
+	two := `{"id": "R000002", "title": "t", "decoder": ["int"], "input": 2, "ok": 2}`
+	base := load(map[string]string{"suite/core/a.json": "[" + one + "," + two + "]"})
+	if err := CheckIDs(base, load(map[string]string{"suite/core/a.json": "[" + one + "," + two + "]"})); err != nil {
+		t.Error(err)
+	}
+	if err := CheckIDs(base, load(map[string]string{"suite/core/a.json": "[" + one + "]"})); err == nil || !strings.Contains(err.Error(), "R000002 was removed") {
+		t.Errorf("a silently removed ID: %v", err)
+	}
+	retired := load(map[string]string{"suite/core/a.json": "[" + one + "]", "suite/retired.json": `["R000002"]`})
+	if err := CheckIDs(base, retired); err != nil {
+		t.Error(err)
+	}
+	if err := CheckIDs(retired, load(map[string]string{"suite/core/a.json": "[" + one + "]"})); err == nil || !strings.Contains(err.Error(), "no longer listed") {
+		t.Errorf("an unretired ID: %v", err)
+	}
+	_, err := Load(artifactstest.Copy(t, "../..", map[string]string{"suite/core/a.json": "[" + two + "]", "suite/retired.json": `["R000002"]`}), checker(t), schemasFor(t))
+	if err == nil || !strings.Contains(err.Error(), "is retired") {
+		t.Errorf("a reused ID: %v", err)
+	}
 }

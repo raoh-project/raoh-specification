@@ -69,7 +69,7 @@ func TestFilesAreInByteOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "catalog/fixtures.json,catalog/issues.json,catalog/messages/en.properties,catalog/messages/ja.properties,catalog/operations.json,schema/case.schema.json,schema/conformance.schema.json,schema/report.schema.json,schema/runner-result.schema.json,spec/a.md,specification.json,suite/core/a_b.json,suite/core/b.json,suite/retired.json"
+	want := "catalog/fixtures.json,catalog/issues.json,catalog/messages/en.properties,catalog/messages/ja.properties,catalog/operations.json,schema/case.schema.json,schema/conformance.schema.json,schema/fixtures.schema.json,schema/issues.schema.json,schema/operations.schema.json,schema/report.schema.json,schema/retired.schema.json,schema/runner-result.schema.json,spec/a.md,specification.json,suite/core/a_b.json,suite/core/b.json,suite/retired.json"
 	if strings.Join(files, ",") != want {
 		t.Errorf("%v", files)
 	}

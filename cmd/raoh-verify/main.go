@@ -6,6 +6,7 @@
 //	raoh-verify check-suite <spec-root>
 //	raoh-verify manifest <spec-root>
 //	raoh-verify features <spec-root>
+//	raoh-verify check-ids <base-spec-root> <spec-root>
 //	raoh-verify verify --spec <spec-root> --result <runner-result.json> --conformance <conformance.json> [-o <report.json>]
 //	raoh-verify version
 //
@@ -22,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/raoh-project/raoh-specification/internal/manifest"
+	"github.com/raoh-project/raoh-specification/internal/suite"
 	"github.com/raoh-project/raoh-specification/internal/verify"
 )
 
@@ -34,7 +36,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: raoh-verify check-suite|manifest|features|verify|version ...")
+		fmt.Fprintln(stderr, "usage: raoh-verify check-suite|manifest|features|check-ids|verify|version ...")
 		return 2
 	}
 	switch args[0] {
@@ -79,6 +81,27 @@ func run(args []string, stdout, stderr io.Writer) int {
 		for _, f := range s.Checker.Registry.Features() {
 			fmt.Fprintln(stdout, f)
 		}
+		return 0
+	case "check-ids":
+		if len(args) != 3 {
+			fmt.Fprintln(stderr, "check-ids takes the root of the base revision and the root of the changed one")
+			return 2
+		}
+		base, err := verify.Load(args[1])
+		if err != nil {
+			fmt.Fprintln(stderr, "base:", err)
+			return 2
+		}
+		head, err := verify.Load(args[2])
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		if err := suite.CheckIDs(base.Suite, head.Suite); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "%d case IDs kept, %d retired\n", len(base.Suite.Cases), len(head.Suite.Retired))
 		return 0
 	case "verify":
 		return runVerify(args[1:], stdout, stderr)

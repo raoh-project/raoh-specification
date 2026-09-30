@@ -1,11 +1,11 @@
 [
-  {"id": "enum.accepts_red_upper", "decoder": ["enum",["RED","GREEN"],["string"]], "input": "RED", "ok": "RED"},
-  {"id": "enum.invalid_format_enum_blue", "decoder": ["enum",["RED","GREEN"],["string"]], "input": "blue", "issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.enum", "meta": {"allowed": ["green", "red"]}}]},
-  {"id": "enum.type_mismatch_1", "decoder": ["enum",["RED","GREEN"],["string"]], "input": 1, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "number", "expected": "string"}}]},
-  {"id": "enum.accepts_red_title", "decoder": ["enum",["RED","GREEN"],["string"]], "input": "Red", "ok": "RED"},
-  {"id": "enum.custom_string.accepts_space_red_upper_space", "decoder": ["enum",["RED","GREEN"],["string",["trim"]]], "input": " RED ", "ok": "RED"},
-  {"id": "enum.custom_string.accepts_green_title", "decoder": ["enum",["RED","GREEN"],["string",["trim"]]], "input": "Green", "ok": "GREEN"},
-  {"id": "enum.custom_string.invalid_format_enum_blue", "decoder": ["enum",["RED","GREEN"],["string",["trim"]]], "input": "blue", "issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.enum", "meta": {"allowed": ["green", "red"]}}]},
-  {"id": "enum.custom_string.type_mismatch_1", "decoder": ["enum",["RED","GREEN"],["string",["trim"]]], "input": 1, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "number", "expected": "string"}}]},
-  {"id": "enum.custom_string.required_null", "decoder": ["enum",["RED","GREEN"],["string",["trim"]]], "input": null, "issues": [{"path": "", "code": "required", "message_key": "required", "meta": {}}]}
+  {"id": "R000082", "title": "enum([\"RED\",\"GREEN\"], string) accepts \"RED\"", "decoder": ["enum",["RED","GREEN"],["string"]], "input": "RED", "ok": "RED"},
+  {"id": "R000083", "title": "enum([\"RED\",\"GREEN\"], string) rejects \"blue\" with invalid_format.enum", "decoder": ["enum",["RED","GREEN"],["string"]], "input": "blue", "issues": [{"path":"","code":"invalid_format","message_key":"invalid_format.enum","meta":{"allowed":["green","red"]}}]},
+  {"id": "R000084", "title": "enum([\"RED\",\"GREEN\"], string) rejects 1 with type_mismatch", "decoder": ["enum",["RED","GREEN"],["string"]], "input": 1, "issues": [{"path":"","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"number","expected":"string"}}]},
+  {"id": "R000085", "title": "enum([\"RED\",\"GREEN\"], string) accepts \"Red\"", "decoder": ["enum",["RED","GREEN"],["string"]], "input": "Red", "ok": "RED"},
+  {"id": "R000086", "title": "enum([\"RED\",\"GREEN\"], string.trim()) accepts \" RED \"", "decoder": ["enum",["RED","GREEN"],["string",["trim"]]], "input": " RED ", "ok": "RED"},
+  {"id": "R000087", "title": "enum([\"RED\",\"GREEN\"], string.trim()) accepts \"Green\"", "decoder": ["enum",["RED","GREEN"],["string",["trim"]]], "input": "Green", "ok": "GREEN"},
+  {"id": "R000088", "title": "enum([\"RED\",\"GREEN\"], string.trim()) rejects \"blue\" with invalid_format.enum", "decoder": ["enum",["RED","GREEN"],["string",["trim"]]], "input": "blue", "issues": [{"path":"","code":"invalid_format","message_key":"invalid_format.enum","meta":{"allowed":["green","red"]}}]},
+  {"id": "R000089", "title": "enum([\"RED\",\"GREEN\"], string.trim()) rejects 1 with type_mismatch", "decoder": ["enum",["RED","GREEN"],["string",["trim"]]], "input": 1, "issues": [{"path":"","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"number","expected":"string"}}]},
+  {"id": "R000090", "title": "enum([\"RED\",\"GREEN\"], string.trim()) rejects null with required", "decoder": ["enum",["RED","GREEN"],["string",["trim"]]], "input": null, "issues": [{"path":"","code":"required","message_key":"required","meta":{}}]}
 ]

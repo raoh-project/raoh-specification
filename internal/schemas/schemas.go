@@ -14,7 +14,7 @@ import (
 )
 
 // Names are the schemas, each at schema/<name>.schema.json.
-var Names = []string{"issues", "operations", "fixtures", "case", "runner-result", "conformance", "report"}
+var Names = []string{"issues", "operations", "fixtures", "case", "retired", "runner-result", "conformance", "report"}
 
 const base = "https://github.com/raoh-project/raoh-specification/schema/"
 

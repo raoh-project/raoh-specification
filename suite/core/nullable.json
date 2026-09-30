@@ -1,3 +1,3 @@
 [
-  {"id": "nullable.type_mismatch_1", "decoder": ["nullable",["string"]], "input": 1, "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"actual": "number", "expected": "string"}}]}
+  {"id": "R000222", "title": "nullable(string) rejects 1 with type_mismatch", "decoder": ["nullable",["string"]], "input": 1, "issues": [{"path":"","code":"type_mismatch","message_key":"type_mismatch","meta":{"actual":"number","expected":"string"}}]}
 ]

@@ -59,7 +59,7 @@ func differs(t *testing.T, c *suite.Case, observed, why string) {
 }
 
 func TestOkComparesTypedValues(t *testing.T) {
-	c := oneCase(t, `{"id": "a.b", "decoder": ["double"], "input": 2, "ok": 2.0}`)
+	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["double"], "input": 2, "ok": 2.0}`)
 	matches(t, c, `{"ok": 2}`)
 	matches(t, c, `{"ok": 2e0}`)
 	differs(t, c, `{"ok": {"float": "-0"}}`, "expected ok")
@@ -68,7 +68,7 @@ func TestOkComparesTypedValues(t *testing.T) {
 }
 
 func TestPathsAreEscapedAsJSONPointers(t *testing.T) {
-	c := oneCase(t, `{"id": "a.b", "decoder": ["object", [["field", "a/b", ["int"]], ["field", "~c", ["int"]]]], "input": {},
+	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["object", [["field", "a/b", ["int"]], ["field", "~c", ["int"]]]], "input": {},
 		"issues": [
 			{"path": "/a~1b", "code": "required", "message_key": "required", "meta": {}},
 			{"path": "/~0c", "code": "required", "message_key": "required", "meta": {}}]}`)
@@ -85,7 +85,7 @@ func TestPathsAreEscapedAsJSONPointers(t *testing.T) {
 }
 
 func TestDerivedMessagesAndTypedMeta(t *testing.T) {
-	c := oneCase(t, `{"id": "a.b", "decoder": ["double", ["min", 1e7]], "input": 1,
+	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["double", ["min", 1e7]], "input": 1,
 		"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "meta": {"min": 1e7, "actual": 1}}]}`)
 	matches(t, c, `{"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum",
 		"message": "must be at least 1.0E7", "meta": {"actual": 1.0, "min": 10000000}}]}`)
@@ -100,7 +100,7 @@ func TestDerivedMessagesAndTypedMeta(t *testing.T) {
 }
 
 func TestNestedTypeParametersInMeta(t *testing.T) {
-	c := oneCase(t, `{"id": "a.b", "decoder": ["float", ["oneOf", [2.0, 1.0]]], "input": 0.1,
+	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["float", ["oneOf", [2.0, 1.0]]], "input": 0.1,
 		"issues": [{"path": "", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": [1.0, 2.0], "actual": 0.1}}]}`)
 	matches(t, c, `{"issues": [{"path": "", "code": "not_allowed", "message_key": "not_allowed",
 		"message": "must be one of [1.0, 2.0]", "meta": {"allowed": [1, 2], "actual": 0.1}}]}`)
@@ -109,7 +109,7 @@ func TestNestedTypeParametersInMeta(t *testing.T) {
 }
 
 func TestInputOrderedIssuesAreAMultiset(t *testing.T) {
-	c := oneCase(t, `{"id": "a.b", "decoder": ["strictObject", [["field", "a", ["int"]]]], "input": {"a": 1, "z": 1, "y": 1, "z2": 1},
+	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["strictObject", [["field", "a", ["int"]]]], "input": {"a": 1, "z": 1, "y": 1, "z2": 1},
 		"issues": [
 			{"path": "/z", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "z"}},
 			{"path": "/y", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "y"}},
@@ -123,7 +123,7 @@ func TestInputOrderedIssuesAreAMultiset(t *testing.T) {
 }
 
 func TestSameComparesDeclaredOutcomes(t *testing.T) {
-	c := oneCase(t, `{"id": "a.b", "decoder": ["double"], "input": 2, "ok": 2.0}`)
+	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["double"], "input": 2, "ok": 2.0}`)
 	if ok, why := Same(c, outcome(t, `{"ok": 3}`), outcome(t, `{"ok": 3.0}`)); !ok {
 		t.Error(why)
 	}
@@ -137,7 +137,7 @@ func TestSameComparesDeclaredOutcomes(t *testing.T) {
 }
 
 func TestEncodingOutcomesAreJSON(t *testing.T) {
-	c := oneCase(t, `{"id": "a.b", "encoder": ["object", [["propertyWithDefault", "value", "identity", ["string"], "default"]]], "value": null, "ok": {"value": "default"}}`)
+	c := oneCase(t, `{"id": "R000001", "title": "t", "encoder": ["object", [["propertyWithDefault", "value", "identity", ["string"], "default"]]], "value": null, "ok": {"value": "default"}}`)
 	matches(t, c, `{"ok": {"value": "default"}}`)
 	differs(t, c, `{"ok": {"value": null}}`, "expected")
 }
@@ -164,7 +164,7 @@ func schemasFor(t *testing.T) *schemas.Set {
 // Only the issues of one unordered group may come in any order; everything else keeps its place,
 // and the group keeps its place among the others.
 func TestUnorderedGroupsKeepTheirPlace(t *testing.T) {
-	c := oneCase(t, `{"id": "a.b", "decoder": ["strict", ["discriminate", "kind", {
+	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["strict", ["discriminate", "kind", {
 		"rect": ["strict", ["object", [["field", "w", ["int"]], ["field", "h", ["int"]]], ["map", "area"]], ["kind", "w", "h"]]}],
 		["kind", "w", "h"]],
 		"input": {"kind": "rect", "w": "2", "extra": 1, "more": 2, "h": 3},
@@ -185,7 +185,7 @@ func TestUnorderedGroupsKeepTheirPlace(t *testing.T) {
 // The issues a oneOf's candidates report are typed by each candidate's decoder, so a float's
 // sign is compared as the value model compares it.
 func TestCandidatesAreTyped(t *testing.T) {
-	c := oneCase(t, `{"id": "a.b", "decoder": ["oneOf", [["double", ["positive"]], ["double", ["oneOf", [1]]]]], "input": -0.0,
+	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["oneOf", [["double", ["positive"]], ["double", ["oneOf", [1]]]]], "input": -0.0,
 		"issues": [{"path": "", "code": "one_of_failed", "message_key": "one_of_failed", "meta": {"candidates": [
 			{"candidate": 0, "issues": [{"path": "", "code": "out_of_range", "message": "must be positive", "meta": {"min": 0, "actual": {"float": "-0"}}}]},
 			{"candidate": 1, "issues": [{"path": "", "code": "not_allowed", "message": "must be one of [1.0]", "meta": {"allowed": [1], "actual": {"float": "-0"}}}]}]}}]}`)

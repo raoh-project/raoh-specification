@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/raoh-project/raoh-specification/schema/retired.schema.json",
+  "title": "Retired case IDs",
+  "description": "suite/retired.json: the IDs of cases that were removed. None of them is ever used again.",
+  "type": "array",
+  "items": {"type": "string", "pattern": "^R[0-9]{6}$"},
+  "uniqueItems": true
+}
