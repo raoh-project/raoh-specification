@@ -4,7 +4,7 @@ import "testing"
 
 func TestFormatForMessage(t *testing.T) {
 	for _, c := range []struct{ typ, obs, want string }{
-		// Double.toString and Float.toString.
+		// Floats: the canonical decimal, plain for exponents -3 to 6.
 		{"float64", "1e7", "1.0E7"},
 		{"float64", "1e-4", "1.0E-4"},
 		{"float64", "0.001", "0.001"},
@@ -19,7 +19,11 @@ func TestFormatForMessage(t *testing.T) {
 		{"float32", "0.1", "0.1"},
 		{"float32", "16777216", "1.6777216E7"},
 		{"float32", "3.4028235e38", "3.4028235E38"},
-		// BigDecimal.toString.
+		// One digit reads back, but T holds two-digit decimals too, and 4.9 is closer than 5.
+		{"float64", "4.9e-324", "4.9E-324"},
+		{"float32", "1.4e-45", "1.4E-45"},
+		{"float64", "2e23", "2.0E23"},
+		// Decimals: plain while the scale is not negative and the adjusted exponent is at least -6.
 		{"decimal", `"0.0005"`, "0.0005"},
 		{"decimal", `"0.00010"`, "0.00010"},
 		{"decimal", `"10"`, "10"},
@@ -27,7 +31,7 @@ func TestFormatForMessage(t *testing.T) {
 		{"decimal", `"0.0000001"`, "1E-7"},
 		{"decimal", `"-12.5E-10"`, "-1.25E-9"},
 		{"decimal", `"0E-10"`, "0E-10"},
-		// LocalDate, LocalTime, LocalDateTime, OffsetDateTime and Instant toString.
+		// Temporal values.
 		{"time", `"09:00:00"`, "09:00"},
 		{"time", `"09:00:01"`, "09:00:01"},
 		{"time", `"09:00:00.5"`, "09:00:00.500"},
@@ -39,7 +43,7 @@ func TestFormatForMessage(t *testing.T) {
 		{"instant", `"2024-01-01T00:00Z"`, "2024-01-01T00:00:00Z"},
 		{"date", `"2024-12-31"`, "2024-12-31"},
 		{"date", `"+10000-01-01"`, "+10000-01-01"},
-		// AbstractCollection.toString.
+		// Lists.
 		{"list<int32>", "[1, 3, 3]", "[1, 3, 3]"},
 		{"list<string>", `["rect", "square"]`, "[rect, square]"},
 		{"list<int32>", "[]", "[]"},

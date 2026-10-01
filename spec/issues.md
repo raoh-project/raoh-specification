@@ -18,11 +18,31 @@ have type parameters: `out_of_range.minimum` has `min` and `actual` of type `T`,
 type of the value being checked (`int32` for `int().min(1)`, `float64` for `double().min(0.5)`).
 `catalog/operations.json` says, for each operation, which variants it produces, what their type
 parameters are, and which metadata values it always gives (the `expected` of the type mismatch
-`int` gives is always `"integer"`). Some variants leave some metadata out in some contexts; `optional_meta` lists those
-entries. Every other entry is always present.
+`int` gives is always `"integer"`).
 
-An issue's metadata has exactly the entries of its variant, and each is compared as a value of its
-instantiated type.
+A variant's `meta` lists every entry an issue of it can have. Two things leave an entry out, and
+they mean different things. A variant's `optional_meta` lists entries that an issue of that
+variant may or may not have wherever it arises, depending on what the decoder ran into. An `omit`
+on an issue in `catalog/operations.json` names entries that the issue never has where that form
+gives it: `toInt` gives `type_mismatch` without `actual`, since the input was a string, the kind it
+expects, and only the text in it failed to read as an integer. Every other entry is always present.
+
+An issue's metadata has exactly these entries, and each is compared as a value of its instantiated
+type.
+
+### What `actual` of `type_mismatch` says
+
+The `actual` of `type_mismatch` names the kind of input the decoder found where it expected
+another: `null`, `boolean`, `number`, `string`, `array` or `object` for a value of the
+[input model](input-model.md), and `missing` for an absent value, such as the member of an object
+that is itself absent. Its type in `catalog/issues.json` is the symbol type of these seven words,
+so a case cannot write another. `missing` is not a kind of value; it says what the decoder
+observed, which is that there was no value.
+
+An implementation that decodes values of its host language directly, without first mapping them
+onto the input model (a Java `LocalDate` in a `Map`, for instance), reports what it finds there in
+its own words. That is outside this specification, which says what `actual` is for input-model
+values only.
 
 The form that gives an issue decides some of its metadata, and `catalog/operations.json` says
 where each such value comes from: a constant (`{"const": "integer"}`), a constant for each type the
@@ -66,14 +86,13 @@ wrote.
 
 ### Message forms
 
-A metadata value appears in a message in its message form. Version 0.8.0 takes these forms from what
-raoh-java 0.8.0 writes, which is `String.valueOf` of the value:
+A metadata value appears in a message in its message form:
 
 | Type | Message form |
 |------|--------------|
 | `bool` | `true` or `false` |
 | `int32`, `int64` | the integer in decimal |
-| `float32`, `float64` | the shortest decimal that reads back as the float, written plainly with at least one digit after the point when 10⁻³ ≤ \|v\| < 10⁷ (`0.5`, `100.0`), and as a mantissa with at least one digit after the point, `E` and the exponent otherwise (`1.0E7`, `1.0E-4`); zeros are `0.0` and `-0.0`, the others `NaN`, `Infinity` and `-Infinity` |
+| `float32`, `float64` | the canonical decimal of the float (below), written plainly with at least one digit after the point when the exponent of its first digit is from -3 to 6 (`0.5`, `100.0`, `0.001`), and as a mantissa with at least one digit after the point, `E` and that exponent otherwise (`1.0E7`, `1.0E-4`, `4.9E-324`); zeros are `0.0` and `-0.0`, the others `NaN`, `Infinity` and `-Infinity` |
 | `decimal` | the coefficient with the point placed by the scale when the scale is not negative and the adjusted exponent (the exponent of the first digit) is at least -6 (`0.00010`, `10`); otherwise the first digit, then a point and the other digits when there are any, `E`, a sign and the adjusted exponent (`1E+3`, `1.5E-7`) |
 | `string`, `symbol`, `uuid`, `uri` | the text |
 | `date` | the year as its observation writes it ([observation.md](observation.md): four digits from 0000 to 9999, otherwise a sign and its digits), `-`, two digits of month, `-`, two digits of day |
@@ -87,8 +106,16 @@ Other types have no message form. A message writes only metadata whose type has 
 whose template writes an entry of another type is not given, and a form that would give it does not
 type-check ([decoder-language.md](decoder-language.md#types)).
 
-Whether the float and decimal forms should stay as raoh-java writes them is an open question for a
-later version.
+The canonical decimal of a finite non-zero float m is chosen as follows. A decimal of length n is
+c × 10^q for integers c and q with 10^(n-1) ≤ \|c\| < 10^n; a decimal of some length has every
+greater length too. Let R be the set of decimals that round to m under IEEE 754 round to nearest,
+ties to even, at the float's width, and p the least length of a decimal in R. Let T be the decimals
+in R of length p when p ≥ 2, and of length 2 when p is 1. The canonical decimal is the one in T
+closest to m, and of two equally close, the one whose c is even.
+
+Taking length 2 when one digit would do keeps the decimal close to m where a single digit is far
+from it: the least positive float64 is `4.9E-324`, not `5E-324`, and the least positive float32
+`1.4E-45`. Observations of floats use the same decimal ([observation.md](observation.md)).
 
 ## Where issues arise, and in what order
 

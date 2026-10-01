@@ -29,8 +29,15 @@ text without checking that it belongs to the domain.
 
 Two floats are the same when they are the same IEEE 754 value, with two exceptions to what the
 IEEE 754 comparison says: +0 and -0 are different values, and every NaN is the same value as every
-other NaN. This is how `Double.equals` compares, and how raoh-java 0.8.0 compares values against the
-bounds of `min`, `oneOf` and the like.
+other NaN. A float type therefore has one NaN and two zeros.
+
+The operations that bound or order floats (`min`, `max`, `range`, `positive`, `negative`,
+`nonNegative`, `nonPositive`, and sorting the `allowed` of `oneOf`) use the float order, a total
+order on these values: -∞, the negative finite values by magnitude, -0, +0, the positive finite
+values by magnitude, +∞, and last NaN. So -0 is less than +0, `negative` accepts -0 and
+`nonNegative` rejects it, and every value is comparable with every other, NaN included. The order
+is total because each of these operations needs one answer for every value; it is not IEEE 754's
+comparison, in which -0 equals +0 and NaN is unordered.
 
 A decimal keeps its scale: 1.5 and 1.50 are different decimals. An operation compares decimals by
 value only where it says so.
@@ -47,6 +54,11 @@ value only where it says so.
 
 Two `offset_datetime` values at different offsets are different values even when they denote the
 same instant.
+
+The offset is a number of seconds. `Z`, `+00:00` and `-00:00` all give the offset zero. RFC 9557,
+which updates RFC 3339, gives `Z` and `-00:00` one meaning, that the time in UTC is known and the
+local offset is not, and `+00:00` another, that UTC is the preferred reference point; an
+`offset_datetime` does not represent that distinction.
 
 ## Structures
 

@@ -22,11 +22,13 @@ or without seconds), this document lists them.
 | `string`, `symbol`, `uri` | a JSON string |
 | `uuid` | a JSON string of 32 lower-case hexadecimal digits grouped 8-4-4-4-12 |
 
-A finite float is written as a JSON number whose value is the value of the shortest decimal that
-reads back as the float. `0.1` is an observation of the float32 nearest to 0.1, and `1`, `1.0` and
-`1e0` are all observations of 1. `16777217` is not an observation of any float32: the float32 it
-rounds to is 16777216, whose shortest decimal is `16777216`. A number beyond the range of the type
-is not an observation of it either.
+A finite float is written as a JSON number whose value is the value of the float's canonical
+decimal ([issues.md](issues.md#message-forms)), the decimal its message form writes. `0.1` is an
+observation of the float32 nearest to 0.1, and `1`, `1.0` and `1e0` are all observations of 1.
+`16777217` is not an observation of any float32: the float32 it rounds to is 16777216, whose
+canonical decimal is `16777216`. `5e-324` is not an observation of the least positive float64,
+whose canonical decimal is `4.9e-324`. A number beyond the range of the type is not an observation
+of it either.
 
 What a JSON number cannot carry reliably through every JSON library is written as a tag:
 `{"float": "-0"}`, `{"float": "NaN"}`, `{"float": "+Infinity"}` or `{"float": "-Infinity"}`. A JSON

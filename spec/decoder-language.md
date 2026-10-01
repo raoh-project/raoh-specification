@@ -141,30 +141,17 @@ checked when the catalogue is read, so a catalogue that breaks one is invalid ra
 some case. The cases in `suite/` are the specification of the details. Where a `doc` and a case
 disagree, the specification has a defect; report it.
 
-Several meanings in version 0.8.0 are raoh-java 0.8.0's behaviour written down, where a later
-version may decide otherwise:
+A few meanings in this version are still behaviour of raoh-java 0.8.0 written down, and later
+versions decide them (see [CONTRIBUTING.md](../CONTRIBUTING.md#how-a-meaning-is-decided)). Each is an
+open issue in this repository:
 
-- Offset date-times are ordered by instant and, at the same instant, by local date-time
-  (`OffsetDateTime.compareTo`), so `before`, `after` and `between` tell apart two values that
-  denote the same instant.
-- Floats are ordered as `Double.compare` orders them, so `negative` accepts -0 and `nonNegative`
-  rejects it.
+- Offset date-times are ordered by instant and, at the same instant, by local date-time, so
+  `before`, `after` and `between` tell apart two values that denote the same instant.
 - `strict` inside `strict` reports an unknown member once for each.
-- `iso8601` reads 24:00:00 as the start of the next day, where `time`, `dateTime` and
-  `offsetDateTime` refuse 24:00; `offsetDateTime` reads the offset -00:00 as Z, which RFC 3339
-  gives another meaning.
 - `email` checks a loose ASCII grammar, not RFC 5321's.
-- `unique` lists the duplicates in the order in which each first occurs again.
 
-The numbers a decoder reads differ from what raoh-java 0.8.0 gives with Jackson's default
-configuration, because raoh-json reads a number with a fraction or an exponent as a binary64 double
-first, while the input model keeps the lexeme. `decimal` keeps the scale the lexeme is written with,
-so `0.0001` gives scale 4 where raoh-json gives 0.00010, keeps every digit where raoh-json keeps
-17, and reads `1e400` where raoh-json gives type_mismatch. `float` rounds the lexeme to the nearest
-float32 once, where raoh-json rounds it to a double and that to a float32, so
-`1.000000059604644775390625000000001` gives 1.0000001 and not 1.0. raoh-json documents that its
-result depends on how the JSON library parsed the number, which makes this adapter behaviour.
-Enabling Jackson's `USE_BIG_DECIMAL_FOR_FLOATS` gives these meanings, and makes `float` and `double`
-read `-0.0` as +0 instead.
-
-Each is an open issue in this repository.
+A decoder reads the input model, in which a number is its lexeme ([input-model.md](input-model.md)).
+An adapter that hands a decoder numbers some library has already converted, to a binary64 double
+for instance, gives other results: a `decimal` that has lost the scale or digits it was written
+with, a `float` rounded twice, a -0 read as +0. Those results are the adapter's, not this
+language's, and an implementation that offers such an adapter says so.

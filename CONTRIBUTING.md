@@ -44,4 +44,40 @@ whether it is; the recording decides nothing.
 
 When a case would require behaviour that looks like an accident of one implementation rather than
 a decision, open an issue instead of, or as well as, the case. Version 0.8.0 describes several such
-behaviours of raoh-java as they are, and the issues tracker lists them.
+behaviours of raoh-java as they are, and the issues tracker lists them. Decide them as the next
+section says.
+
+## How a meaning is decided
+
+Raoh's meanings are defined from its own value model and the laws of its operations. A standard
+defines a domain where Raoh names a standardized concept. What an implementation or its host
+language does is evidence, never the reason. Work through these in order, and stop at the first
+that decides:
+
+1. Is it a meaning of the language, or a fact about an adapter or a runtime? Only the first goes
+   into the specification. How Jackson reads a number, or how `Double.compare` or
+   `OffsetDateTime.compareTo` order values, is a fact about a host, and is not written down as the
+   meaning.
+2. What is the value? Decide what makes two values the same first (whether -0 and +0 differ,
+   whether an offset date-time is an instant or a local date-time with an offset, whether a
+   decimal keeps its scale). Equality, ordering and how a value is written mostly follow from it.
+3. What laws does the operation keep? A meaning that makes an operation idempotent, or that keeps
+   a relation such as chronology apart from another such as value order, is preferred to one that
+   does not.
+4. Where Raoh names a standard concept (a URI, an offset date-time, an email address), the
+   standard defines the domain. Follow the standard's updates to the current text: an RFC that
+   another updates is read as updated. Then check that Raoh's value can hold what the standard
+   means; where it cannot, say so, or refuse what it cannot hold, rather than keep part of it
+   silently.
+5. The result must be the same in every implementation. A host library's formatting, a hash or
+   set iteration order, or a choice a library leaves unspecified is not a meaning; write the rule
+   out.
+6. Only when the meanings left are equally good, keep the existing behaviour.
+
+When an implementation's types cannot hold a value the specification defines (a URI library that
+rejects part of RFC 3986, say), decide the specification and the implementation's migration
+separately. The specification is not narrowed to fit an implementation's types.
+
+A fact the specification closes is written as a type where it can be, so that the verifier checks
+it: the `actual` of `type_mismatch` is a symbol type of its seven words, not a string described in
+prose.

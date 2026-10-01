@@ -242,12 +242,12 @@ func observeFloat(t Type, n *jsontext.Node) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	shortest, err := ParseNumber(strconv.FormatFloat(f, 'e', -1, bits))
+	canonical, err := ParseNumber(canonicalText(f, bits))
 	if err != nil {
 		return 0, err
 	}
-	if !written.Equal(shortest) {
-		return 0, fmt.Errorf("%s rounds to the %s %s", n.Text, t, strconv.FormatFloat(f, 'g', -1, bits))
+	if !written.Equal(canonical) {
+		return 0, fmt.Errorf("%s rounds to the %s %s", n.Text, t, formatFloat(f, bits))
 	}
 	return f, nil
 }
@@ -296,7 +296,7 @@ var (
 )
 
 // ParseTemporal reads a temporal value written as spec/observation.md lists. The year and the
-// offset have one spelling each, the one raoh-java writes: a year of four digits, with - when
+// offset have one spelling each: a year of four digits, with - when
 // negative, and of five or more digits only when it needs them, then with + or -; an offset of Z
 // for zero, and of ±hh:mm, followed by :ss only when the seconds are not zero. The time of day
 // may be written with or without seconds and with one to nine digits of fraction.

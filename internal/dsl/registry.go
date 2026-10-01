@@ -116,8 +116,8 @@ type Form struct {
 	Issues []IssueRef
 	// Flow is how the form gives its issues.
 	Flow Expr
-	// Requires are the conditions its arguments have to meet for the form to exist at all, as
-	// raoh-java refuses to construct the decoder otherwise.
+	// Requires are the conditions its arguments have to meet for the form to exist at all: an
+	// implementation refuses to construct the decoder otherwise.
 	Requires []Require
 }
 

@@ -17,7 +17,7 @@ func Equal(a, b Value) bool {
 	case Int32, Int64:
 		return a.Int.Cmp(b.Int) == 0
 	case Float32, Float64:
-		// As Double.equals: every NaN is the same, and +0 and -0 differ.
+		// The float sameness of spec/value-model.md: every NaN is the same, and +0 and -0 differ.
 		if math.IsNaN(a.Float) || math.IsNaN(b.Float) {
 			return math.IsNaN(a.Float) && math.IsNaN(b.Float)
 		}
