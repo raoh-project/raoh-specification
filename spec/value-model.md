@@ -33,8 +33,9 @@ other NaN. A float type therefore has one NaN and two zeros.
 
 The operations that bound or order floats (`min`, `max`, `range`, `positive`, `negative`,
 `nonNegative`, `nonPositive`, and sorting the `allowed` of `oneOf`) use the float order, a total
-order on these values: -∞, the negative finite values by magnitude, -0, +0, the positive finite
-values by magnitude, +∞, and last NaN. So -0 is less than +0, `negative` accepts -0 and
+order on these values, from least to greatest: -∞, the negative finite values in increasing
+numerical order, -0, +0, the positive finite values in increasing numerical order, +∞, and last
+NaN (-∞ < … < -2 < -1 < -0 < +0 < 1 < 2 < … < +∞ < NaN). So -0 is less than +0, `negative` accepts -0 and
 `nonNegative` rejects it, and every value is comparable with every other, NaN included. The order
 is total because each of these operations needs one answer for every value; it is not IEEE 754's
 comparison, in which -0 equals +0 and NaN is unordered.

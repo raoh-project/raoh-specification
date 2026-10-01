@@ -4,8 +4,10 @@ package verify
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/raoh-project/raoh-specification/internal/artifacts"
@@ -93,6 +95,48 @@ func Load(root string) (*Spec, error) {
 // Validate checks a document against one of the specification's schemas.
 func (s *Spec) Validate(schema string, text []byte) error {
 	return s.Schemas.Validate(schema, text)
+}
+
+// UnpinnedOptional lists the optional metadata entries no case leaves out, as issue.entry. An
+// entry in optional_meta says that an issue may or may not have it where a form leaves it open; a
+// case that leaves it out is the evidence that it may, as a case that needs a feature is the
+// evidence for a feature. Without one, the entry is always there, and optional_meta only lets a
+// case drop it unnoticed.
+func (s *Spec) UnpinnedOptional() []string {
+	open := map[string]bool{}
+	for _, f := range s.Checker.Registry().Forms() {
+		for _, ref := range f.Issues {
+			for _, o := range s.Catalog.Variants[ref.Key].Optional {
+				if !ref.Gives(o) && !slices.Contains(ref.Omit, o) {
+					open[ref.Key+"."+o] = true
+				}
+			}
+		}
+	}
+	left := map[string]bool{}
+	var walk func(issues []suite.TypedIssue)
+	walk = func(issues []suite.TypedIssue) {
+		for _, is := range issues {
+			for _, o := range is.Slot.Optional {
+				if _, ok := is.Meta[o]; !ok {
+					left[is.Slot.Key+"."+o] = true
+				}
+			}
+			for _, i := range slices.Sorted(maps.Keys(is.Candidates)) {
+				walk(is.Candidates[i])
+			}
+		}
+	}
+	for _, c := range s.Suite.Cases {
+		walk(c.Issues)
+	}
+	var out []string
+	for _, entry := range slices.Sorted(maps.Keys(open)) {
+		if !left[entry] {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 // Uncovered lists the features no case needs. A feature is in the registry only if a case pins

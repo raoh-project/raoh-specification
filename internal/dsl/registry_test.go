@@ -152,6 +152,13 @@ func TestRegistryInvariants(t *testing.T) {
 		{"candidates with a metadata source", func(c catalogs) {
 			section(c.ops, "constructors", "oneOf")["issues"] = []any{doc{"key": "one_of_failed", "meta": doc{"candidates": doc{"const": []any{}}}}}
 		}, false, false, "gives a source or omits"},
+		{"an optional entry every form gives a source", func(c catalogs) {
+			c.issues["invalid_format"].(doc)["optional_meta"] = []any{"pattern"}
+		}, false, true, "every form that gives it omits pattern or gives it a source"},
+		{"an optional entry every form omits", func(c catalogs) {
+			c.issues["invalid_format.cuid"] = doc{"code": "invalid_format", "meta": doc{"x": "string"}, "optional_meta": []any{"x"}}
+			operation(c.ops, "cuid")["issues"] = []any{doc{"key": "invalid_format.cuid", "omit": []any{"x"}}}
+		}, false, true, "every form that gives it omits x or gives it a source"},
 		{"candidates that may be left out", func(c catalogs) {
 			c.issues["one_of_failed"].(doc)["optional_meta"] = []any{"candidates"}
 		}, false, true, "may leave out candidates"},

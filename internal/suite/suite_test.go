@@ -86,6 +86,20 @@ func TestExpectedOutcomesAreTyped(t *testing.T) {
 		"issues": [{"path": "x", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer"}}]}]`, "JSON Pointer")
 }
 
+// Where an entry is present is decided per site: the value oneOf always gives actual, discriminate
+// never does, and a string conversion's type_mismatch never does, though other type mismatches
+// always do.
+func TestEntriesArePresentAsTheSiteSays(t *testing.T) {
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["string", ["oneOf", ["a"]]], "input": "b",
+		"issues": [{"path": "", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": ["a"]}}]}]`, "needs metadata actual")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["discriminate", "k", {"a": ["int"]}], "input": {"k": "b"},
+		"issues": [{"path": "/k", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": ["a"], "actual": "b"}}]}]`, "no metadata actual")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["string", ["toInt"]], "input": "x",
+		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer", "actual": "string"}}]}]`, "no metadata actual")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": "x",
+		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer", "actual": "text"}}]}]`, "not one of the alternatives")
+}
+
 func TestMessagesAreDerivedOrGiven(t *testing.T) {
 	cases := accepted(t, "core", `[
 		{"id": "R000001", "title": "t", "decoder": ["double", ["min", 1e7]], "input": 1,

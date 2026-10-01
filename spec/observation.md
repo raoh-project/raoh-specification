@@ -23,12 +23,26 @@ or without seconds), this document lists them.
 | `uuid` | a JSON string of 32 lower-case hexadecimal digits grouped 8-4-4-4-12 |
 
 A finite float is written as a JSON number whose value is the value of the float's canonical
-decimal ([issues.md](issues.md#message-forms)), the decimal its message form writes. `0.1` is an
+decimal (below), the decimal its message form writes too ([issues.md](issues.md#message-forms)). `0.1` is an
 observation of the float32 nearest to 0.1, and `1`, `1.0` and `1e0` are all observations of 1.
 `16777217` is not an observation of any float32: the float32 it rounds to is 16777216, whose
 canonical decimal is `16777216`. `5e-324` is not an observation of the least positive float64,
 whose canonical decimal is `4.9e-324`. A number beyond the range of the type is not an observation
 of it either.
+
+### Floats
+
+The canonical decimal of a finite non-zero float m is chosen as follows. A decimal is c × 10^q for
+integers c and q where c is not a multiple of 10, and its length is the number of digits of c. Let R
+be the set of decimals that round to m under IEEE 754 round to nearest, ties to even, at the
+float's width, and p the least length of a decimal in R. Let T be the decimals in R of length p
+when p ≥ 2, and of length 1 or 2 when p is 1. The canonical decimal is the one in T closest to m,
+and of two equally close, the one with the even c.
+
+Allowing length 2 when one digit would do keeps the decimal close to m where every one-digit
+decimal is far from it: the least positive float64 is `4.9e-324`, not `5e-324`, and the least
+positive float32 `1.4e-45`. A float is ±0, an infinity or NaN otherwise, which the tags below
+write.
 
 What a JSON number cannot carry reliably through every JSON library is written as a tag:
 `{"float": "-0"}`, `{"float": "NaN"}`, `{"float": "+Infinity"}` or `{"float": "-Infinity"}`. A JSON

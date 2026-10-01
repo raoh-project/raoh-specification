@@ -814,7 +814,7 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) 
 		}
 	}
 	for _, o := range v.Optional {
-		if _, ok := meta[o]; ok {
+		if _, ok := meta[o]; ok && !ref.Gives(o) {
 			site.Optional = append(site.Optional, o)
 		}
 	}
@@ -860,6 +860,7 @@ func Validate(r *Registry, c *catalog.Catalog) error {
 			form("operation "+name, f, contexts[f])
 		}
 	}
+	problems = append(problems, checkOptional(r, c)...)
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "\n"))
 	}
@@ -879,6 +880,38 @@ func receiverContext(owner string, rc Receiver) context {
 		return context{where: owner + " on any type"}
 	}
 	return context{where: owner + " on " + rc.Pattern.String(), bound: map[string]value.Type{"R": *rc.Pattern}}
+}
+
+// checkOptional checks that every entry a variant lists in optional_meta can be left out somewhere
+// a form gives the variant. An entry a form omits is never there, and one it gives a source is
+// always there; optional_meta says an entry is there or not depending on what the decoder ran into,
+// which only a form that does neither leaves to happen. A variant no form gives is not checked:
+// its optional_meta describes the message catalogue, not a decoder.
+func checkOptional(r *Registry, c *catalog.Catalog) []string {
+	given := map[string]bool{}
+	open := map[string]bool{}
+	for _, f := range r.Forms() {
+		for _, ref := range f.Issues {
+			given[ref.Key] = true
+			for _, o := range c.Variants[ref.Key].Optional {
+				if !ref.Gives(o) && !slices.Contains(ref.Omit, o) {
+					open[ref.Key+"\x00"+o] = true
+				}
+			}
+		}
+	}
+	var problems []string
+	for _, key := range slices.Sorted(maps.Keys(c.Variants)) {
+		if !given[key] {
+			continue
+		}
+		for _, o := range c.Variants[key].Optional {
+			if !open[key+"\x00"+o] {
+				problems = append(problems, fmt.Sprintf("issue %s lists %s in optional_meta, and every form that gives it omits %s or gives it a source", key, o, o))
+			}
+		}
+	}
+	return problems
 }
 
 // checkIssues checks what a form decides of its issues by itself.

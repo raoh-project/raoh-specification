@@ -40,10 +40,9 @@
   "not_allowed": {
     "code": "not_allowed",
     "params": ["T"],
-    "meta": {"allowed": "list<T>", "actual": "T"},
-    "optional_meta": ["actual"]
+    "meta": {"allowed": "list<T>", "actual": "T"}
   },
-  "invalid_format": {"code": "invalid_format", "meta": {"pattern": "string"}, "optional_meta": ["pattern"]},
+  "invalid_format": {"code": "invalid_format", "meta": {"pattern": "string"}},
   "invalid_format.email": {"code": "invalid_format", "meta": {}},
   "invalid_format.url": {"code": "invalid_format", "meta": {}},
   "invalid_format.uri": {"code": "invalid_format", "meta": {}},

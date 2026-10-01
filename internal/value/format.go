@@ -91,10 +91,10 @@ func formatFloat(f float64, bits int) string {
 }
 
 // canonicalDecimal selects the canonical decimal of a positive finite float m of the given width,
-// as spec/issues.md defines it. R is the set of decimals that round to m under round to nearest,
-// ties to even; p is the least length of a decimal in R; T is the decimals in R of length p, or of
-// length 1 or 2 when p is 1; the canonical decimal is the one in T closest to m, or of the two
-// equally close, the one with the even significand. It returns the significand's digits, without
+// as spec/observation.md defines it. R is the set of decimals that round to m under round to
+// nearest, ties to even; p is the least length of a decimal in R; T is the decimals in R of length
+// p, or of length 1 or 2 when p is 1; the canonical decimal is the one in T closest to m, or of the
+// two equally close, the one with the even significand. It returns the significand's digits, without
 // trailing zeros, and the exponent of the first digit.
 //
 // Everything is exact rational arithmetic on m and the bounds of R, so the result depends on no
@@ -145,7 +145,7 @@ func canonicalDecimal(f float64, bits int) (string, int) {
 			chosen = above
 		default:
 			chosen = below
-			if below.Bit(0) == 1 {
+			if significand(below).Bit(0) == 1 && significand(above).Bit(0) == 0 {
 				chosen = above
 			}
 		}
@@ -154,15 +154,9 @@ func canonicalDecimal(f float64, bits int) (string, int) {
 	default:
 		chosen = above
 	}
-	ten := big.NewInt(10)
-	for chosen.Sign() != 0 {
-		q, r := new(big.Int).QuoRem(chosen, ten, new(big.Int))
-		if r.Sign() != 0 {
-			break
-		}
-		chosen, s = q, s+1
-	}
-	digits := chosen.String()
+	normal := significand(chosen)
+	s += len(chosen.String()) - len(normal.String())
+	digits := normal.String()
 	return digits, s + len(digits) - 1
 }
 
@@ -177,6 +171,20 @@ func canonicalText(f float64, bits int) string {
 	}
 	digits, e := canonicalDecimal(f, bits)
 	return sign + digits + "e" + strconv.Itoa(e-len(digits)+1)
+}
+
+// significand gives c without its trailing zeros: the significand of the decimal c·10^s, which
+// is not a multiple of 10.
+func significand(c *big.Int) *big.Int {
+	ten := big.NewInt(10)
+	for c.Sign() != 0 {
+		q, r := new(big.Int).QuoRem(c, ten, new(big.Int))
+		if r.Sign() != 0 {
+			break
+		}
+		c = q
+	}
+	return c
 }
 
 // roundingInterval gives the bounds of the decimals that round to the positive finite float f of

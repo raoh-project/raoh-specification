@@ -3,6 +3,7 @@ package verify
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -345,5 +346,46 @@ func TestUncoveredFeatures(t *testing.T) {
 		if slices.Contains(got, f) {
 			t.Errorf("%s is reported uncovered", f)
 		}
+	}
+}
+
+// An optional_meta entry needs a case that leaves it out, as a feature needs a case that uses it.
+func TestOptionalMetaNeedsACaseThatLeavesItOut(t *testing.T) {
+	issues, err := os.ReadFile("../../catalog/issues.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	optional := strings.Replace(string(issues),
+		`"meta": {"allowed": "list<T>", "actual": "T"}`,
+		`"meta": {"allowed": "list<T>", "actual": "T"}, "optional_meta": ["actual"]`, 1)
+	if optional == string(issues) {
+		t.Fatal("not_allowed is not where the test expects it")
+	}
+	withActual := `{"id": "R000001", "title": "t", "decoder": ["string", ["oneOf", ["a"]]], "input": "b",
+	  "issues": [{"path": "", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": ["a"], "actual": "b"}}]}`
+	withoutActual := `{"id": "R000002", "title": "t", "decoder": ["string", ["oneOf", ["a"]]], "input": "c",
+	  "issues": [{"path": "", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": ["a"]}}]}`
+	for _, tc := range []struct {
+		cases string
+		want  []string
+	}{
+		{"[" + withActual + "]", []string{"not_allowed.actual"}},
+		{"[" + withActual + "," + withoutActual + "]", nil},
+	} {
+		root := artifactstest.Copy(t, "../..", map[string]string{
+			"catalog/issues.json":  optional,
+			"suite/core/mini.json": tc.cases,
+		})
+		s, err := Load(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := s.UnpinnedOptional(); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %v, want %v", tc.cases, got, tc.want)
+		}
+	}
+	// The catalogue as it is: every optional entry a form leaves open has a case that leaves it out.
+	if got := miniSpec(t).UnpinnedOptional(); len(got) > 0 {
+		t.Errorf("the catalogue has optional entries that are always there: %v", got)
 	}
 }

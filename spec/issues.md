@@ -21,11 +21,19 @@ parameters are, and which metadata values it always gives (the `expected` of the
 `int` gives is always `"integer"`).
 
 A variant's `meta` lists every entry an issue of it can have. Two things leave an entry out, and
-they mean different things. A variant's `optional_meta` lists entries that an issue of that
-variant may or may not have wherever it arises, depending on what the decoder ran into. An `omit`
-on an issue in `catalog/operations.json` names entries that the issue never has where that form
-gives it: `toInt` gives `type_mismatch` without `actual`, since the input was a string, the kind it
-expects, and only the text in it failed to read as an integer. Every other entry is always present.
+they mean different things. An `omit` on an issue in `catalog/operations.json` names entries that
+the issue never has where that form gives it: `toInt` gives `type_mismatch` without `actual`,
+since the input was a string, the kind it expects, and only the text in it failed to read as an
+integer, and `discriminate` gives `not_allowed` without `actual`, while the value `oneOf` always
+gives it. A variant's `optional_meta` lists entries that an issue may or may not have at a site
+that neither omits the entry nor gives it a source, depending on what the decoder ran into. Every
+other entry is always present.
+
+Both are checked. The catalogue is rejected when an entry in `optional_meta` is omitted or given a
+source by every form that gives the variant, and `raoh-verify check-suite` fails when no case
+leaves such an entry out, as it fails for a feature no case needs: without that case nothing shows
+that the entry can be absent. A variant no form gives, such as `out_of_range`, which only the
+message catalogue has, is not checked.
 
 An issue's metadata has exactly these entries, and each is compared as a value of its instantiated
 type.
@@ -92,7 +100,7 @@ A metadata value appears in a message in its message form:
 |------|--------------|
 | `bool` | `true` or `false` |
 | `int32`, `int64` | the integer in decimal |
-| `float32`, `float64` | the canonical decimal of the float (below), written plainly with at least one digit after the point when the exponent of its first digit is from -3 to 6 (`0.5`, `100.0`, `0.001`), and as a mantissa with at least one digit after the point, `E` and that exponent otherwise (`1.0E7`, `1.0E-4`, `4.9E-324`); zeros are `0.0` and `-0.0`, the others `NaN`, `Infinity` and `-Infinity` |
+| `float32`, `float64` | the canonical decimal of the float ([observation.md](observation.md#floats)), written plainly with at least one digit after the point when the exponent of its first digit is from -3 to 6 (`0.5`, `100.0`, `0.001`), and as a mantissa with at least one digit after the point, `E` and that exponent otherwise (`1.0E7`, `1.0E-4`, `4.9E-324`); zeros are `0.0` and `-0.0`, the others `NaN`, `Infinity` and `-Infinity` |
 | `decimal` | the coefficient with the point placed by the scale when the scale is not negative and the adjusted exponent (the exponent of the first digit) is at least -6 (`0.00010`, `10`); otherwise the first digit, then a point and the other digits when there are any, `E`, a sign and the adjusted exponent (`1E+3`, `1.5E-7`) |
 | `string`, `symbol`, `uuid`, `uri` | the text |
 | `date` | the year as its observation writes it ([observation.md](observation.md): four digits from 0000 to 9999, otherwise a sign and its digits), `-`, two digits of month, `-`, two digits of day |
@@ -106,16 +114,6 @@ Other types have no message form. A message writes only metadata whose type has 
 whose template writes an entry of another type is not given, and a form that would give it does not
 type-check ([decoder-language.md](decoder-language.md#types)).
 
-The canonical decimal of a finite non-zero float m is chosen as follows. A decimal of length n is
-c × 10^q for integers c and q with 10^(n-1) ≤ \|c\| < 10^n; a decimal of some length has every
-greater length too. Let R be the set of decimals that round to m under IEEE 754 round to nearest,
-ties to even, at the float's width, and p the least length of a decimal in R. Let T be the decimals
-in R of length p when p ≥ 2, and of length 2 when p is 1. The canonical decimal is the one in T
-closest to m, and of two equally close, the one whose c is even.
-
-Taking length 2 when one digit would do keeps the decimal close to m where a single digit is far
-from it: the least positive float64 is `4.9E-324`, not `5E-324`, and the least positive float32
-`1.4E-45`. Observations of floats use the same decimal ([observation.md](observation.md)).
 
 ## Where issues arise, and in what order
 
