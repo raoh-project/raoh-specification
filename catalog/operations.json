@@ -19,7 +19,7 @@
       "flow": "own"
     },
     "float": {
-      "doc": "Accepts any JSON number and rounds it to the nearest float32; a number whose magnitude rounds beyond the float32 range gives type_mismatch.numeric_range; both type mismatches have expected \"float\". The number -0 written without a fraction or an exponent is the integer zero and gives +0.",
+      "doc": "Accepts any JSON number and rounds it to the nearest float32; a number whose magnitude rounds beyond the float32 range gives type_mismatch.numeric_range; both type mismatches have expected \"float\". A number with a minus sign whose value is zero gives -0, whatever its form: -0, -0.0, -0e0 and -0.000e10 alike, and so does a negative number that rounds to zero.",
       "result": "float32",
       "issues": ["required", {"key": "type_mismatch", "meta": {"expected": {"const": "float"}}}, {"key": "type_mismatch.numeric_range", "meta": {"expected": {"const": "float"}}}],
       "flow": "own"

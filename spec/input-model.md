@@ -16,8 +16,9 @@ A decoder may also be given no value at all: an object field that is not there i
 decoders tell an absent value from null where they say so.
 
 A number is not reduced to a value before a decoder sees it, because decoders tell lexemes apart.
-`int` accepts `1` and rejects `1.0`; `double` gives +0 for `-0` and -0 for `-0.0`; `decimal` gives
-1.50 with scale 2 for `1.50`. An implementation need not keep the lexeme itself, as long as it can
+`int` accepts `1` and rejects `1.0`; `decimal` gives 1.50 with scale 2 for `1.50`; `double` gives -0
+for every lexeme with a minus sign and the value zero, `-0` as much as `-0.0`, which a reading of
+`-0` as the integer zero would lose. An implementation need not keep the lexeme itself, as long as it can
 tell every decoder what the decoder needs from it.
 
 The order of an object's members is part of the value only as far as some decoders report issues in
