@@ -72,10 +72,12 @@ type ExprAt struct {
 	Body   Expr
 }
 
-// ExprUnknown is one issue for each member of an object input the form does not know, in the
-// order of the input's members. The known members are the strings of a value argument (KnownArg)
-// or the members a fields argument reads (KnownFields); the other is NoArg.
+// ExprUnknown is After's issues, then one issue for each member of an object input the form does
+// not know and After has not already reported unknown, in the order of the input's members. The
+// known members are the strings of a value argument (KnownArg) or the members a fields argument
+// reads (KnownFields); the other is NoArg.
 type ExprUnknown struct {
+	After       Expr
 	KnownArg    ArgRef
 	KnownFields ArgRef
 	Issue       IssueIndex
@@ -237,10 +239,17 @@ func (r *exprResolver) parse(n *jsontext.Node) (Expr, error) {
 		}
 		return ExprAt{Member: i, Body: b}, nil
 	case "unknown_members":
-		if err := object(v, "unknown_members", "known", "issue"); err != nil {
+		if err := object(v, "unknown_members", "after", "known", "issue"); err != nil {
 			return nil, err
 		}
 		x := ExprUnknown{}
+		after, err := v.Member("after")
+		if err != nil {
+			return nil, err
+		}
+		if x.After, err = r.parse(after); err != nil {
+			return nil, err
+		}
 		known, err := v.Member("known")
 		if err != nil {
 			return nil, err
@@ -409,5 +418,7 @@ func walkExpr(x Expr, visit func(Expr)) {
 		walkExpr(x.Body, visit)
 	case ExprAt:
 		walkExpr(x.Body, visit)
+	case ExprUnknown:
+		walkExpr(x.After, visit)
 	}
 }

@@ -790,10 +790,14 @@
             "unknown_members": {
               "type": "object",
               "required": [
+                "after",
                 "known",
                 "issue"
               ],
               "properties": {
+                "after": {
+                  "$ref": "#/$defs/flow"
+                },
                 "known": {
                   "oneOf": [
                     {

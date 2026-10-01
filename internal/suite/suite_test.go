@@ -100,6 +100,14 @@ func TestEntriesArePresentAsTheSiteSays(t *testing.T) {
 		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer", "actual": "text"}}]}]`, "not one of the alternatives")
 }
 
+// Nested strict forms report an unknown member once, by the innermost that does not know it.
+func TestNestedStrictReportsAMemberOnce(t *testing.T) {
+	unknown := `{"path": "/b", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "b"}}`
+	nested := `["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a"]], ["a"]]`
+	accepted(t, "core", `[{"id": "R000001", "title": "t", "decoder": `+nested+`, "input": {"a": 1, "b": 2}, "issues": [`+unknown+`]}]`)
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": `+nested+`, "input": {"a": 1, "b": 2}, "issues": [`+unknown+`, `+unknown+`]}]`, "does not give them")
+}
+
 func TestMessagesAreDerivedOrGiven(t *testing.T) {
 	cases := accepted(t, "core", `[
 		{"id": "R000001", "title": "t", "decoder": ["double", ["min", 1e7]], "input": 1,

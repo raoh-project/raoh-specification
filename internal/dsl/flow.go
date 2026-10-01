@@ -83,11 +83,15 @@ type Candidates struct {
 	Site *Site
 }
 
-// Unordered is exactly one issue, its Site, for each member of an object input not named in
-// Known, in any order: the order of the input's members, which the specification leaves to the
-// implementation. Each Unordered of a decoder has its own ID.
+// Unordered is the issue lists of After, then exactly one issue, its Site, for each member of an
+// object input not named in Known and not already reported by After, in any order: the order of
+// the input's members, which the specification leaves to the implementation. After reports a
+// member when it gives, at that member's path, an issue of the same variant from an Unordered: an
+// unknown member is reported once, by the innermost form that does not know it. Each Unordered of
+// a decoder has its own ID.
 type Unordered struct {
 	ID    int
+	After Flow
 	Known []string
 	Site  *Site
 }
@@ -324,7 +328,16 @@ func (p *parser) parse(f Flow, in *jsontext.Node, at []string, start int) endSet
 		}
 		ends = p.parse(f.Body, child, appendPath(at, f.Name), start)
 	case *Unordered:
-		ends = p.unordered(f, in, at, start)
+		for _, ep := range p.parse(f.After, in, at, start) {
+			for _, head := range ep.parses {
+				reported := reportedUnknown(head.slots, f.Site.Key, at)
+				for _, tail := range p.unordered(f, in, at, ep.end, reported) {
+					for _, t := range tail.parses {
+						ends.add(tail.end, join(head, t))
+					}
+				}
+			}
+		}
 	case *Candidates:
 		for _, c := range f.Site.Candidates.Flows {
 			if len(p.parse(c, in, at, start).at(start)) > 0 {
@@ -371,14 +384,26 @@ func (p *parser) chain(items []Flow, in *jsontext.Node, at []string, start int) 
 	return ends
 }
 
-// unordered parses one issue for each unknown member, in any order.
-func (p *parser) unordered(f *Unordered, in *jsontext.Node, at []string, start int) endSet {
+// reportedUnknown gives the members of the object at path that slots report unknown: those at
+// which an Unordered's issue of the given variant arises.
+func reportedUnknown(slots []Slot, key string, path []string) []string {
+	var out []string
+	for _, s := range slots {
+		if s.Group != nil && s.Site.Key == key && len(s.Path) == len(path)+1 && slices.Equal(s.Path[:len(path)], path) {
+			out = append(out, s.Path[len(path)])
+		}
+	}
+	return out
+}
+
+// unordered parses one issue for each unknown member not already reported, in any order.
+func (p *parser) unordered(f *Unordered, in *jsontext.Node, at []string, start int, reported []string) endSet {
 	var ends endSet
 	var slots []Slot
 	group := p.groups.of(f, at)
 	if in != nil && in.Kind == jsontext.Object {
 		for _, m := range in.Members {
-			if !slices.Contains(f.Known, m.Name) {
+			if !slices.Contains(f.Known, m.Name) && !slices.Contains(reported, m.Name) {
 				slots = append(slots, Slot{Site: f.Site, Path: appendPath(at, m.Name), Input: m.Value, Group: group})
 			}
 		}
@@ -436,7 +461,7 @@ func Describe(f Flow) string {
 	case *At:
 		return "at(" + f.Name + ", " + Describe(f.Body) + ")"
 	case *Unordered:
-		return fmt.Sprintf("unknown#%d(except %s: %s)", f.ID, strings.Join(f.Known, ","), f.Site.Key)
+		return fmt.Sprintf("unknown#%d(after %s; except %s: %s)", f.ID, Describe(f.After), strings.Join(f.Known, ","), f.Site.Key)
 	case *Candidates:
 		return "candidates(" + describeAll(f.Site.Candidates.Flows) + ": " + f.Site.Key + ")"
 	}
@@ -496,6 +521,7 @@ func Places(f Flow, input *jsontext.Node, path []string) []Slot {
 		case *Candidates:
 			out = append(out, Slot{Site: f.Site, Path: at, Input: in})
 		case *Unordered:
+			walk(f.After, in, at)
 			group := gs.of(f, at)
 			if in != nil && in.Kind == jsontext.Object {
 				for _, m := range in.Members {

@@ -188,24 +188,23 @@ func schemasFor(t *testing.T) *schemas.Set {
 
 // Only the issues of one unordered group may come in any order; everything else keeps its place,
 // and the group keeps its place among the others.
-// Only the issues of one unordered group may come in any order; everything else keeps its place,
-// and the group keeps its place among the others.
 func TestUnorderedGroupsKeepTheirPlace(t *testing.T) {
 	expected := func(f string) string {
 		return `{"path": "/` + f + `", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "` + f + `"}}`
 	}
+	// The inner strict does not know c and d, the outer one a and b: two groups, inner first.
 	c := oneCase(t, `{"id": "R000001", "title": "t", "decoder": ["strict", ["discriminate", "kind", {
-		"rect": ["strict", ["object", [["field", "w", ["int"]], ["field", "h", ["int"]]], ["map", "area"]], ["kind", "w", "h"]]}],
-		["kind", "w", "h"]],
-		"input": {"kind": "rect", "w": "2", "extra": 1, "more": 2, "h": 3},
+		"rect": ["strict", ["object", [["field", "w", ["int"]], ["field", "h", ["int"]]], ["map", "area"]], ["kind", "w", "h", "a", "b"]]}],
+		["kind", "w", "h", "c", "d"]],
+		"input": {"kind": "rect", "w": "2", "a": 1, "b": 2, "c": 3, "d": 4, "h": 3},
 		"issues": [
 			{"path": "/w", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer", "actual": "string"}},
-			`+expected("extra")+`, `+expected("more")+`, `+expected("extra")+`, `+expected("more")+`]}`)
+			`+expected("c")+`, `+expected("d")+`, `+expected("a")+`, `+expected("b")+`]}`)
 	w := `{"path": "/w", "code": "type_mismatch", "message_key": "type_mismatch", "message": "expected integer", "meta": {"expected": "integer", "actual": "string"}}`
-	matches(t, c, `{"issues": [`+w+`,`+unknown("extra")+`,`+unknown("more")+`,`+unknown("extra")+`,`+unknown("more")+`]}`)
-	matches(t, c, `{"issues": [`+w+`,`+unknown("more")+`,`+unknown("extra")+`,`+unknown("extra")+`,`+unknown("more")+`]}`)
-	differs(t, c, `{"issues": [`+unknown("extra")+`,`+w+`,`+unknown("more")+`,`+unknown("extra")+`,`+unknown("more")+`]}`, "issue 0")
-	differs(t, c, `{"issues": [`+w+`,`+unknown("extra")+`,`+unknown("extra")+`,`+unknown("more")+`,`+unknown("more")+`]}`, "no match")
+	matches(t, c, `{"issues": [`+w+`,`+unknown("c")+`,`+unknown("d")+`,`+unknown("a")+`,`+unknown("b")+`]}`)
+	matches(t, c, `{"issues": [`+w+`,`+unknown("d")+`,`+unknown("c")+`,`+unknown("b")+`,`+unknown("a")+`]}`)
+	differs(t, c, `{"issues": [`+unknown("c")+`,`+w+`,`+unknown("d")+`,`+unknown("a")+`,`+unknown("b")+`]}`, "issue 0")
+	differs(t, c, `{"issues": [`+w+`,`+unknown("c")+`,`+unknown("a")+`,`+unknown("d")+`,`+unknown("b")+`]}`, "no match")
 }
 
 // The issues a oneOf's candidates report are typed by each candidate's decoder, so a float's

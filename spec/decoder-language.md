@@ -81,7 +81,8 @@ A value argument is read as an observation of the type the argument has where it
 is the decimal 0.5 with scale 1; `["int", ["min", 0.5]]` does not type-check.
 
 Some forms put conditions on their arguments, listed as `requires` in `catalog/operations.json`:
-the bounds of `range` and `between` must be in order, the divisor of `multipleOf` must not be
+the lower bound of `range` and `between` must not be greater than the upper, compared as the
+operation compares (chronologically, by instant alone, for offset date-times), the divisor of `multipleOf` must not be
 zero, the elements of `containsAll` must not be empty, the allowed values of `oneOf` must be
 distinct as the value model compares them, the symbols of `enum` must stay distinct when A-Z are
 read as a-z, the pattern of `pattern` must be one of [pattern.md](pattern.md), a `strictObject`
@@ -141,13 +142,10 @@ checked when the catalogue is read, so a catalogue that breaks one is invalid ra
 some case. The cases in `suite/` are the specification of the details. Where a `doc` and a case
 disagree, the specification has a defect; report it.
 
-A few meanings in this version are still behaviour of raoh-java 0.8.0 written down, and later
-versions decide them (see [CONTRIBUTING.md](../CONTRIBUTING.md#how-a-meaning-is-decided)). Each is an
-open issue in this repository:
+A meaning in this version is still behaviour of raoh-java 0.8.0 written down, and a later version
+decides it (see [CONTRIBUTING.md](../CONTRIBUTING.md#how-a-meaning-is-decided)). It is an open
+issue in this repository:
 
-- Offset date-times are ordered by instant and, at the same instant, by local date-time, so
-  `before`, `after` and `between` tell apart two values that denote the same instant.
-- `strict` inside `strict` reports an unknown member once for each.
 - `email` checks a loose ASCII grammar, not RFC 5321's.
 
 A decoder reads the input model, in which a number is its lexeme ([input-model.md](input-model.md)).
