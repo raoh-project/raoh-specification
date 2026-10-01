@@ -55,7 +55,8 @@ the form decides (from constants, arguments and member names); and that each mes
 its place gives, derived from the catalogue or given by the form.
 
 It checks the suite as a whole too: that no two cases have the same profile, form and input; that
-every feature the registry lists is needed by some case; and that every entry a variant's
+every feature the registry lists is needed by some case; that every issue a form that takes a
+message declares is expected with the message given by some case; and that every entry a variant's
 `optional_meta` lists, where a form leaves it open, is left out by some case
 ([issues.md](issues.md)). The catalogues themselves are checked when they are read
 ([decoder-language.md](decoder-language.md#meaning), [issues.md](issues.md)).
@@ -175,14 +176,16 @@ other. The run is invalid, and the verifier exits with status 2 without writing 
 - a divergence declares an outcome that is not an observation of the case's result type, or the
   outcome the case expects;
 - the runner result has an outcome for a case that needs a feature the runner does not bind;
-- a feature the runner binds is declared unsupported.
+- a feature the runner binds is declared unsupported;
+- the runner binds a facet (`operation.int32.min.message`) without the feature it is a facet of
+  (`operation.int32.min`).
 
 ### Outcomes
 
 Each case of a profile the declaration lists is classified in this order:
 
 1. If a feature the case needs is not bound: `unsupported` when every such feature is declared
-   unsupported, `failed` otherwise.
+   unsupported, itself or, for a facet, through its parent; `failed` otherwise.
 2. If the runner result has no outcome for the case, or has an error for it: `failed`. An error is
    a defect, and no divergence excuses it.
 3. If the outcome is the one the case expects: `matched`, unless the case is declared divergent, in

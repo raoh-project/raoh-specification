@@ -9,8 +9,8 @@ can give.
 ## Grammar
 
 A decoder form is a JSON array. Its first element is the name of a constructor, the next elements
-are the constructor's arguments, as many as the constructor has, and every element after them is an
-operation applied to the decoder so far:
+are the constructor's arguments, and every element after them is an operation applied to the
+decoder so far:
 
 ```json
 ["string", ["trim"], ["minLength", 3]]
@@ -19,14 +19,26 @@ operation applied to the decoder so far:
 ```
 
 An operation is a JSON array whose first element is the operation's name and whose other elements are
-its arguments. An operation may have optional trailing arguments; a constructor may not, so that the
-end of a constructor's arguments never depends on what follows.
+its arguments. An operation may have optional trailing arguments. A constructor's only optional
+argument is a trailing message, and the end of its arguments never depends on what follows: after
+its required arguments, a string is that message and an array is the first operation
+(`["literal", "yes", ["string"], "say yes"]` gives a message; `["literal", "yes", ["string"],
+["minLength", 3]]` applies an operation).
 
 Only a value or a message argument can be optional, and leaving one out means one thing: a value
 argument left out stands for its `default`, which every optional value argument declares (`normalize`
 without a form is `normalize` with `"NFC"`), and a message argument left out gives the message the
 catalogue derives. A form's arguments have distinct names, and a form has at most one message
 argument.
+
+Which forms take a message follows from what they do. An operation checks or converts a value, and
+the issues it declares are about that value, so an operation that declares an issue takes an
+optional message, and one that declares none takes no message. A constructor or a field builds
+structure, and its issues (a missing value, a value of the wrong kind, an unknown member, no
+candidate matching) are worded by a message resolver, not by each form, so it takes none; `enum`
+and `literal`, which convert the string their string decoder reads, are the constructors that take
+one. `catalog/operations.json` records each, and the catalogue is rejected when an operation breaks
+the rule or a field takes a message.
 
 Arguments are of these kinds:
 
@@ -125,10 +137,16 @@ a feature with an ID:
 | an encoder | `encoder.<name>` |
 | a property kind | `property.<name>` |
 | a fixture | `fixture.<name>` |
+| giving a form that takes a message its message | the form's ID followed by `.message`, such as `operation.int32.min.message` or `decoder.enum.message` |
+
+A `.message` feature is a facet of the form's feature, its parent: it is not a form of its own, but
+a capability of one, which an implementation may have the form without. A case that gives a form
+its message needs both the form's feature and the facet; a case that does not give it needs the
+form's feature only.
 
 A case needs the features its forms use. An implementation that lacks one declares it unsupported
 (see [conformance.md](conformance.md)), and every case that needs it is then unsupported rather than
-failed.
+failed. A facet whose parent is unsupported is unsupported too, without being declared.
 
 ## Meaning
 

@@ -16,7 +16,9 @@ const miniCore = `[
   {"id": "R000002", "title": "int.min(1) rejects 0", "decoder": ["int", ["min", 1]], "input": 0,
    "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "meta": {"min": 1, "actual": 0}}]},
   {"id": "R000003", "title": "string.cuid() rejects x", "decoder": ["string", ["cuid"]], "input": "x",
-   "issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.cuid", "meta": {}}]}
+   "issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.cuid", "meta": {}}]},
+  {"id": "R000005", "title": "int.min(1, \"low\") rejects 0", "decoder": ["int", ["min", 1, "low"]], "input": 0,
+   "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "message": "low", "meta": {"min": 1, "actual": 0}}]}
 ]`
 
 const miniEncode = `[
@@ -43,10 +45,11 @@ const (
 	okInt       = `{"ok": 1}`
 	minIssue    = `{"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "message": "must be at least 1", "meta": {"min": 1, "actual": 0}}]}`
 	cuidIssue   = `{"issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.cuid", "message": "not a valid CUID", "meta": {}}]}`
+	lowIssue    = `{"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "message": "low", "meta": {"min": 1, "actual": 0}}]}`
 	defaultJSON = `{"ok": {"value": "default"}}`
 )
 
-var allFeatures = []string{"decoder.int", "decoder.string", "operation.int32.min", "operation.string.cuid",
+var allFeatures = []string{"decoder.int", "decoder.string", "operation.int32.min", "operation.int32.min.message", "operation.string.cuid",
 	"encoder.object", "encoder.string", "property.propertyWithDefault", "fixture.identity"}
 
 type run struct {
@@ -67,6 +70,7 @@ func (s *Spec) run() *run {
 			"R000002": minIssue,
 			"R000003": cuidIssue,
 			"R000004": defaultJSON,
+			"R000005": lowIssue,
 		},
 		catalogs: map[string]map[string]string{"en": s.Catalog.Messages["en"], "ja": s.Catalog.Messages["ja"]},
 	}
@@ -181,6 +185,37 @@ func TestClassification(t *testing.T) {
 			decl:     declare(v, `, "unsupported_features": {"operation.string.cuid": {"reason": "no CUID library"}}`),
 			statuses: map[string]string{"core": PartiallyConformant, "encode": Conformant},
 			outcomes: map[string]string{"R000003": Unsupported},
+		},
+		{
+			name: "a facet unsupported with its parent",
+			change: func(r *run) {
+				r.bound = without(without(r.bound, "operation.int32.min"), "operation.int32.min.message")
+				delete(r.results, "R000002")
+				delete(r.results, "R000005")
+			},
+			decl:     declare(v, `, "unsupported_features": {"operation.int32.min": {"reason": "r"}}`),
+			statuses: map[string]string{"core": PartiallyConformant},
+			outcomes: map[string]string{"R000002": Unsupported, "R000005": Unsupported},
+		},
+		{
+			name: "a facet unsupported alone",
+			change: func(r *run) {
+				r.bound = without(r.bound, "operation.int32.min.message")
+				delete(r.results, "R000005")
+			},
+			decl:     declare(v, `, "unsupported_features": {"operation.int32.min.message": {"reason": "no message overload"}}`),
+			statuses: map[string]string{"core": PartiallyConformant},
+			outcomes: map[string]string{"R000002": Matched, "R000005": Unsupported},
+		},
+		{
+			name: "a facet bound without its parent",
+			change: func(r *run) {
+				r.bound = without(r.bound, "operation.int32.min")
+				delete(r.results, "R000002")
+				delete(r.results, "R000005")
+			},
+			decl:    declare(v, `, "unsupported_features": {"operation.int32.min": {"reason": "r"}}`),
+			invalid: "binds operation.int32.min.message, and not operation.int32.min, which it is a facet of",
 		},
 		{
 			name: "an undeclared unbound feature",
@@ -320,7 +355,7 @@ func TestReportMatchesItsSchema(t *testing.T) {
 	if err := s.Validate("report", text); err != nil {
 		t.Error(err)
 	}
-	if !rep.Conformant() || rep.Profiles["core"].Matched != 3 || rep.Profiles["messages-en"].Matched != len(s.Catalog.Messages["en"]) {
+	if !rep.Conformant() || rep.Profiles["core"].Matched != 4 || rep.Profiles["messages-en"].Matched != len(s.Catalog.Messages["en"]) {
 		t.Errorf("%+v", rep.Profiles)
 	}
 }
@@ -387,5 +422,27 @@ func TestOptionalMetaNeedsACaseThatLeavesItOut(t *testing.T) {
 	// The catalogue as it is: every optional entry a form leaves open has a case that leaves it out.
 	if got := miniSpec(t).UnpinnedOptional(); len(got) > 0 {
 		t.Errorf("the catalogue has optional entries that are always there: %v", got)
+	}
+}
+
+// Every issue a form that takes a message declares needs a case that gives it the message.
+func TestEveryIssueOfAFormThatTakesAMessageIsGivenOne(t *testing.T) {
+	got := miniSpec(t).UngivenMessages()
+	if slices.Contains(got, "operation.int32.min.message: out_of_range.minimum") {
+		t.Error("R000005 gives min's issue a message, and it is reported ungiven")
+	}
+	for _, want := range []string{"operation.string.toInt.message: type_mismatch.numeric_range", "decoder.literal.message: invalid_format.literal"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("%s is not reported ungiven", want)
+		}
+	}
+	if got := func() []string {
+		s, err := Load("../..")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s.UngivenMessages()
+	}(); len(got) > 0 {
+		t.Errorf("the suite leaves issues without a given message: %v", got)
 	}
 }

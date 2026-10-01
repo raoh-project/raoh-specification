@@ -25,7 +25,8 @@ CI also runs `raoh-verify check-ids` against the branch the pull request targets
 `check-suite` also fails when a feature of `catalog/operations.json` or `catalog/fixtures.json` is
 needed by no case: a feature is listed only once a case pins it. One case is the least a feature
 needs, not proof that it is fully specified. In the same way, an entry a variant lists in
-`optional_meta` needs a case that leaves it out where a form leaves it open.
+`optional_meta` needs a case that leaves it out where a form leaves it open, and each issue a form
+that takes a message declares needs a case that gives that form its message.
 
 `check-suite` rejects a case that does not type-check, whose expected outcome is not an observation
 of the decoder's result type, whose issues are not ones the decoder can produce, or whose input is

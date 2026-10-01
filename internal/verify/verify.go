@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/raoh-project/raoh-specification/internal/compare"
+	"github.com/raoh-project/raoh-specification/internal/dsl"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
 	"github.com/raoh-project/raoh-specification/internal/suite"
 )
@@ -196,6 +197,10 @@ func (s *Spec) consistency(res *runnerResult, decl *declaration) []string {
 		if decl.unsupported[f] {
 			add("%s is declared unsupported, and the runner binds it", f)
 		}
+		// A facet is part of its parent: a runner that binds giving min a message binds min.
+		if parent, ok := dsl.Parent(f); ok && !res.bound[parent] {
+			add("the runner binds %s, and not %s, which it is a facet of", f, parent)
+		}
 	}
 	for _, f := range sortedKeys(decl.unsupported) {
 		if !s.Features[f] {
@@ -233,6 +238,16 @@ func (s *Spec) consistency(res *runnerResult, decl *declaration) []string {
 	return problems
 }
 
+// declaredUnsupported reports whether the declaration declares a feature unsupported, itself or
+// through its parent: an implementation without min has no message for it either.
+func (d *declaration) declaredUnsupported(f string) bool {
+	if d.unsupported[f] {
+		return true
+	}
+	parent, ok := dsl.Parent(f)
+	return ok && d.unsupported[parent]
+}
+
 func unbound(c *suite.Case, res *runnerResult) []string {
 	var missing []string
 	for _, f := range c.Features() {
@@ -268,7 +283,7 @@ func classify(c *suite.Case, res *runnerResult, decl *declaration) CaseResult {
 	if missing := unbound(c, res); len(missing) > 0 {
 		var undeclared []string
 		for _, f := range missing {
-			if !decl.unsupported[f] {
+			if !decl.declaredUnsupported(f) {
 				undeclared = append(undeclared, f)
 			}
 		}

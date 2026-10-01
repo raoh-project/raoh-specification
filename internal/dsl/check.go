@@ -190,6 +190,9 @@ type checkedArgs struct {
 	// message is the message the form's message argument gives, or nil when the form has none or
 	// it is left out; an empty message is a message.
 	message *string
+	// feature is the feature of the form these arguments are given to, for a decoder or an
+	// operation.
+	feature string
 }
 
 // checkedFixture is the fixture a fixture argument names, with the types its parameters take where
@@ -217,11 +220,25 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
 		return value.Type{}, nil, fmt.Errorf("unknown constructor %q", name)
 	}
 	s.features["decoder."+name] = true
-	if len(n.Elems)-1 < len(f.Args) {
-		return value.Type{}, nil, fmt.Errorf("%s takes %d argument(s), found %d", name, len(f.Args), len(n.Elems)-1)
+	required := len(f.Args)
+	if required > 0 && f.Args[required-1].Optional {
+		required--
+	}
+	if len(n.Elems)-1 < required {
+		return value.Type{}, nil, fmt.Errorf("%s takes %d argument(s), found %d", name, required, len(n.Elems)-1)
+	}
+	// After the required arguments, a string is the optional trailing message; an operation is an
+	// array.
+	taken := required
+	if taken < len(f.Args) && 1+taken < len(n.Elems) && n.Elems[1+taken].Kind == jsontext.String {
+		taken++
 	}
 	bound := map[string]value.Type{}
-	ca, err := s.args(f, n.Elems[1:1+len(f.Args)], bound)
+	ca, err := s.args(f, n.Elems[1:1+taken], bound)
+	ca.feature = "decoder." + name
+	if err == nil && ca.message != nil {
+		s.features[ca.feature+MessageFacet] = true
+	}
 	if err != nil {
 		return value.Type{}, nil, fmt.Errorf("%s: %w", name, err)
 	}
@@ -234,7 +251,7 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
 		return value.Type{}, nil, err
 	}
 	// Each operation runs only if everything before it succeeded.
-	for _, step := range n.Elems[1+len(f.Args):] {
+	for _, step := range n.Elems[1+taken:] {
 		var stepFlow Flow
 		if result, stepFlow, err = s.operation(step, result); err != nil {
 			return value.Type{}, nil, err
@@ -446,6 +463,10 @@ func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, Fl
 	ca, err := s.args(f, given, bound)
 	if err != nil {
 		return value.Type{}, nil, fmt.Errorf("%s: %w", name, err)
+	}
+	ca.feature = operationFeature(o.Receiver.Key, name)
+	if ca.message != nil {
+		s.features[ca.feature+MessageFacet] = true
 	}
 	result, err := resultOf(name, f.Result, bound, ca)
 	if err != nil {
@@ -806,7 +827,7 @@ func (s *state) site(ref IssueRef, bound map[string]value.Type, ca checkedArgs) 
 			return nil, fmt.Errorf("issue %s writes %s, a %s, into its message, and a message cannot write a %s", ref.Key, name, t, t)
 		}
 	}
-	site := &Site{Key: v.Key, Code: v.Code, Meta: meta, Values: map[string]value.Value{}, Message: ca.message}
+	site := &Site{Key: v.Key, Code: v.Code, Meta: meta, Values: map[string]value.Value{}, Message: ca.message, Form: ca.feature, MessageArg: ca.message != nil}
 	for _, o := range ref.Omit {
 		delete(meta, o)
 	}

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
 	"github.com/raoh-project/raoh-specification/internal/schemas"
@@ -589,6 +590,19 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 	if err := f.parseIssues(n); err != nil {
 		return nil, err
 	}
+	// An operation checks or converts a value, and the issues it declares are about that value, so
+	// it takes a given message exactly when it declares an issue (spec/issues.md); it is optional,
+	// and the operation's message facet is giving it. A field is structure, and takes none.
+	switch hasMessage := f.Message != NoArg; {
+	case section == "operation" && len(f.Issues) > 0 && !hasMessage:
+		return nil, fmt.Errorf("it declares issues, and an operation that does takes an optional message")
+	case section == "operation" && len(f.Issues) == 0 && hasMessage:
+		return nil, fmt.Errorf("it takes a message, and declares no issue for it to be the message of")
+	case section == "operation" && hasMessage && !f.Args[f.Message.Index()].Optional:
+		return nil, fmt.Errorf("its message is required, and an operation's message is optional")
+	case section == "field" && hasMessage:
+		return nil, fmt.Errorf("a field takes no message: it is structure, whose messages a resolver gives")
+	}
 	if fl, ok := n.Get("flow"); ok {
 		if f.Flow, err = resolveFlow(f, fl); err != nil {
 			return nil, fmt.Errorf("flow: %w", err)
@@ -881,8 +895,11 @@ func parseArg(section string, n *jsontext.Node) (Arg, error) {
 		}
 		a.Optional = o.Bool
 	}
-	if a.Optional && section != "operation" {
-		return a, fmt.Errorf("argument %s is optional, and only an operation has optional arguments", a.Name)
+	// A constructor's arguments are read by position before its operations, which are arrays; a
+	// trailing message, a string, cannot be mistaken for one, and no other optional argument is
+	// allowed there.
+	if a.Optional && section != "operation" && !(section == "constructor" && a.Kind == "message") {
+		return a, fmt.Errorf("argument %s is optional, and only an operation has optional arguments, or a constructor a trailing message", a.Name)
 	}
 	if a.Optional && !kind.Omittable {
 		return a, fmt.Errorf("argument %s is a %s argument, which cannot be left out", a.Name, a.Kind)
@@ -1125,11 +1142,24 @@ func fixtureParams(what string, t, input value.Type) error {
 	return nil
 }
 
-// Features returns every feature ID the registry defines, sorted.
+// MessageFacet is the suffix of the feature a form's given message is: operation.int32.min.message
+// is giving min on an int32 a message, a facet of operation.int32.min.
+const MessageFacet = ".message"
+
+// Parent gives the feature a facet belongs to, and false for a feature that is not a facet.
+func Parent(feature string) (string, bool) {
+	return strings.CutSuffix(feature, MessageFacet)
+}
+
+// Features returns every feature ID the registry defines, sorted: each form's, and the message
+// facet of each form that takes a message.
 func (r *Registry) Features() []string {
 	var ids []string
 	for _, name := range slices.Sorted(maps.Keys(r.Constructors)) {
 		ids = append(ids, "decoder."+name)
+		if r.Constructors[name].Message != NoArg {
+			ids = append(ids, "decoder."+name+MessageFacet)
+		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(r.Fields)) {
 		ids = append(ids, "field."+name)
@@ -1138,6 +1168,9 @@ func (r *Registry) Features() []string {
 		overloads := r.Operations[name]
 		for _, key := range slices.Sorted(maps.Keys(overloads)) {
 			ids = append(ids, operationFeature(key, name))
+			if overloads[key].Form.Message != NoArg {
+				ids = append(ids, operationFeature(key, name)+MessageFacet)
+			}
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(r.Encoders)) {
@@ -1151,6 +1184,18 @@ func (r *Registry) Features() []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+// OperationForm gives the form of the operation overload a feature names, or nil.
+func (r *Registry) OperationForm(feature string) *Form {
+	for _, name := range slices.Sorted(maps.Keys(r.Operations)) {
+		for _, key := range slices.Sorted(maps.Keys(r.Operations[name])) {
+			if operationFeature(key, name) == feature {
+				return r.Operations[name][key].Form
+			}
+		}
+	}
+	return nil
 }
 
 // operationFeature names the feature of an operation's overload for a receiver key.

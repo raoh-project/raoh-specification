@@ -143,6 +143,55 @@ func (s *Spec) UnpinnedOptional() []string {
 	return out
 }
 
+// UngivenMessages lists, as facet: issue, every issue a form that takes a message declares that no
+// case expects with the message given. A given message is the message of every issue its form
+// declares, so each needs a case: one per facet would leave toInt's type_mismatch.numeric_range
+// unchecked.
+func (s *Spec) UngivenMessages() []string {
+	reg := s.Checker.Registry()
+	want := map[string]bool{}
+	for _, name := range slices.Sorted(maps.Keys(reg.Constructors)) {
+		f := reg.Constructors[name]
+		if f.Message != dsl.NoArg {
+			for _, ref := range f.Issues {
+				want["decoder."+name+dsl.MessageFacet+": "+ref.Key] = true
+			}
+		}
+	}
+	for _, feature := range reg.Features() {
+		parent, ok := dsl.Parent(feature)
+		if !ok || !strings.HasPrefix(parent, "operation.") {
+			continue
+		}
+		f := reg.OperationForm(parent)
+		for _, ref := range f.Issues {
+			want[feature+": "+ref.Key] = true
+		}
+	}
+	given := map[string]bool{}
+	var walk func(issues []suite.TypedIssue)
+	walk = func(issues []suite.TypedIssue) {
+		for _, is := range issues {
+			if is.Slot.MessageArg {
+				given[is.Slot.Form+dsl.MessageFacet+": "+is.Slot.Key] = true
+			}
+			for _, i := range slices.Sorted(maps.Keys(is.Candidates)) {
+				walk(is.Candidates[i])
+			}
+		}
+	}
+	for _, c := range s.Suite.Cases {
+		walk(c.Issues)
+	}
+	var out []string
+	for _, w := range slices.Sorted(maps.Keys(want)) {
+		if !given[w] {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
 // Uncovered lists the features no case needs. A feature is in the registry only if a case pins
 // it: a case is the least a specified feature has, though one case does not specify it all.
 func (s *Spec) Uncovered() []string {

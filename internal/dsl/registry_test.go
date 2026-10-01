@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -72,6 +74,24 @@ type catalogs struct{ ops, fixtures, issues doc }
 // rejected when it is read, with a reason, and never later: by Parse when the condition is the
 // registry's own, by NewChecker when it needs the issue catalogue. Parse does not rely on the
 // schema; the schema rejects what it can say, which the table records.
+// The constructors that take a message are the ones whose own issue is about a value: enum and
+// literal convert a string. Every other constructor, and every field, is structure.
+func TestConstructorsThatTakeAMessage(t *testing.T) {
+	reg, err := Load("../..", schemasFor(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, name := range slices.Sorted(maps.Keys(reg.Constructors)) {
+		if reg.Constructors[name].Message != NoArg {
+			got = append(got, name)
+		}
+	}
+	if !slices.Equal(got, []string{"enum", "literal"}) {
+		t.Errorf("constructors with a message: %v", got)
+	}
+}
+
 func TestRegistryInvariants(t *testing.T) {
 	sch := schemasFor(t)
 	for _, tc := range []struct {
@@ -158,6 +178,25 @@ func TestRegistryInvariants(t *testing.T) {
 		{"omitting an entry the message writes", func(c catalogs) {
 			operation(c.ops, "minLength")["issues"] = []any{doc{"key": "too_short", "omit": []any{"min"}}}
 		}, false, true, "omits min, which its derived message writes"},
+		{"an operation that declares issues without a message", func(c catalogs) {
+			f := operation(c.ops, "minLength")
+			f["args"] = f["args"].([]any)[:1]
+		}, false, false, "an operation that does takes an optional message"},
+		{"an operation with a message and no issue", func(c catalogs) {
+			f := operation(c.ops, "trim")
+			f["args"] = []any{doc{"name": "message", "kind": "message", "optional": true}}
+		}, false, false, "declares no issue for it to be the message of"},
+		{"an operation whose message is required", func(c catalogs) {
+			delete(arg(operation(c.ops, "minLength"), 1), "optional")
+		}, false, false, "an operation's message is optional"},
+		{"a field with a message", func(c catalogs) {
+			f := section(c.ops, "fields", "field")
+			f["args"] = append(f["args"].([]any), doc{"name": "message", "kind": "message"})
+		}, false, false, "a field takes no message"},
+		{"a constructor with an optional value argument after a message", func(c catalogs) {
+			f := section(c.ops, "constructors", "literal")
+			f["args"] = append(f["args"].([]any), doc{"name": "extra", "kind": "value", "type": "string", "optional": true})
+		}, true, false, "only an operation has optional arguments"},
 		{"an optional entry every form gives a source", func(c catalogs) {
 			c.issues["invalid_format"].(doc)["optional_meta"] = []any{"pattern"}
 		}, false, true, "every form that gives it omits pattern or gives it a source"},
@@ -290,7 +329,7 @@ func TestRegistryInvariants(t *testing.T) {
 		{"an ill-formed metadata type in a receiver's context", func(c catalogs) {
 			c.issues["probe"] = doc{"code": "probe", "params": []any{"T"}, "meta": doc{"x": "optional<T>"}}
 			c.ops["operations"] = append(c.ops["operations"].([]any), doc{"name": "probe", "doc": "x", "receivers": []any{"string"}, "result": "R",
-				"issues": []any{doc{"key": "probe", "T": "nullable<R>"}}, "flow": "own"})
+				"args": []any{doc{"name": "message", "kind": "message", "optional": true}}, "issues": []any{doc{"key": "probe", "T": "nullable<R>"}}, "flow": "own"})
 		}, false, true, "operation probe on string: issue probe meta x is a optional<nullable<string>>"},
 		{"members known by fields not required to be named", func(c catalogs) {
 			delete(section(c.ops, "constructors", "strictObject"), "requires")

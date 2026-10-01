@@ -54,6 +54,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "no case needs these features, so the registry cannot list them:\n  %s\n", strings.Join(uncovered, "\n  "))
 			return 1
 		}
+		if ungiven := s.UngivenMessages(); len(ungiven) > 0 {
+			fmt.Fprintf(stderr, "no case gives these issues the message its form takes:\n  %s\n", strings.Join(ungiven, "\n  "))
+			return 1
+		}
 		if unpinned := s.UnpinnedOptional(); len(unpinned) > 0 {
 			fmt.Fprintf(stderr, "no case leaves out these optional metadata entries, so optional_meta cannot list them:\n  %s\n", strings.Join(unpinned, "\n  "))
 			return 1

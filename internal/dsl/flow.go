@@ -29,6 +29,12 @@ type Site struct {
 	// Message is the message the issue is given, by a message argument or by the fixture that
 	// creates it; nil when the message is derived from the catalogue. An empty message is given.
 	Message *string
+	// Form is the feature of the decoder or operation that declares the issue, such as
+	// operation.int32.min; empty for an issue a fixture creates.
+	Form string
+	// MessageArg says that Message is the one the form's message argument gives, so that the case
+	// needs the message facet of Form.
+	MessageArg bool
 	// Candidates are, for an issue that lists what candidates gave, the metadata entry that lists
 	// them and the flow of each candidate; nil for any other issue.
 	Candidates *CandidateList
