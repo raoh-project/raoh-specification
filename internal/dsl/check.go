@@ -886,14 +886,19 @@ func receiverContext(owner string, rc Receiver) context {
 // a form gives the variant. An entry a form omits is never there, and one it gives a source is
 // always there; optional_meta says an entry is there or not depending on what the decoder ran into,
 // which only a form that does neither leaves to happen. A variant no form gives is not checked:
-// its optional_meta describes the message catalogue, not a decoder.
+// its optional_meta describes the message catalogue, not a decoder. A reference to a variant the
+// catalogue does not have is checkIssues' to report.
 func checkOptional(r *Registry, c *catalog.Catalog) []string {
 	given := map[string]bool{}
 	open := map[string]bool{}
 	for _, f := range r.Forms() {
 		for _, ref := range f.Issues {
+			v, ok := c.Variants[ref.Key]
+			if !ok {
+				continue
+			}
 			given[ref.Key] = true
-			for _, o := range c.Variants[ref.Key].Optional {
+			for _, o := range v.Optional {
 				if !ref.Gives(o) && !slices.Contains(ref.Omit, o) {
 					open[ref.Key+"\x00"+o] = true
 				}
@@ -938,9 +943,14 @@ func checkIssues(owner string, f *Form, c *catalog.Catalog) []string {
 				problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to give a source", owner, ref.Key, name))
 			}
 		}
+		written := c.Written(ref.Key)
 		for _, name := range ref.Omit {
 			if _, ok := v.Meta[name]; !ok {
 				problems = append(problems, fmt.Sprintf("%s: issue %s has no metadata %s to omit", owner, ref.Key, name))
+			} else if slices.Contains(written, name) {
+				// The catalogue lets a template write only entries its variant always has (Catalog.Check);
+				// an entry a form omits is never there at that form, so its message could not be derived.
+				problems = append(problems, fmt.Sprintf("%s: issue %s omits %s, which its derived message writes", owner, ref.Key, name))
 			}
 		}
 	}

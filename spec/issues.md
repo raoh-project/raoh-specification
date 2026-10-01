@@ -33,7 +33,10 @@ Both are checked. The catalogue is rejected when an entry in `optional_meta` is 
 source by every form that gives the variant, and `raoh-verify check-suite` fails when no case
 leaves such an entry out, as it fails for a feature no case needs: without that case nothing shows
 that the entry can be absent. A variant no form gives, such as `out_of_range`, which only the
-message catalogue has, is not checked.
+message catalogue has, is not checked. A template writes only entries its variant always has, so
+an entry in `optional_meta` cannot be written into a message, and the catalogue is rejected when a
+form omits an entry the template of its issue writes: that issue's message could not be derived
+there.
 
 An issue's metadata has exactly these entries, and each is compared as a value of its instantiated
 type.

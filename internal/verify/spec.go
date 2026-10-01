@@ -106,7 +106,11 @@ func (s *Spec) UnpinnedOptional() []string {
 	open := map[string]bool{}
 	for _, f := range s.Checker.Registry().Forms() {
 		for _, ref := range f.Issues {
-			for _, o := range s.Catalog.Variants[ref.Key].Optional {
+			v, ok := s.Catalog.Variants[ref.Key]
+			if !ok {
+				continue
+			}
+			for _, o := range v.Optional {
 				if !ref.Gives(o) && !slices.Contains(ref.Omit, o) {
 					open[ref.Key+"."+o] = true
 				}
