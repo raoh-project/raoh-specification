@@ -149,9 +149,11 @@ object, `discriminate` for its tag), the flow is a `chain`.
 
 The flow says which issues can come together and in what order; it does not say which of a form's
 own issues arise for an input, and a form may always succeed. `unknown_members` is the one part
-that follows from the input alone: every member the form does not know is reported, so a case must
-list them all, and cannot expect success when there is one. Two `unknown_members` are two groups,
-even on the same object.
+that does not leave that open: for a given list of its `after`, the input determines its issues.
+Every member that is not known and that the list of `after` has not reported unknown is reported,
+so a case must list exactly those members, and cannot expect success when there is one. The issues
+of one `unknown_members` form one group, and two `unknown_members` are two groups, even on the
+same object.
 
 The list of `after` has reported a member unknown when it holds, at that member's path, issue `k`
 from an `unknown_members`. Such a member is not reported again: `strict` inside `strict` reports a
