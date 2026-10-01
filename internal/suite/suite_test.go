@@ -74,6 +74,7 @@ func TestExpectedOutcomesAreTyped(t *testing.T) {
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": 1, "ok": "1"}]`, "expected number")
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["float"], "input": 16777217, "ok": 16777217}]`, "rounds to")
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": 1, "ok": 1, "issues": []}]`, "either ok or issues")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["string", ["uri"]], "input": "a/b", "ok": "a/b"}]`, "not a URI as RFC 3986")
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": "x",
 		"issues": [{"path": "", "code": "too_short", "message_key": "too_short", "meta": {"min": 1, "actual": 0}}]}]`, "gives no too_short")
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int", ["min", 1]], "input": 0,

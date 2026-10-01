@@ -82,6 +82,9 @@ func observe(t Type, n *jsontext.Node) (Value, error) {
 		if err := want(jsontext.String); err != nil {
 			return v, err
 		}
+		if t.Kind == URI && !IsURI(n.Text) {
+			return v, fmt.Errorf("%q is not a URI as RFC 3986 section 3 defines one", n.Text)
+		}
 		v.Str = n.Text
 	case Symbol:
 		if err := want(jsontext.String); err != nil {
