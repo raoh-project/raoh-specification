@@ -38,7 +38,8 @@ structure, and its issues (a missing value, a value of the wrong kind, an unknow
 candidate matching) are worded by a message resolver, not by each form, so it takes none; `enum`
 and `literal`, which convert the string their string decoder reads, are the constructors that take
 one. `catalog/operations.json` records each, and the catalogue is rejected when an operation breaks
-the rule or a field takes a message.
+the rule, when `enum` or `literal` lacks an optional trailing message, or when another constructor
+or a field takes a message.
 
 Arguments are of these kinds:
 
@@ -49,7 +50,7 @@ Arguments are of these kinds:
 | `variants` | a non-empty JSON object whose members are tags and decoder forms |
 | `fields` | a non-empty JSON array of field forms: `[kind, name, decoder]`, or `["flat", decoder]` |
 | `value` | an [observation](observation.md) of the argument's type |
-| `message` | a JSON string: the message of the issues the operation gives |
+| `message` | a JSON string: the message of the issues the form itself declares |
 | `fixture` | the name of a [fixture](fixtures.md) |
 | `encoder`, `properties` | an encoder form, or a non-empty JSON array of property forms |
 
@@ -140,7 +141,9 @@ a feature with an ID:
 | giving a form that takes a message its message | the form's ID followed by `.message`, such as `operation.int32.min.message` or `decoder.enum.message` |
 
 A `.message` feature is a facet of the form's feature, its parent: it is not a form of its own, but
-a capability of one, which an implementation may have the form without. A case that gives a form
+a capability of one, which an implementation may have the form without. The registry says which
+features are facets and of what; the `.message` suffix is how a facet's ID is written, and no two
+features share an ID. A case that gives a form
 its message needs both the form's feature and the facet; a case that does not give it needs the
 form's feature only.
 

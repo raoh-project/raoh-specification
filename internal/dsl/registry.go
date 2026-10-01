@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strings"
 
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
 	"github.com/raoh-project/raoh-specification/internal/schemas"
@@ -381,6 +380,13 @@ func Parse(operations, fixtures []byte) (*Registry, error) {
 		}
 		r.Fixtures[m.Name] = f
 	}
+	// A feature ID names one thing: a facet's written ID cannot also be a form's.
+	ids := r.Features()
+	for i := 1; i < len(ids); i++ {
+		if ids[i] == ids[i-1] {
+			return nil, fmt.Errorf("operations.json: two features have the ID %s", ids[i])
+		}
+	}
 	return r, nil
 }
 
@@ -602,6 +608,12 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 		return nil, fmt.Errorf("its message is required, and an operation's message is optional")
 	case section == "field" && hasMessage:
 		return nil, fmt.Errorf("a field takes no message: it is structure, whose messages a resolver gives")
+	case section == "constructor" && convertsAString(name) && !hasMessage:
+		return nil, fmt.Errorf("it converts a string, and takes an optional trailing message")
+	case section == "constructor" && convertsAString(name) && !f.Args[f.Message.Index()].Optional:
+		return nil, fmt.Errorf("its message is required, and a constructor's message is optional")
+	case section == "constructor" && !convertsAString(name) && hasMessage:
+		return nil, fmt.Errorf("a constructor that builds structure takes no message; only enum and literal, which convert a string, do")
 	}
 	if fl, ok := n.Get("flow"); ok {
 		if f.Flow, err = resolveFlow(f, fl); err != nil {
@@ -1142,24 +1154,51 @@ func fixtureParams(what string, t, input value.Type) error {
 	return nil
 }
 
-// MessageFacet is the suffix of the feature a form's given message is: operation.int32.min.message
-// is giving min on an int32 a message, a facet of operation.int32.min.
-const MessageFacet = ".message"
-
-// Parent gives the feature a facet belongs to, and false for a feature that is not a facet.
-func Parent(feature string) (string, bool) {
-	return strings.CutSuffix(feature, MessageFacet)
+// convertsAString names the constructors whose own issue is about a value, the string their string
+// decoder reads, and that take a message for it (spec/decoder-language.md): enum and literal. Every
+// other constructor builds structure.
+func convertsAString(constructor string) bool {
+	return constructor == "enum" || constructor == "literal"
 }
 
-// Features returns every feature ID the registry defines, sorted: each form's, and the message
-// facet of each form that takes a message.
+// MessageFacetID writes the ID of the message facet of a form's feature: operation.int32.min.message
+// is giving min on an int32 a message. The suffix is how a facet is written, not how one is
+// recognized: Facets says which IDs are facets and of what, and Parse refuses a facet ID that is
+// also another feature's.
+func MessageFacetID(feature string) string { return feature + ".message" }
+
+// Facet is a feature that is a capability of a form rather than a form: giving Form its message.
+// Parent is the form's feature.
+type Facet struct {
+	ID, Parent string
+	Form       *Form
+}
+
+// Facets returns the message facet of every form that takes a message, by ID order of the parent.
+func (r *Registry) Facets() []Facet {
+	var out []Facet
+	for _, name := range slices.Sorted(maps.Keys(r.Constructors)) {
+		if f := r.Constructors[name]; f.Message != NoArg {
+			out = append(out, Facet{ID: MessageFacetID("decoder." + name), Parent: "decoder." + name, Form: f})
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(r.Operations)) {
+		overloads := r.Operations[name]
+		for _, key := range slices.Sorted(maps.Keys(overloads)) {
+			if f := overloads[key].Form; f.Message != NoArg {
+				parent := operationFeature(key, name)
+				out = append(out, Facet{ID: MessageFacetID(parent), Parent: parent, Form: f})
+			}
+		}
+	}
+	return out
+}
+
+// Features returns every feature ID the registry defines, sorted: each form's, and each facet.
 func (r *Registry) Features() []string {
 	var ids []string
 	for _, name := range slices.Sorted(maps.Keys(r.Constructors)) {
 		ids = append(ids, "decoder."+name)
-		if r.Constructors[name].Message != NoArg {
-			ids = append(ids, "decoder."+name+MessageFacet)
-		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(r.Fields)) {
 		ids = append(ids, "field."+name)
@@ -1168,10 +1207,10 @@ func (r *Registry) Features() []string {
 		overloads := r.Operations[name]
 		for _, key := range slices.Sorted(maps.Keys(overloads)) {
 			ids = append(ids, operationFeature(key, name))
-			if overloads[key].Form.Message != NoArg {
-				ids = append(ids, operationFeature(key, name)+MessageFacet)
-			}
 		}
+	}
+	for _, f := range r.Facets() {
+		ids = append(ids, f.ID)
 	}
 	for _, name := range slices.Sorted(maps.Keys(r.Encoders)) {
 		ids = append(ids, "encoder."+name)
@@ -1184,18 +1223,6 @@ func (r *Registry) Features() []string {
 	}
 	sort.Strings(ids)
 	return ids
-}
-
-// OperationForm gives the form of the operation overload a feature names, or nil.
-func (r *Registry) OperationForm(feature string) *Form {
-	for _, name := range slices.Sorted(maps.Keys(r.Operations)) {
-		for _, key := range slices.Sorted(maps.Keys(r.Operations[name])) {
-			if operationFeature(key, name) == feature {
-				return r.Operations[name][key].Form
-			}
-		}
-	}
-	return nil
 }
 
 // operationFeature names the feature of an operation's overload for a receiver key.

@@ -32,6 +32,8 @@ type Spec struct {
 	Checker  *dsl.Checker
 	Suite    *suite.Suite
 	Features map[string]bool
+	// FacetOf maps each facet to the feature it is a facet of.
+	FacetOf map[string]string
 }
 
 // InvalidError reports input that makes a comparison untrustworthy. raoh-verify exits with status
@@ -82,6 +84,10 @@ func Load(root string) (*Spec, error) {
 	}
 	for _, f := range reg.Features() {
 		s.Features[f] = true
+	}
+	s.FacetOf = map[string]string{}
+	for _, f := range reg.Facets() {
+		s.FacetOf[f.ID] = f.Parent
 	}
 	if s.Suite, err = suite.Load(root, s.Checker, s.Schemas); err != nil {
 		return nil, err
@@ -148,24 +154,10 @@ func (s *Spec) UnpinnedOptional() []string {
 // declares, so each needs a case: one per facet would leave toInt's type_mismatch.numeric_range
 // unchecked.
 func (s *Spec) UngivenMessages() []string {
-	reg := s.Checker.Registry()
 	want := map[string]bool{}
-	for _, name := range slices.Sorted(maps.Keys(reg.Constructors)) {
-		f := reg.Constructors[name]
-		if f.Message != dsl.NoArg {
-			for _, ref := range f.Issues {
-				want["decoder."+name+dsl.MessageFacet+": "+ref.Key] = true
-			}
-		}
-	}
-	for _, feature := range reg.Features() {
-		parent, ok := dsl.Parent(feature)
-		if !ok || !strings.HasPrefix(parent, "operation.") {
-			continue
-		}
-		f := reg.OperationForm(parent)
-		for _, ref := range f.Issues {
-			want[feature+": "+ref.Key] = true
+	for _, facet := range s.Checker.Registry().Facets() {
+		for _, ref := range facet.Form.Issues {
+			want[facet.ID+": "+ref.Key] = true
 		}
 	}
 	given := map[string]bool{}
@@ -173,7 +165,7 @@ func (s *Spec) UngivenMessages() []string {
 	walk = func(issues []suite.TypedIssue) {
 		for _, is := range issues {
 			if is.Slot.MessageArg {
-				given[is.Slot.Form+dsl.MessageFacet+": "+is.Slot.Key] = true
+				given[dsl.MessageFacetID(is.Slot.Form)+": "+is.Slot.Key] = true
 			}
 			for _, i := range slices.Sorted(maps.Keys(is.Candidates)) {
 				walk(is.Candidates[i])

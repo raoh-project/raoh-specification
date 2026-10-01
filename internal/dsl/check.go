@@ -237,7 +237,7 @@ func (s *state) decoder(n *jsontext.Node) (value.Type, Flow, error) {
 	ca, err := s.args(f, n.Elems[1:1+taken], bound)
 	ca.feature = "decoder." + name
 	if err == nil && ca.message != nil {
-		s.features[ca.feature+MessageFacet] = true
+		s.features[MessageFacetID(ca.feature)] = true
 	}
 	if err != nil {
 		return value.Type{}, nil, fmt.Errorf("%s: %w", name, err)
@@ -466,7 +466,7 @@ func (s *state) operation(n *jsontext.Node, receiver value.Type) (value.Type, Fl
 	}
 	ca.feature = operationFeature(o.Receiver.Key, name)
 	if ca.message != nil {
-		s.features[ca.feature+MessageFacet] = true
+		s.features[MessageFacetID(ca.feature)] = true
 	}
 	result, err := resultOf(name, f.Result, bound, ca)
 	if err != nil {

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/raoh-project/raoh-specification/internal/compare"
-	"github.com/raoh-project/raoh-specification/internal/dsl"
 	"github.com/raoh-project/raoh-specification/internal/jsontext"
 	"github.com/raoh-project/raoh-specification/internal/suite"
 )
@@ -143,7 +142,7 @@ func Verify(s *Spec, resultText, declarationText []byte, verifier string) (*Repo
 		} else {
 			for _, c := range s.Suite.Cases {
 				if c.Profile == profile {
-					results = append(results, classify(c, res, decl))
+					results = append(results, classify(c, res, decl, s.FacetOf))
 				}
 			}
 		}
@@ -198,7 +197,7 @@ func (s *Spec) consistency(res *runnerResult, decl *declaration) []string {
 			add("%s is declared unsupported, and the runner binds it", f)
 		}
 		// A facet is part of its parent: a runner that binds giving min a message binds min.
-		if parent, ok := dsl.Parent(f); ok && !res.bound[parent] {
+		if parent, ok := s.FacetOf[f]; ok && !res.bound[parent] {
 			add("the runner binds %s, and not %s, which it is a facet of", f, parent)
 		}
 	}
@@ -240,11 +239,11 @@ func (s *Spec) consistency(res *runnerResult, decl *declaration) []string {
 
 // declaredUnsupported reports whether the declaration declares a feature unsupported, itself or
 // through its parent: an implementation without min has no message for it either.
-func (d *declaration) declaredUnsupported(f string) bool {
+func (d *declaration) declaredUnsupported(f string, facetOf map[string]string) bool {
 	if d.unsupported[f] {
 		return true
 	}
-	parent, ok := dsl.Parent(f)
+	parent, ok := facetOf[f]
 	return ok && d.unsupported[parent]
 }
 
@@ -278,12 +277,12 @@ func parseObservation(n *jsontext.Node) (observation, error) {
 	return observation{outcome: o}, err
 }
 
-func classify(c *suite.Case, res *runnerResult, decl *declaration) CaseResult {
+func classify(c *suite.Case, res *runnerResult, decl *declaration, facetOf map[string]string) CaseResult {
 	r := CaseResult{ID: c.ID, Profile: c.Profile}
 	if missing := unbound(c, res); len(missing) > 0 {
 		var undeclared []string
 		for _, f := range missing {
-			if !decl.declaredUnsupported(f) {
+			if !decl.declaredUnsupported(f, facetOf) {
 				undeclared = append(undeclared, f)
 			}
 		}

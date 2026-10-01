@@ -126,6 +126,17 @@ func TestTwoCasesDoNotShareAFormAndAnInput(t *testing.T) {
 	}
 }
 
+// A message given to literal is the message of literal's own issue only: its string decoder's
+// type_mismatch keeps the derived message, and a case that gives it literal's is rejected.
+func TestAGivenMessageStaysWithItsForm(t *testing.T) {
+	inner := func(message string) string {
+		return `[{"id": "R000001", "title": "t", "decoder": ["literal", "v1", ["string"], "custom"], "input": 1,
+			"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch"` + message + `, "meta": {"actual": "number", "expected": "string"}}]}]`
+	}
+	accepted(t, "core", inner(""))
+	rejected(t, "core", inner(`, "message": "custom"`), "")
+}
+
 func TestMessagesAreDerivedOrGiven(t *testing.T) {
 	cases := accepted(t, "core", `[
 		{"id": "R000001", "title": "t", "decoder": ["double", ["min", 1e7]], "input": 1,

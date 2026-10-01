@@ -74,6 +74,32 @@ type catalogs struct{ ops, fixtures, issues doc }
 // rejected when it is read, with a reason, and never later: by Parse when the condition is the
 // registry's own, by NewChecker when it needs the issue catalogue. Parse does not rely on the
 // schema; the schema rejects what it can say, which the table records.
+// A facet is what the registry made one, not any feature whose ID ends in .message: an operation
+// named message is a form, with no parent.
+func TestAFacetIsWhatTheRegistryMakesOne(t *testing.T) {
+	ops := readDoc(t, "../../catalog/operations.json")
+	ops["operations"] = append(ops["operations"].([]any), doc{"name": "message", "doc": "x", "receivers": []any{"string"}, "result": "R", "flow": "none"})
+	fx, err := os.ReadFile("../../catalog/fixtures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := Parse(encode(t, ops), fx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(reg.Features(), "operation.string.message") {
+		t.Error("the operation message is not a feature")
+	}
+	for _, f := range reg.Facets() {
+		if f.ID == "operation.string.message" {
+			t.Errorf("the operation message is taken for a facet of %s", f.Parent)
+		}
+		if f.Parent+".message" != f.ID || f.Form == nil {
+			t.Errorf("facet %+v", f)
+		}
+	}
+}
+
 // The constructors that take a message are the ones whose own issue is about a value: enum and
 // literal convert a string. Every other constructor, and every field, is structure.
 func TestConstructorsThatTakeAMessage(t *testing.T) {
@@ -189,6 +215,20 @@ func TestRegistryInvariants(t *testing.T) {
 		{"an operation whose message is required", func(c catalogs) {
 			delete(arg(operation(c.ops, "minLength"), 1), "optional")
 		}, false, false, "an operation's message is optional"},
+		{"a structure constructor with a message", func(c catalogs) {
+			f := section(c.ops, "constructors", "string")
+			f["args"] = []any{doc{"name": "message", "kind": "message", "optional": true}}
+		}, false, false, "a constructor that builds structure takes no message"},
+		{"enum without a message", func(c catalogs) {
+			f := section(c.ops, "constructors", "enum")
+			f["args"] = f["args"].([]any)[:2]
+		}, false, false, "it converts a string, and takes an optional trailing message"},
+		{"enum with a required message", func(c catalogs) {
+			delete(arg(section(c.ops, "constructors", "enum"), 2), "optional")
+		}, false, false, "a constructor's message is optional"},
+		{"a feature ID a facet also has", func(c catalogs) {
+			c.ops["constructors"].(doc)["enum.message"] = section(c.ops, "constructors", "string")
+		}, true, false, "two features have the ID decoder.enum.message"},
 		{"a field with a message", func(c catalogs) {
 			f := section(c.ops, "fields", "field")
 			f["args"] = append(f["args"].([]any), doc{"name": "message", "kind": "message"})
