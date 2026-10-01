@@ -95,12 +95,8 @@ func Read(text string) (err error) {
 			err = ref
 		}
 	}()
-	w := r.alternation()
-	if !r.done() {
-		r.construct = r.at
-		r.refuse("a bracket closes nothing", r.at+1)
-	}
-	if !placed(w, yes, yes) {
+	w := r.pattern()
+	if !placed(w) {
 		return refusal{"an anchor whose answer would turn on the string matched", text}
 	}
 	// A limit is about a pattern, so it is the answer only now that the text is known to be one.
@@ -192,36 +188,83 @@ func (r *reader) refuse(why string, to int) {
 	panic(refusal{why, string(r.text[r.construct:to])})
 }
 
-func (r *reader) alternation() written {
-	arms := []written{r.sequence()}
-	for r.peek() == '|' {
-		r.take()
-		arms = append(arms, r.sequence())
+// open is a choice being read, in a group or at the top: the arms read so far, and the parts of
+// the one being read.
+type open struct {
+	arms, parts []written
+}
+
+// add puts one at the end of the arm being read. A group of nothing is nothing, and is left out so
+// that one written pattern has one tree.
+func (o *open) add(one written) {
+	if one != (nothing{}) {
+		o.parts = append(o.parts, one)
 	}
+}
+
+// arm is the arm being read, as what it is written as.
+func (o *open) arm() written {
+	switch len(o.parts) {
+	case 0:
+		return nothing{}
+	case 1:
+		return o.parts[0]
+	}
+	return inTurn{o.parts}
+}
+
+// choice is the choice, as what it is written as.
+func (o *open) choice() written {
+	arms := append(o.arms, o.arm())
 	if len(arms) == 1 {
 		return arms[0]
 	}
 	return eitherOf{arms}
 }
 
-func (r *reader) sequence() written {
-	var parts []written
-	for !r.done() && r.peek() != '|' && r.peek() != ')' {
-		if one := r.quantified(); one != (nothing{}) {
-			parts = append(parts, one)
+// pattern reads the whole text, as what it is written as. A choice is read with a stack of the
+// choices open around it, so a group is a push and its closing bracket a pop, and nothing recurses:
+// the depth limit is noted and the reading goes on, so it can no longer be what bounds the stack.
+// The tree is the one a recursive reading of the grammar builds.
+func (r *reader) pattern() written {
+	var around []*open
+	reading := &open{}
+	for {
+		if !r.done() && r.peek() != '|' && r.peek() != ')' {
+			r.construct = r.at
+			if r.peek() == '(' {
+				r.opened()
+				around = append(around, reading)
+				reading = &open{}
+			} else {
+				reading.add(r.quantified(r.atom()))
+			}
+			continue
 		}
+		if r.peek() == '|' {
+			r.take()
+			reading.arms = append(reading.arms, reading.arm())
+			reading.parts = nil
+			continue
+		}
+		choice := reading.choice()
+		if len(around) == 0 {
+			if !r.done() {
+				r.construct = r.at
+				r.refuse("a bracket closes nothing", r.at+1)
+			}
+			return choice
+		}
+		r.expect(')')
+		r.depth--
+		reading = around[len(around)-1]
+		around = around[:len(around)-1]
+		reading.add(r.quantified(choice))
 	}
-	switch len(parts) {
-	case 0:
-		return nothing{}
-	case 1:
-		return parts[0]
-	}
-	return inTurn{parts}
 }
 
-func (r *reader) quantified() written {
-	one := r.atom()
+// quantified is one with the count written after it, if any.
+func (r *reader) quantified(one written) written {
 	r.construct = r.at
 	var least, most int
 	switch r.peek() {
@@ -268,11 +311,9 @@ func (r *reader) quantified() written {
 	return repeated{one, least, most}
 }
 
+// atom reads one thing written, other than a group.
 func (r *reader) atom() written {
-	r.construct = r.at
 	switch c := r.peek(); c {
-	case '(':
-		return r.group()
 	case '[':
 		r.take()
 		r.class()
@@ -299,7 +340,8 @@ func (r *reader) atom() written {
 	return symbols{}
 }
 
-func (r *reader) group() written {
+// opened reads a group's opening, plain or (?:, which are the two the grammar has.
+func (r *reader) opened() {
 	r.expect('(')
 	if r.peek() == '?' {
 		r.take()
@@ -312,10 +354,6 @@ func (r *reader) group() written {
 	if r.depth++; r.depth > Deepest {
 		r.beyond(fmt.Sprintf("groups nest deeper than %d", Deepest), r.construct, r.at)
 	}
-	inside := r.alternation()
-	r.depth--
-	r.expect(')')
-	return inside
 }
 
 // class reads what is between [ and ], the [ taken.
@@ -549,59 +587,147 @@ const (
 // placed reports whether every anchor in w comes to something: an anchor at its end adds nothing,
 // a ^ after something that must take a character leaves no string, and one whose answer would
 // turn on the string matched is refused, as is a $ before something that must take a character.
-func placed(w written, atStart, atEnd where) bool {
-	switch w := w.(type) {
-	case symbols, nothing:
-		return true
-	case anchor:
-		at := atStart
-		if w.end {
-			at = atEnd
-		}
-		switch at {
-		case yes:
-			return true
-		case no:
-			return !w.end
-		}
-		return false
-	case eitherOf:
-		for _, arm := range w.arms {
-			if !placed(arm, atStart, atEnd) {
-				return false
-			}
-		}
-		return true
-	case inTurn:
-		n := len(w.parts)
-		mayBefore, mustBefore := make([]bool, n+1), make([]bool, n+1)
-		mustBefore[0] = true
-		for i, p := range w.parts {
-			mayBefore[i+1] = mayBefore[i] || mayTake(p)
-			mustBefore[i+1] = mustBefore[i] && mustTake(p)
-		}
-		mayAfter, mustAfter := make([]bool, n+1), make([]bool, n+1)
-		mustAfter[n] = true
-		for i := n - 1; i >= 0; i-- {
-			mayAfter[i] = mayAfter[i+1] || mayTake(w.parts[i])
-			mustAfter[i] = mustAfter[i+1] && mustTake(w.parts[i])
-		}
-		for i, p := range w.parts {
-			if !placed(p, beyond(mayBefore[i], mustBefore[i], atStart), beyond(mayAfter[i+1], mustAfter[i+1], atEnd)) {
-				return false
-			}
-		}
-		return true
-	case repeated:
-		switch {
-		case !holdsAnchor(w.what):
-			return true
-		case w.least == 1 && w.most == 1:
-			return placed(w.what, atStart, atEnd)
-		}
-		return false
+//
+// It is asked of text read past the depth limit, before the limit is the answer, so it keeps
+// stacks of its own: the tree is laid out flat, what each part may and must take and whether it
+// holds an anchor is worked out from the leaves up, and where each part stands from the root down.
+func placed(w written) bool {
+	parts := flatten(w)
+	facts := make([]fact, len(parts))
+	// A part's parts come after it, so working back from the last finds them done.
+	for i := len(parts) - 1; i >= 0; i-- {
+		facts[i] = factOf(parts[i], facts)
 	}
-	panic(fmt.Sprintf("a written pattern %T", w))
+	type task struct {
+		at             int
+		atStart, atEnd where
+	}
+	tasks := []task{{0, yes, yes}}
+	for len(tasks) > 0 {
+		t := tasks[len(tasks)-1]
+		tasks = tasks[:len(tasks)-1]
+		p := parts[t.at]
+		switch w := p.w.(type) {
+		case anchor:
+			at := t.atStart
+			if w.end {
+				at = t.atEnd
+			}
+			if at == unsettled || (at == no && w.end) {
+				return false
+			}
+		case eitherOf:
+			for _, arm := range p.inside {
+				tasks = append(tasks, task{arm, t.atStart, t.atEnd})
+			}
+		case inTurn:
+			n := len(p.inside)
+			mayBefore, mustBefore := make([]bool, n+1), make([]bool, n+1)
+			mustBefore[0] = true
+			for i, in := range p.inside {
+				mayBefore[i+1] = mayBefore[i] || facts[in].may
+				mustBefore[i+1] = mustBefore[i] && facts[in].must
+			}
+			mayAfter, mustAfter := make([]bool, n+1), make([]bool, n+1)
+			mustAfter[n] = true
+			for i := n - 1; i >= 0; i-- {
+				mayAfter[i] = mayAfter[i+1] || facts[p.inside[i]].may
+				mustAfter[i] = mustAfter[i+1] && facts[p.inside[i]].must
+			}
+			for i, in := range p.inside {
+				tasks = append(tasks, task{in, beyond(mayBefore[i], mustBefore[i], t.atStart),
+					beyond(mayAfter[i+1], mustAfter[i+1], t.atEnd)})
+			}
+		case repeated:
+			switch {
+			case !facts[p.inside[0]].holds:
+			case w.least == 1 && w.most == 1:
+				tasks = append(tasks, task{p.inside[0], t.atStart, t.atEnd})
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// flat is a part of a written pattern, with where its own parts are in the slice flatten lays out.
+type flat struct {
+	w      written
+	inside []int
+}
+
+// flatten lays w out with every part after the part it is in.
+func flatten(w written) []flat {
+	type pending struct {
+		w      written
+		parent int
+	}
+	var out []flat
+	stack := []pending{{w, -1}}
+	for len(stack) > 0 {
+		p := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		at := len(out)
+		out = append(out, flat{w: p.w})
+		if p.parent >= 0 {
+			out[p.parent].inside = append(out[p.parent].inside, at)
+		}
+		var inside []written
+		switch w := p.w.(type) {
+		case inTurn:
+			inside = w.parts
+		case eitherOf:
+			inside = w.arms
+		case repeated:
+			inside = []written{w.what}
+		}
+		// Pushed last first, so they are laid out, and listed in their parent, in order.
+		for i := len(inside) - 1; i >= 0; i-- {
+			stack = append(stack, pending{inside[i], at})
+		}
+	}
+	return out
+}
+
+// fact is what a part is, as far as the anchors around it ask: whether it accepts a string of one
+// character or more, whether every string it accepts has a character, and whether it holds an
+// anchor.
+type fact struct{ may, must, holds bool }
+
+func factOf(p flat, facts []fact) fact {
+	switch w := p.w.(type) {
+	case symbols:
+		return fact{may: true, must: true}
+	case nothing:
+		return fact{}
+	case anchor:
+		return fact{holds: true}
+	case inTurn:
+		var f fact
+		for _, in := range p.inside {
+			f.may = f.may || facts[in].may
+			f.must = f.must || facts[in].must
+			f.holds = f.holds || facts[in].holds
+		}
+		return f
+	case eitherOf:
+		f := fact{must: true}
+		for _, in := range p.inside {
+			f.may = f.may || facts[in].may
+			f.must = f.must && facts[in].must
+			f.holds = f.holds || facts[in].holds
+		}
+		return f
+	case repeated:
+		what := facts[p.inside[0]]
+		return fact{
+			may:   (w.most == noCeiling || w.most > 0) && what.may,
+			must:  w.least > 0 && what.must,
+			holds: what.holds,
+		}
+	}
+	panic(fmt.Sprintf("a written pattern %T", p.w))
 }
 
 func beyond(anyTakes, allTake bool, outer where) where {
@@ -612,80 +738,4 @@ func beyond(anyTakes, allTake bool, outer where) where {
 		return no
 	}
 	return unsettled
-}
-
-// mayTake reports whether w accepts a string of one character or more.
-func mayTake(w written) bool {
-	switch w := w.(type) {
-	case symbols:
-		return true
-	case nothing, anchor:
-		return false
-	case inTurn:
-		for _, p := range w.parts {
-			if mayTake(p) {
-				return true
-			}
-		}
-		return false
-	case eitherOf:
-		for _, a := range w.arms {
-			if mayTake(a) {
-				return true
-			}
-		}
-		return false
-	case repeated:
-		return (w.most == noCeiling || w.most > 0) && mayTake(w.what)
-	}
-	panic(fmt.Sprintf("a written pattern %T", w))
-}
-
-// mustTake reports whether every string w accepts has a character.
-func mustTake(w written) bool {
-	switch w := w.(type) {
-	case symbols:
-		return true
-	case nothing, anchor:
-		return false
-	case inTurn:
-		for _, p := range w.parts {
-			if mustTake(p) {
-				return true
-			}
-		}
-		return false
-	case eitherOf:
-		for _, a := range w.arms {
-			if !mustTake(a) {
-				return false
-			}
-		}
-		return true
-	case repeated:
-		return w.least > 0 && mustTake(w.what)
-	}
-	panic(fmt.Sprintf("a written pattern %T", w))
-}
-
-func holdsAnchor(w written) bool {
-	switch w := w.(type) {
-	case anchor:
-		return true
-	case inTurn:
-		for _, p := range w.parts {
-			if holdsAnchor(p) {
-				return true
-			}
-		}
-	case eitherOf:
-		for _, a := range w.arms {
-			if holdsAnchor(a) {
-				return true
-			}
-		}
-	case repeated:
-		return holdsAnchor(w.what)
-	}
-	return false
 }

@@ -138,3 +138,24 @@ func TestTextThatIsNoPatternIsRefusedWhateverLimitItWentPast(t *testing.T) {
 		t.Errorf("a{0003,0005}: %v", err)
 	}
 }
+
+// Text nested far past the depth limit is still read to its end, and its anchors placed, before
+// the limit is the answer: the reader and the placing of anchors keep stacks of their own, so how
+// deep the text is never decides whether it is read. 199x-notation's reader is held to the same.
+func TestTextFarPastTheDepthLimitIsReadToItsEnd(t *testing.T) {
+	const deep = 1_000_000
+	opened := strings.Repeat("(?:", deep)
+	closed := strings.Repeat(")", deep)
+	for p, why := range map[string]string{
+		opened + "a" + closed:     "groups nest deeper",
+		opened + "a" + closed[1:]: "something is left open",
+		opened + "a*^b" + closed:  "an anchor",
+		strings.Repeat("(?:", deep) + "^a" + strings.Repeat(")*", deep): "an anchor",
+		strings.Repeat("(?:", deep) + "a" + strings.Repeat(")*", deep):  "groups nest deeper",
+	} {
+		err := Read(p)
+		if err == nil || !strings.Contains(err.Error(), why) {
+			t.Errorf("%.30q…: %v, want %q", p, err, why)
+		}
+	}
+}
