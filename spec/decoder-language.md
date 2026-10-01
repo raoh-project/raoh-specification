@@ -141,13 +141,10 @@ checked when the catalogue is read, so a catalogue that breaks one is invalid ra
 some case. The cases in `suite/` are the specification of the details. Where a `doc` and a case
 disagree, the specification has a defect; report it.
 
-A few meanings in this version are still behaviour of raoh-java 0.8.0 written down, and later
-versions decide them (see [CONTRIBUTING.md](../CONTRIBUTING.md#how-a-meaning-is-decided)). Each is an
-open issue in this repository:
+A meaning in this version is still behaviour of raoh-java 0.8.0 written down, and a later version
+decides it (see [CONTRIBUTING.md](../CONTRIBUTING.md#how-a-meaning-is-decided)). It is an open
+issue in this repository:
 
-- Offset date-times are ordered by instant and, at the same instant, by local date-time, so
-  `before`, `after` and `between` tell apart two values that denote the same instant.
-- `strict` inside `strict` reports an unknown member once for each.
 - `email` checks a loose ASCII grammar, not RFC 5321's.
 
 A decoder reads the input model, in which a number is its lexeme ([input-model.md](input-model.md)).

@@ -69,17 +69,17 @@
       "requires": [{"check": "named_fields", "args": ["fields"]}],
       "result": "product",
       "issues": [{"key": "unknown_field", "meta": {"field": {"member": true}}}],
-      "flow": {"cat": [{"arg": "fields"}, {"unknown_members": {"known": {"fields": "fields"}, "issue": "unknown_field"}}]}
+      "flow": {"unknown_members": {"after": {"arg": "fields"}, "known": {"fields": "fields"}, "issue": "unknown_field"}}
     },
     "strict": {
-      "doc": "Decodes with the inner decoder, and when the input is an object gives unknown_field for every member whose name is not among the known names, in the order of the input's members, after the inner decoder's issues. The inner decoder's result is discarded when there is any unknown member.",
+      "doc": "Decodes with the inner decoder, and when the input is an object gives unknown_field for every member whose name is not among the known names and that the inner decoder has not already reported unknown, in the order of the input's members, after the inner decoder's issues. A member is reported once, by the innermost strict that does not know it, and nested strict forms accept only members every one of them knows. The inner decoder's result is discarded when there is any unknown member.",
       "args": [
         {"name": "inner", "kind": "decoder", "type": "T"},
         {"name": "known", "kind": "value", "type": "list<string>"}
       ],
       "result": "T",
       "issues": [{"key": "unknown_field", "meta": {"field": {"member": true}}}],
-      "flow": {"cat": [{"arg": "inner"}, {"unknown_members": {"known": {"arg": "known"}, "issue": "unknown_field"}}]}
+      "flow": {"unknown_members": {"after": {"arg": "inner"}, "known": {"arg": "known"}, "issue": "unknown_field"}}
     },
     "nullable": {
       "doc": "Gives null for a JSON null, and decodes anything else, an absent value included, with the inner decoder.",
@@ -440,7 +440,7 @@
     {"name": "before", "receivers": ["instant", "date", "time", "datetime", "offset_datetime"], "result": "R",
      "issues": [{"key": "out_of_range.before", "T": "R", "meta": {"before": {"arg": "bound"}}}],
      "args": [{"name": "bound", "kind": "value", "type": "R"}],
-     "doc": "Gives out_of_range.before unless the value is strictly before the bound. Offset date-times are ordered by instant, and at the same instant by local date-time, so 09:00Z is before 10:00+01:00.",
+     "doc": "Gives out_of_range.before unless the value is strictly before the bound. Offset date-times are compared chronologically, by instant alone, so 09:00Z is not before 10:00+01:00, the same instant.",
      "flow": "own"},
     {"name": "after", "receivers": ["instant", "date", "time", "datetime", "offset_datetime"], "result": "R",
      "issues": [{"key": "out_of_range.after", "T": "R", "meta": {"after": {"arg": "bound"}}}],

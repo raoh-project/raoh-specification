@@ -311,12 +311,16 @@ func (s *state) build(owner string, f *Form, x Expr, bound map[string]value.Type
 				known = append(known, fl.member)
 			}
 		}
+		after, err := s.build(owner, f, x.After, bound, ca)
+		if err != nil {
+			return nil, err
+		}
 		site, err := s.site(f.Issues[x.Issue.Index()], bound, ca)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", owner, err)
 		}
 		s.unordered++
-		return &Unordered{ID: s.unordered, Known: known, Site: site}, nil
+		return &Unordered{ID: s.unordered, After: after, Known: known, Site: site}, nil
 	case ExprCandidates:
 		site, err := s.site(f.Issues[x.Issue.Index()], bound, ca)
 		if err != nil {

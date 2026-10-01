@@ -132,7 +132,7 @@ an expression over the lists of issues a decoder can give; the empty list is suc
 | `{"chain": [x, y, ...]}` | a non-empty list of `x`; or, when `x` gives none, a list of `{"chain": [y, ...]}` |
 | `{"each_element": x}`, `{"each_member": x}` | a list of `x` for each element of an array input, or each member of an object input, in order, at its path |
 | `{"at": {"member": a, "flow": x}}` | a list of `x` at the member the string argument `a` names |
-| `{"unknown_members": {"known": ..., "issue": k}}` | issue `k` for every member of an object input not among the known names (a list argument, or the members the fields of a fields argument read), in any order, at its path |
+| `{"unknown_members": {"after": x, "known": ..., "issue": k}}` | a list of `x`, then issue `k` for every member of an object input not among the known names (a list argument, or the members the fields of a fields argument read) and not already reported unknown by that list, in any order, at its path |
 | `{"candidates": {"decoders": a, "issue": k, "meta": m}}` | none, when some decoder of argument `a` can give none; or issue `k`, listing in its metadata entry `m` for every decoder of `a` a non-empty list it gives |
 | `{"fixture": a}` | none, or the issue the fixture argument `a` declares |
 | `{"form": [...]}` | the lists of the decoder form written there, such as the `["string"]` `discriminate` reads its tag with; that form is part of the meaning of the one that embeds it, and not a feature a case needs |
@@ -152,6 +152,12 @@ own issues arise for an input, and a form may always succeed. `unknown_members` 
 that follows from the input alone: every member the form does not know is reported, so a case must
 list them all, and cannot expect success when there is one. Two `unknown_members` are two groups,
 even on the same object.
+
+The list of `after` has reported a member unknown when it holds, at that member's path, issue `k`
+from an `unknown_members`. Such a member is not reported again: `strict` inside `strict` reports a
+member once, by the innermost form that does not know it, and accepts only members both know. This
+is a rule of `unknown_members`, not of issues in general: an issue of another variant at the
+member's path, a `type_mismatch` say, does not count, and both are reported.
 
 For a case, the verifier parses the expected issues with the flow for the case's input: each issue
 takes its place in the flow, where it is typed and its metadata and message are settled. A case

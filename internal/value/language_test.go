@@ -101,9 +101,10 @@ func TestCompareOrdersAsTheOperationsDo(t *testing.T) {
 		{"date", `"2024-01-01"`, `"2023-12-31"`, 1},
 		{"time", `"09:00"`, `"09:00:00.000000001"`, -1},
 		{"instant", `"2024-01-01T00:00:00Z"`, `"2024-01-01T00:00:00.5Z"`, -1},
-		// OffsetDateTime.compareTo: by instant, then by local date-time.
-		{"offset_datetime", `"2024-01-01T09:00Z"`, `"2024-01-01T10:00+01:00"`, -1},
+		// Offset date-times chronologically: by the instant alone.
+		{"offset_datetime", `"2024-01-01T09:00Z"`, `"2024-01-01T10:00+01:00"`, 0},
 		{"offset_datetime", `"2024-01-01T09:00+09:00"`, `"2024-01-01T01:00Z"`, -1},
+		{"offset_datetime", `"2024-01-01T09:00:00.5Z"`, `"2024-01-01T10:00+01:00"`, 1},
 	} {
 		got, err := Compare(obs(t, c.typ, c.a), obs(t, c.typ, c.b))
 		if err != nil {
@@ -115,5 +116,10 @@ func TestCompareOrdersAsTheOperationsDo(t *testing.T) {
 	}
 	if _, err := Compare(obs(t, "string", `"a"`), obs(t, "string", `"b"`)); err == nil {
 		t.Error("strings are ordered")
+	}
+	// Chronology and sameness are two relations: the same instant at two offsets is not one value.
+	z, plusOne := obs(t, "offset_datetime", `"2024-01-01T09:00Z"`), obs(t, "offset_datetime", `"2024-01-01T10:00+01:00"`)
+	if c, _ := Compare(z, plusOne); c != 0 || Equal(z, plusOne) {
+		t.Errorf("09:00Z and 10:00+01:00: compare %d, equal %v; want the same instant and different values", c, Equal(z, plusOne))
 	}
 }

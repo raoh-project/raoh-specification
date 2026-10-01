@@ -54,7 +54,10 @@ value only where it says so.
 | `instant` | a point on the UTC time-line to the nanosecond | equal |
 
 Two `offset_datetime` values at different offsets are different values even when they denote the
-same instant.
+same instant. They are also ordered: the operations that compare temporal values (`before`,
+`after`, `between`) compare offset date-times chronologically, by the instant alone. So
+`09:00Z` and `10:00+01:00` are different values and neither is before the other. Sameness and
+chronology are two relations, as sameness and numeric order are for decimals of different scales.
 
 The offset is a number of seconds. `Z`, `+00:00` and `-00:00` all give the offset zero. RFC 9557,
 which updates RFC 3339, gives `Z` and `-00:00` one meaning, that the time in UTC is known and the
