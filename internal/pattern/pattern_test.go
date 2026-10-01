@@ -110,3 +110,52 @@ func TestStatesAreCountedFromWhatIsWritten(t *testing.T) {
 		t.Errorf("a{249998} is %d states and is read: %v", MostStates, err)
 	}
 }
+
+// A limit is about a pattern, so text that is no pattern is refused as that whatever limit it also
+// went past: the reading goes on past a count or a depth to the end, and places the anchors, before
+// a limit is the answer. 199x-notation's reader answers the same.
+func TestTextThatIsNoPatternIsRefusedWhateverLimitItWentPast(t *testing.T) {
+	past := strings.Repeat("(?:", Deepest+1)
+	closed := strings.Repeat(")", Deepest+1)
+	for p, why := range map[string]string{
+		`a{134217728x}`:                      "something is left open",
+		`a{134217728}\p{L}`:                  "a character property",
+		`a{134217728}(`:                      "something is left open",
+		past + `a`:                           "something is left open",
+		past + `(a|)^b` + closed:             "an anchor",
+		past + `(?=a)` + closed:              "a group the grammar does not have",
+		`a{200000000,150000000}`:             "a count this cannot read",
+		`a{134217728}` + past + `a` + closed: "a count past the limit",
+		past + `a{134217728}` + closed:       "groups nest deeper",
+		`a{000134217728}`:                    "a count past the limit",
+	} {
+		err := Read(p)
+		if err == nil || !strings.Contains(err.Error(), why) {
+			t.Errorf("%.40q: %v, want %q", p, err, why)
+		}
+	}
+	if err := Read(`a{0003,0005}`); err != nil {
+		t.Errorf("a{0003,0005}: %v", err)
+	}
+}
+
+// Text nested far past the depth limit is still read to its end, and its anchors placed, before
+// the limit is the answer: the reader and the placing of anchors keep stacks of their own, so how
+// deep the text is never decides whether it is read. 199x-notation's reader is held to the same.
+func TestTextFarPastTheDepthLimitIsReadToItsEnd(t *testing.T) {
+	const deep = 1_000_000
+	opened := strings.Repeat("(?:", deep)
+	closed := strings.Repeat(")", deep)
+	for p, why := range map[string]string{
+		opened + "a" + closed:     "groups nest deeper",
+		opened + "a" + closed[1:]: "something is left open",
+		opened + "a*^b" + closed:  "an anchor",
+		strings.Repeat("(?:", deep) + "^a" + strings.Repeat(")*", deep): "an anchor",
+		strings.Repeat("(?:", deep) + "a" + strings.Repeat(")*", deep):  "groups nest deeper",
+	} {
+		err := Read(p)
+		if err == nil || !strings.Contains(err.Error(), why) {
+			t.Errorf("%.30q…: %v, want %q", p, err, why)
+		}
+	}
+}
