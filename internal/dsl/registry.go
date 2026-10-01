@@ -47,6 +47,12 @@ type IssueRef struct {
 	Meta map[string]MetaSource
 }
 
+// Gives reports whether the reference gives the entry a source, so that the entry is always there.
+func (r IssueRef) Gives(name string) bool {
+	_, ok := r.Meta[name]
+	return ok
+}
+
 // MetaSource says where the value of a metadata entry comes from, when the form alone decides it.
 type MetaSource struct {
 	// Kind is const, const_by_type, arg, sorted, ascii_lower_sorted, sorted_keys or member.
@@ -116,8 +122,8 @@ type Form struct {
 	Issues []IssueRef
 	// Flow is how the form gives its issues.
 	Flow Expr
-	// Requires are the conditions its arguments have to meet for the form to exist at all, as
-	// raoh-java refuses to construct the decoder otherwise.
+	// Requires are the conditions its arguments have to meet for the form to exist at all: an
+	// implementation refuses to construct the decoder otherwise.
 	Requires []Require
 }
 
@@ -248,6 +254,27 @@ type Registry struct {
 	Encoders   map[string]*Form
 	Properties map[string]*Form
 	Fixtures   map[string]*Fixture
+}
+
+// Forms returns every form that can give issues: the constructors, the fields and each distinct
+// form of an operation's overloads.
+func (r *Registry) Forms() []*Form {
+	var out []*Form
+	for _, name := range slices.Sorted(maps.Keys(r.Constructors)) {
+		out = append(out, r.Constructors[name])
+	}
+	for _, name := range slices.Sorted(maps.Keys(r.Fields)) {
+		out = append(out, r.Fields[name])
+	}
+	for _, name := range slices.Sorted(maps.Keys(r.Operations)) {
+		overloads := r.Operations[name]
+		for _, key := range slices.Sorted(maps.Keys(overloads)) {
+			if f := overloads[key].Form; !slices.Contains(out, f) {
+				out = append(out, f)
+			}
+		}
+	}
+	return out
 }
 
 // Load reads the registry under root, each file checked against its schema first.

@@ -18,11 +18,42 @@ have type parameters: `out_of_range.minimum` has `min` and `actual` of type `T`,
 type of the value being checked (`int32` for `int().min(1)`, `float64` for `double().min(0.5)`).
 `catalog/operations.json` says, for each operation, which variants it produces, what their type
 parameters are, and which metadata values it always gives (the `expected` of the type mismatch
-`int` gives is always `"integer"`). Some variants leave some metadata out in some contexts; `optional_meta` lists those
-entries. Every other entry is always present.
+`int` gives is always `"integer"`).
 
-An issue's metadata has exactly the entries of its variant, and each is compared as a value of its
-instantiated type.
+A variant's `meta` lists every entry an issue of it can have. Two things leave an entry out, and
+they mean different things. An `omit` on an issue in `catalog/operations.json` names entries that
+the issue never has where that form gives it: `toInt` gives `type_mismatch` without `actual`,
+since the input was a string, the kind it expects, and only the text in it failed to read as an
+integer, and `discriminate` gives `not_allowed` without `actual`, while the value `oneOf` always
+gives it. A variant's `optional_meta` lists entries that an issue may or may not have at a site
+that neither omits the entry nor gives it a source, depending on what the decoder ran into. Every
+other entry is always present.
+
+Both are checked. The catalogue is rejected when an entry in `optional_meta` is omitted or given a
+source by every form that gives the variant, and `raoh-verify check-suite` fails when no case
+leaves such an entry out, as it fails for a feature no case needs: without that case nothing shows
+that the entry can be absent. A variant no form gives, such as `out_of_range`, which only the
+message catalogue has, is not checked. A template writes only entries its variant always has, so
+an entry in `optional_meta` cannot be written into a message, and the catalogue is rejected when a
+form omits an entry the template of its issue writes: that issue's message could not be derived
+there.
+
+An issue's metadata has exactly these entries, and each is compared as a value of its instantiated
+type.
+
+### What `actual` of `type_mismatch` says
+
+The `actual` of `type_mismatch` names the kind of input the decoder found where it expected
+another: `null`, `boolean`, `number`, `string`, `array` or `object` for a value of the
+[input model](input-model.md), and `missing` for an absent value, such as the member of an object
+that is itself absent. Its type in `catalog/issues.json` is the symbol type of these seven words,
+so a case cannot write another. `missing` is not a kind of value; it says what the decoder
+observed, which is that there was no value.
+
+An implementation that decodes values of its host language directly, without first mapping them
+onto the input model (a Java `LocalDate` in a `Map`, for instance), reports what it finds there in
+its own words. That is outside this specification, which says what `actual` is for input-model
+values only.
 
 The form that gives an issue decides some of its metadata, and `catalog/operations.json` says
 where each such value comes from: a constant (`{"const": "integer"}`), a constant for each type the
@@ -66,14 +97,13 @@ wrote.
 
 ### Message forms
 
-A metadata value appears in a message in its message form. Version 0.8.0 takes these forms from what
-raoh-java 0.8.0 writes, which is `String.valueOf` of the value:
+A metadata value appears in a message in its message form:
 
 | Type | Message form |
 |------|--------------|
 | `bool` | `true` or `false` |
 | `int32`, `int64` | the integer in decimal |
-| `float32`, `float64` | the shortest decimal that reads back as the float, written plainly with at least one digit after the point when 10⁻³ ≤ \|v\| < 10⁷ (`0.5`, `100.0`), and as a mantissa with at least one digit after the point, `E` and the exponent otherwise (`1.0E7`, `1.0E-4`); zeros are `0.0` and `-0.0`, the others `NaN`, `Infinity` and `-Infinity` |
+| `float32`, `float64` | the canonical decimal of the float ([observation.md](observation.md#floats)), written plainly with at least one digit after the point when the exponent of its first digit is from -3 to 6 (`0.5`, `100.0`, `0.001`), and as a mantissa with at least one digit after the point, `E` and that exponent otherwise (`1.0E7`, `1.0E-4`, `4.9E-324`); zeros are `0.0` and `-0.0`, the others `NaN`, `Infinity` and `-Infinity` |
 | `decimal` | the coefficient with the point placed by the scale when the scale is not negative and the adjusted exponent (the exponent of the first digit) is at least -6 (`0.00010`, `10`); otherwise the first digit, then a point and the other digits when there are any, `E`, a sign and the adjusted exponent (`1E+3`, `1.5E-7`) |
 | `string`, `symbol`, `uuid`, `uri` | the text |
 | `date` | the year as its observation writes it ([observation.md](observation.md): four digits from 0000 to 9999, otherwise a sign and its digits), `-`, two digits of month, `-`, two digits of day |
@@ -87,8 +117,6 @@ Other types have no message form. A message writes only metadata whose type has 
 whose template writes an entry of another type is not given, and a form that would give it does not
 type-check ([decoder-language.md](decoder-language.md#types)).
 
-Whether the float and decimal forms should stay as raoh-java writes them is an open question for a
-later version.
 
 ## Where issues arise, and in what order
 

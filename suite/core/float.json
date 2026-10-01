@@ -55,5 +55,6 @@
   {"id": "R000148", "title": "float.max(1e-4) rejects 1 with out_of_range.maximum", "decoder": ["float",["max",1e-4]], "input": 1, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.maximum","meta":{"actual":1.0,"max":1.0E-4}}]},
   {"id": "R000845", "title": "float rounds 1.0000000596046448 to the nearest float32, once", "decoder": ["float"], "input": 1.0000000596046448, "ok": 1.0000001},
   {"id": "R000857", "title": "float rounds 1.000000059604644775390625000000001 to the nearest float32, once", "decoder": ["float"], "input": 1.000000059604644775390625000000001, "ok": 1.0000001},
-  {"id": "R000858", "title": "float rounds 1.000000059604644775390625, the midpoint between 1 and the next float32, to even", "decoder": ["float"], "input": 1.000000059604644775390625, "ok": 1.0}
+  {"id": "R000858", "title": "float rounds 1.000000059604644775390625, the midpoint between 1 and the next float32, to even", "decoder": ["float"], "input": 1.000000059604644775390625, "ok": 1.0},
+  {"id": "R000861", "title": "float.min(1.4e-45) rejects 0 with out_of_range.minimum, whose message writes the least positive float32 as 1.4E-45", "decoder": ["float",["min",1.4e-45]], "input": 0, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.minimum","meta":{"actual":0.0,"min":1.4e-45}}]}
 ]

@@ -28,5 +28,6 @@
   {"id": "R000078", "title": "double.nonPositive() accepts 0.0", "decoder": ["double",["nonPositive"]], "input": 0.0, "ok": 0.0},
   {"id": "R000079", "title": "double.oneOf([0.0]) accepts 0.0", "decoder": ["double",["oneOf",[0.0]]], "input": 0.0, "ok": 0.0},
   {"id": "R000080", "title": "double.nonNegative() rejects -1 with out_of_range.non_negative", "decoder": ["double",["nonNegative"]], "input": -1, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.non_negative","meta":{"actual":-1.0,"min":0.0}}]},
-  {"id": "R000081", "title": "double.nonPositive() rejects 1 with out_of_range.non_positive", "decoder": ["double",["nonPositive"]], "input": 1, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.non_positive","meta":{"actual":1.0,"max":0.0}}]}
+  {"id": "R000081", "title": "double.nonPositive() rejects 1 with out_of_range.non_positive", "decoder": ["double",["nonPositive"]], "input": 1, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.non_positive","meta":{"actual":1.0,"max":0.0}}]},
+  {"id": "R000860", "title": "double.min(4.9e-324) rejects 0 with out_of_range.minimum, whose message writes the least positive float64 as 4.9E-324", "decoder": ["double",["min",4.9e-324]], "input": 0, "issues": [{"path":"","code":"out_of_range","message_key":"out_of_range.minimum","meta":{"actual":0.0,"min":4.9e-324}}]}
 ]
