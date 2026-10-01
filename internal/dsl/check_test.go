@@ -171,7 +171,7 @@ func TestFormsThatDoNotTypeCheck(t *testing.T) {
 	rejected(t, c, `["string", ["minLenght", 3]]`, "unknown operation")
 	rejected(t, c, `["int", ["minLength", 3]]`, "does not apply to int32")
 	rejected(t, c, `["list"]`, "takes 1 argument")
-	rejected(t, c, `["string", ["minLength"]]`, "takes 1 to 1")
+	rejected(t, c, `["string", ["minLength"]]`, "takes 1 to 2")
 	rejected(t, c, `["oneOf", [["int"], ["string"]]]`, "expected a decoder of int32")
 	rejected(t, c, `["int", ["map", "area"]]`, "takes product<int32,int32>, not int32")
 	rejected(t, c, `["int", ["map", "no_such_fixture"]]`, "unknown fixture")
@@ -330,6 +330,32 @@ func TestEncoders(t *testing.T) {
 	if _, err := c.CheckEncoder(jsontext.MustParse(`["object", [["propertyWithDefault", "value", "identity", ["string"], 1]]]`)); err == nil {
 		t.Error("a default of the wrong type accepted")
 	}
+}
+
+// A constructor's trailing message is the string after its required arguments; an array there is
+// an operation. Giving it needs the constructor's message facet.
+func TestAConstructorTakesATrailingMessage(t *testing.T) {
+	c := checker(t)
+	withMessage := decoder(t, c, `["literal", "yes", ["string"], "say yes"]`)
+	if !slices.Contains(withMessage.Features, "decoder.literal.message") {
+		t.Errorf("features %v", withMessage.Features)
+	}
+	if got := issue(t, withMessage, "invalid_format.literal"); got.Message == nil || *got.Message != "say yes" || !got.MessageArg {
+		t.Errorf("the message is not the one given: %+v", got)
+	}
+	withOperation := decoder(t, c, `["literal", "yes", ["string"], ["minLength", 3]]`)
+	if slices.Contains(withOperation.Features, "decoder.literal.message") || !slices.Contains(withOperation.Features, "operation.string.minLength") {
+		t.Errorf("features %v", withOperation.Features)
+	}
+	both := decoder(t, c, `["literal", "yes", ["string"], "say yes", ["minLength", 3, "too short"]]`)
+	if !slices.Contains(both.Features, "decoder.literal.message") || !slices.Contains(both.Features, "operation.string.minLength.message") {
+		t.Errorf("features %v", both.Features)
+	}
+	// The message is the literal's own issue's, not the inner string decoder's.
+	if got := issue(t, withMessage, "type_mismatch"); got.Message != nil {
+		t.Errorf("the inner decoder's issue took the message: %+v", got)
+	}
+	rejected(t, c, `["literal", "yes", ["string"], "a", "b"]`, "")
 }
 
 // A form an implementation refuses to construct is not a decoder.
@@ -727,7 +753,7 @@ func TestFixturesSolveTogether(t *testing.T) {
 // metadata as well as a result.
 func TestInstantiatedTypesAreWellFormed(t *testing.T) {
 	c := checkerWithOps(t, []doc{{"name": "probe", "doc": "x", "receivers": []any{"*"}, "result": "R",
-		"issues": []any{doc{"key": "probe", "T": "nullable<R>"}}, "flow": "own"}}, nil,
+		"args": []any{doc{"name": "message", "kind": "message", "optional": true}}, "issues": []any{doc{"key": "probe", "T": "nullable<R>"}}, "flow": "own"}}, nil,
 		doc{"probe": doc{"code": "probe", "params": []any{"T"}, "meta": doc{"x": "optional<T>"}}})
 	rejected(t, c, `["string", ["probe"]]`, "optional<nullable<string>> cannot tell its own null")
 }
@@ -743,7 +769,7 @@ func TestMessagesWriteOnlyWhatHasAMessageForm(t *testing.T) {
 
 	ops := readDoc(t, "../../catalog/operations.json")
 	ops["operations"] = append(ops["operations"].([]any), doc{"name": "probe", "doc": "x", "receivers": []any{"string"}, "result": "R",
-		"issues": []any{doc{"key": "probe", "T": "map<R>"}}, "flow": "own"})
+		"args": []any{doc{"name": "message", "kind": "message", "optional": true}}, "issues": []any{doc{"key": "probe", "T": "map<R>"}}, "flow": "own"})
 	fx, _ := os.ReadFile("../../catalog/fixtures.json")
 	reg, err := Parse(encode(t, ops), fx)
 	if err != nil {

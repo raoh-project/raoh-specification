@@ -80,7 +80,10 @@ A derived message is the English template of the issue's message key, from
 written. If the catalogue has no template for the message key, the template of the code is used.
 
 A given message is one the user of the library supplied, such as the `"bad"` of
-`string().toInt("bad")`, or the message of an issue a fixture creates. It is the message, whatever
+`string().toInt("bad")`, or the message of an issue a fixture creates. A message argument gives the
+message of every issue its form declares, `toInt`'s `type_mismatch` and `type_mismatch.numeric_range`
+alike, and of no other: the issues of the form's decoder, field and fixture arguments keep their
+own messages, as `literal`'s string decoder's `type_mismatch` does when `literal` is given one. It is the message, whatever
 the catalogue says, and resolving messages leaves it alone. A fixture that stands for user code
 creates its issue with a given message, with whatever the implementation offers for that (in
 raoh-java 0.8.0, `refine` or `Result.failCustom`; an issue made with `Result.fail` has its message

@@ -32,6 +32,8 @@ type Spec struct {
 	Checker  *dsl.Checker
 	Suite    *suite.Suite
 	Features map[string]bool
+	// FacetOf maps each facet to the feature it is a facet of.
+	FacetOf map[string]string
 }
 
 // InvalidError reports input that makes a comparison untrustworthy. raoh-verify exits with status
@@ -82,6 +84,10 @@ func Load(root string) (*Spec, error) {
 	}
 	for _, f := range reg.Features() {
 		s.Features[f] = true
+	}
+	s.FacetOf = map[string]string{}
+	for _, f := range reg.Facets() {
+		s.FacetOf[f.ID] = f.Parent
 	}
 	if s.Suite, err = suite.Load(root, s.Checker, s.Schemas); err != nil {
 		return nil, err
@@ -138,6 +144,41 @@ func (s *Spec) UnpinnedOptional() []string {
 	for _, entry := range slices.Sorted(maps.Keys(open)) {
 		if !left[entry] {
 			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+// UngivenMessages lists, as facet: issue, every issue a form that takes a message declares that no
+// case expects with the message given. A given message is the message of every issue its form
+// declares, so each needs a case: one per facet would leave toInt's type_mismatch.numeric_range
+// unchecked.
+func (s *Spec) UngivenMessages() []string {
+	want := map[string]bool{}
+	for _, facet := range s.Checker.Registry().Facets() {
+		for _, ref := range facet.Form.Issues {
+			want[facet.ID+": "+ref.Key] = true
+		}
+	}
+	given := map[string]bool{}
+	var walk func(issues []suite.TypedIssue)
+	walk = func(issues []suite.TypedIssue) {
+		for _, is := range issues {
+			if is.Slot.MessageArg {
+				given[dsl.MessageFacetID(is.Slot.Form)+": "+is.Slot.Key] = true
+			}
+			for _, i := range slices.Sorted(maps.Keys(is.Candidates)) {
+				walk(is.Candidates[i])
+			}
+		}
+	}
+	for _, c := range s.Suite.Cases {
+		walk(c.Issues)
+	}
+	var out []string
+	for _, w := range slices.Sorted(maps.Keys(want)) {
+		if !given[w] {
+			out = append(out, w)
 		}
 	}
 	return out
