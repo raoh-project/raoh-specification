@@ -14,7 +14,7 @@ func TestURIIsTheRFC3986Production(t *testing.T) {
 		"http://[::1]:2147483648/", "http://example.com:99999999999/", "http://host:/",
 		// IP literals: IPv6 in its forms, IPv4 embedded, and IPvFuture.
 		"http://[::1]/", "http://[::]/", "http://[1:2:3:4:5:6:7:8]/", "http://[1::8]/",
-		"http://[::ffff:192.0.2.1]/", "http://[1:2:3:4:5:6:1.2.3.4]/", "http://[v1.abc]/", "http://[vF.a:b]/",
+		"http://[::ffff:192.0.2.1]/", "http://[1:2:3:4:5:6:1.2.3.4]/", "http://[v1.abc]/", "http://[vF.a:b]/", "http://[V1.abc]/",
 		"http://192.0.2.1/", "http://user:pw@host/", "http://us%40er@host/", "http://%41.example/",
 		"http://[::1]:80/%7e?q=%20#%41", "data:text/plain;base64,SGVsbG8=", "a:b/c//d",
 	} {

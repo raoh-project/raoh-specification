@@ -10,7 +10,8 @@ import (
 // nothing a URI library adds or leaves out: a scheme is required, a host may be empty, a port may
 // have any number of digits, IPvFuture is a host, and an IPv6 address has no zone identifier
 // (RFC 6874 added one and RFC 9844 removed it again). Every rule is matched in full, so the
-// pattern accepts exactly the strings the grammar derives.
+// pattern accepts exactly the strings the grammar derives. A quoted string in ABNF matches either
+// case (RFC 5234 section 2.3); of RFC 3986's, only IPvFuture's "v" has a letter, so it is [vV].
 var uriPattern = regexp.MustCompile(`^` + uriRule() + `$`)
 
 // IsURI reports whether s is a URI as RFC 3986 section 3 defines it.
@@ -51,7 +52,7 @@ func uriRule() string {
 		upTo(5) + `::` + h16,
 		upTo(6) + `::`,
 	}, `|`) + `)`
-	ipvFuture := `v[` + hexdig + `]+\.[` + unreserved + subDelims + `:]+`
+	ipvFuture := `[vV][` + hexdig + `]+\.[` + unreserved + subDelims + `:]+`
 	ipLiteral := `\[(?:` + ipv6 + `|` + ipvFuture + `)\]`
 	regName := group(unreserved+subDelims) + `*`
 	host := `(?:` + ipLiteral + `|` + ipv4 + `|` + regName + `)`

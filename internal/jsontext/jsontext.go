@@ -415,3 +415,46 @@ func (p *parser) hex4() (rune, error) {
 	p.pos += 4
 	return rune(v), nil
 }
+
+// Canonical writes a value without insignificant whitespace and with every string in one spelling,
+// keeping what a value is in this specification: the lexeme of each number, and the order of each
+// object's members. Two values with the same canonical text are the same document up to
+// whitespace and string escapes.
+func (n *Node) Canonical() string {
+	var b strings.Builder
+	n.canonical(&b)
+	return b.String()
+}
+
+func (n *Node) canonical(b *strings.Builder) {
+	switch n.Kind {
+	case Null:
+		b.WriteString("null")
+	case Bool:
+		b.WriteString(strconv.FormatBool(n.Bool))
+	case Number:
+		b.WriteString(n.Text)
+	case String:
+		b.WriteString(strconv.Quote(n.Text))
+	case Array:
+		b.WriteByte('[')
+		for i, e := range n.Elems {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			e.canonical(b)
+		}
+		b.WriteByte(']')
+	case Object:
+		b.WriteByte('{')
+		for i, m := range n.Members {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString(strconv.Quote(m.Name))
+			b.WriteByte(':')
+			m.Value.canonical(b)
+		}
+		b.WriteByte('}')
+	}
+}

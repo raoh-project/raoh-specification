@@ -28,7 +28,9 @@ needs, not proof that it is fully specified.
 
 `check-suite` rejects a case that does not type-check, whose expected outcome is not an observation
 of the decoder's result type, whose issues are not ones the decoder can produce, or whose input is
-not valid JSON or repeats a member name.
+not valid JSON or repeats a member name. It also rejects two cases with the same form and input,
+up to whitespace and string escapes: they check one thing twice. When only the reason for an
+outcome changes, change the title of the case that has it rather than adding another.
 
 State in the pull request which row of the versioning table in
 [spec/conformance.md](spec/conformance.md#versioning) the change falls under.

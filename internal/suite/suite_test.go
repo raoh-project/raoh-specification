@@ -109,6 +109,23 @@ func TestNestedStrictReportsAMemberOnce(t *testing.T) {
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": `+nested+`, "input": {"a": 1, "b": 2}, "issues": [`+unknown+`, `+unknown+`]}]`, "does not give them")
 }
 
+// A form and an input decide an outcome, so two cases may not share them, whatever the whitespace
+// or string escapes; a number written another way is another input.
+func TestTwoCasesDoNotShareAFormAndAnInput(t *testing.T) {
+	cases := func(a, b string) string {
+		return `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": ` + a + `, "ok": 1},
+		         {"id": "R000002", "title": "t", "decoder": [ "int" ], "input": ` + b + `, "ok": 1}]`
+	}
+	root := artifactstest.Copy(t, "../..", map[string]string{"suite/core/t.json": cases("1", "1")})
+	if _, err := Load(root, checker(t), schemasFor(t)); err == nil || !strings.Contains(err.Error(), "R000002 has the form and input of R000001") {
+		t.Errorf("two cases with one form and input: %v", err)
+	}
+	root = artifactstest.Copy(t, "../..", map[string]string{"suite/core/t.json": cases("1", "1.0")})
+	if _, err := Load(root, checker(t), schemasFor(t)); err != nil && strings.Contains(err.Error(), "form and input") {
+		t.Errorf("1 and 1.0 are different inputs: %v", err)
+	}
+}
+
 func TestMessagesAreDerivedOrGiven(t *testing.T) {
 	cases := accepted(t, "core", `[
 		{"id": "R000001", "title": "t", "decoder": ["double", ["min", 1e7]], "input": 1,
