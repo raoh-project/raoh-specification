@@ -24,11 +24,14 @@ CI also runs `raoh-verify check-ids` against the branch the pull request targets
 
 `check-suite` also fails when a feature of `catalog/operations.json` or `catalog/fixtures.json` is
 needed by no case: a feature is listed only once a case pins it. One case is the least a feature
-needs, not proof that it is fully specified.
+needs, not proof that it is fully specified. In the same way, an entry a variant lists in
+`optional_meta` needs a case that leaves it out where a form leaves it open.
 
 `check-suite` rejects a case that does not type-check, whose expected outcome is not an observation
 of the decoder's result type, whose issues are not ones the decoder can produce, or whose input is
-not valid JSON or repeats a member name.
+not valid JSON or repeats a member name. It also rejects two cases with the same form and input,
+up to whitespace and string escapes: they check one thing twice. When only the reason for an
+outcome changes, change the title of the case that has it rather than adding another.
 
 State in the pull request which row of the versioning table in
 [spec/conformance.md](spec/conformance.md#versioning) the change falls under.

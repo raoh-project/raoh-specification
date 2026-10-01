@@ -21,11 +21,13 @@ type arguments in angle brackets. A single upper-case letter is a type parameter
 | `string` | sequences of Unicode scalar values | equal |
 | `symbol<"A","B",...>` | one of the listed alternatives; the alternatives are part of the type, so `symbol<"RED","GREEN">` and `symbol<"YES","NO">` are different types, and a symbol type always lists at least one. `enum` gives the symbol type of the names it lists. | equal |
 | `uuid` | 128-bit UUIDs | equal |
-| `uri` | URI references | equal as written |
+| `uri` | RFC 3986 URIs | equal as written |
 
-The domain of `uri` is URI references. Version 0.8.0 does not yet say which grammar defines them
-(raoh-project/raoh-specification#9); its observation is a JSON string, and the verifier compares the
-text without checking that it belongs to the domain.
+The domain of `uri` is the `URI` production of RFC 3986 section 3, not `URI-reference`: every value
+has a scheme, and a relative reference is not a `uri`. It is the set the `uri` operation accepts.
+RFC 3986 is read as updated (RFC 7320 and RFC 8820, which do not change the syntax), and without
+the IPv6 zone identifier RFC 6874 added, since RFC 9844 removed it. An observation of a `uri` is a
+JSON string, and the verifier checks that it is in the domain.
 
 Two floats are the same when they are the same IEEE 754 value, with two exceptions to what the
 IEEE 754 comparison says: +0 and -0 are different values, and every NaN is the same value as every

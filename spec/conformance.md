@@ -47,10 +47,18 @@ nothing else. It does not run a decoder.
 
 It checks, for every case: that the decoder or encoder form type-checks and its arguments meet what
 the form requires; that the expected result is an observation of the result type, including the
-alternatives of a symbol type; that the expected issues fit the decoder's issue flow for the input,
+alternatives of a symbol type, the canonical decimal of a float
+([observation.md](observation.md#floats)) and the domain of `uri` ([value-model.md](value-model.md));
+that the expected issues fit the decoder's issue flow for the input,
 in its order and groups; that each issue's metadata has the types its place gives, and the values
 the form decides (from constants, arguments and member names); and that each message is the one
 its place gives, derived from the catalogue or given by the form.
+
+It checks the suite as a whole too: that no two cases have the same profile, form and input; that
+every feature the registry lists is needed by some case; and that every entry a variant's
+`optional_meta` lists, where a form leaves it open, is left out by some case
+([issues.md](issues.md)). The catalogues themselves are checked when they are read
+([decoder-language.md](decoder-language.md#meaning), [issues.md](issues.md)).
 
 An implementation's issues are matched against the reading of the case's, by the same reader:
 each is read at the place of the expected issue it is matched with, so an issue whose metadata is
@@ -61,7 +69,8 @@ recomputed: the value a decoder gives, the `actual` a failed bound reports, the 
 `unique` or `containsAll` finds, the value a fixture computes. Whether a decoder's checks hold of
 its result (that `min(1)` gives nothing below 1, that `oneOf` gives one of its values) is decoder
 semantics, which implementations are checked for by running them on the cases; the verifier does
-not compute it. Nor does it check that the text of a `uri` belongs to the URI domain.
+not compute it. Membership of a domain is not decoder semantics: an expected `uri` that is not an
+RFC 3986 URI is not an observation of `uri`, and the case is rejected.
 
 ## Profiles
 

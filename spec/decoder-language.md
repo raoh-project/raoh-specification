@@ -142,12 +142,6 @@ checked when the catalogue is read, so a catalogue that breaks one is invalid ra
 some case. The cases in `suite/` are the specification of the details. Where a `doc` and a case
 disagree, the specification has a defect; report it.
 
-A meaning in this version is still behaviour of raoh-java 0.8.0 written down, and a later version
-decides it (see [CONTRIBUTING.md](../CONTRIBUTING.md#how-a-meaning-is-decided)). It is an open
-issue in this repository:
-
-- `email` checks a loose ASCII grammar, not RFC 5321's.
-
 A decoder reads the input model, in which a number is its lexeme ([input-model.md](input-model.md)).
 An adapter that hands a decoder numbers some library has already converted, to a binary64 double
 for instance, gives other results: a `decimal` that has lost the scale or digits it was written

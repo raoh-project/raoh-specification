@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/raoh-project/raoh-specification/internal/artifacts"
@@ -77,6 +78,9 @@ func Load(root string, chk *dsl.Checker, sch *schemas.Set) (*Suite, error) {
 	for _, e := range ids.Elems {
 		s.Retired = append(s.Retired, e.Text)
 	}
+	// A form and an input decide an outcome, so two cases with the same ones check the same thing
+	// twice: one is a copy, or the two disagree.
+	byRun := map[string]*Case{}
 	for _, a := range artifacts.OfKind(list, artifacts.CaseFile) {
 		text, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(a.Path)))
 		if err != nil {
@@ -97,6 +101,12 @@ func Load(root string, chk *dsl.Checker, sch *schemas.Set) (*Suite, error) {
 				problems = append(problems, fmt.Sprintf("%s: %s: the ID is also used in %s", a.Path, c.ID, other.File))
 				continue
 			}
+			run := c.Profile + "\x00" + strconv.FormatBool(c.Encoder) + "\x00" + c.Form.Canonical() + "\x00" + c.Input.Canonical()
+			if other, dup := byRun[run]; dup {
+				problems = append(problems, fmt.Sprintf("%s: %s has the form and input of %s", a.Path, c.ID, other.ID))
+				continue
+			}
+			byRun[run] = c
 			s.ByID[c.ID] = c
 			s.Cases = append(s.Cases, c)
 		}
