@@ -440,6 +440,8 @@
   {"id": "R000875", "title": "string.uri() accepts \"http://\", an empty host, which only the http scheme refuses", "decoder": ["string", ["uri"]], "input": "http://", "ok": "http://"},
   {"id": "R000876", "title": "string.uri() accepts \"https://\", an empty host, which only the https scheme refuses", "decoder": ["string", ["uri"]], "input": "https://", "ok": "https://"},
   {"id": "R000878", "title": "string.url() rejects \"http://\" with invalid_format.url, though it is a URI", "decoder": ["string", ["url"]], "input": "http://", "issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.url", "meta": {}}]},
+  {"id": "R001008", "title": "string.url() accepts \"http://[v1.abc]/\", an IPvFuture host", "decoder": ["string", ["url"]], "input": "http://[v1.abc]/", "ok": "http://[v1.abc]/"},
+  {"id": "R001009", "title": "string.url() accepts \"http://[::1]:2147483648/\", a port above 2147483647 after an IPv6 host", "decoder": ["string", ["url"]], "input": "http://[::1]:2147483648/", "ok": "http://[::1]:2147483648/"},
   {"id": "R000879", "title": "string.trim().toLowerCase().email() accepts \"ken@example\", a single-label domain", "decoder": ["string", ["trim"], ["toLowerCase"], ["email"]], "input": "ken@example", "ok": "ken@example"},
   {"id": "R000880", "title": "string.email() accepts \"o'brien@example.com\", an apostrophe in the local part", "decoder": ["string", ["email"]], "input": "o'brien@example.com", "ok": "o'brien@example.com"},
   {"id": "R000881", "title": "string.email() accepts \"a!#$%&'*+-/=?^_`{|}~z@example.com\", every atext symbol", "decoder": ["string", ["email"]], "input": "a!#$%&'*+-/=?^_`{|}~z@example.com", "ok": "a!#$%&'*+-/=?^_`{|}~z@example.com"},
