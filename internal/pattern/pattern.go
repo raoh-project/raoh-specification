@@ -51,7 +51,9 @@ func (inTurn) isWritten()   {}
 func (eitherOf) isWritten() {}
 func (repeated) isWritten() {}
 
-// refusal is why text is no admissible pattern, and the construct that stopped the reading.
+// refusal is why text is no admissible pattern, and the construct that stopped the reading. Its
+// reason and construct are this reader's diagnostics, not distinctions spec/pattern.md requires a
+// reader to report.
 type refusal struct {
 	why       string
 	construct string
@@ -66,8 +68,9 @@ type reader struct {
 	at        int
 	depth     int
 	construct int
-	// past is the first limit met in the text, which is the answer only once the whole of it has
-	// been read and found to be a pattern.
+	// past is the first limit this reader meets in the text, reported only once the whole of it
+	// has been read and found to be a pattern. A pattern can be past more than one limit;
+	// spec/pattern.md gives them no order, and keeping the first is this reader's choice.
 	past *refusal
 }
 
