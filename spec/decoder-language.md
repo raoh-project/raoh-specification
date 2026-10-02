@@ -114,7 +114,8 @@ where an issue would have to write an element that has none: `["list", ["dict", 
 
 The operations that read text by Unicode properties or mappings (`trim`, `nonBlank`,
 `toLowerCase`, `toUpperCase`, `normalize`) use Unicode 18.0.0, whatever version the platform an
-implementation runs on has.
+implementation runs on has, and so does `pattern` in telling which characters a backslash stands
+before ([pattern.md](pattern.md)).
 
 A form's result type follows from its arguments. `catalog/operations.json` writes it as a type,
 which may mention the form's parameters; as `"product"`, the product of the types of the fields its
