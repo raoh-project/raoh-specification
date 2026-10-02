@@ -51,19 +51,18 @@ to say what a surrogate is.
 
 ## What is refused
 
-Everything else is refused. The reasons that follow say why each construct has no place in the
-grammar; they are not reasons a reader has to tell apart when it refuses one. A back reference, `\1`
-to `\9` and `\k`, can denote a set no regular language is. A group beginning `(?` other than `(?:`
-is not in the grammar: a lookaround and a named group have no spelling here, and a flag group would
-change what a class or a shorthand means for the rest of the pattern, which the language keeps
-fixed. A possessive count, `++` or any other count followed by `+`, accepts what a matcher's walk
-leaves, which the language does not describe. `\p` and `\P`, the boundaries `\b`, `\B`, `\A`, `\z`,
-`\Z`, `\G` and `\R`, the quotation `\Q`...`\E`, a class inside a class and `&&`, and a backslash
-before any letter or decimal digit not named above, such as `\٣` (U+0663, Nd), have no spelling in
-the grammar. Which characters are letters and decimal digits is fixed by Unicode 18.0.0, whatever
-version the platform an implementation runs on has: `\꟝` (U+A7DD, a letter from Unicode 18.0.0 on)
-is refused even where the platform's Unicode does not have the character. An escape spelling half of
-a surrogate pair, `\uD800` on its own or `\x{DC00}`, names a character no string holds.
+Everything else is refused. A back reference, `\1` to `\9` and `\k`,
+can denote a set no regular language is. A group beginning `(?` other than `(?:` is not in the
+grammar: a lookaround and a named group have no spelling here, and a flag group would change what a
+class or a shorthand means for the rest of the pattern, which the language keeps fixed. A possessive
+count, `++` or any other count followed by `+`, accepts what a matcher's walk leaves, which the
+language does not describe. `\p` and `\P`, the boundaries `\b`, `\B`, `\A`, `\z`, `\Z`, `\G` and
+`\R`, the quotation `\Q`...`\E`, a class inside a class and `&&`, and a backslash before any letter
+or decimal digit not named above, such as `\٣` (U+0663, Nd), have no spelling in the grammar. Which
+characters are letters and decimal digits is fixed by Unicode 18.0.0, whatever version the platform
+an implementation runs on has: `\꟝` (U+A7DD, a letter from Unicode 18.0.0 on) is refused even where
+the platform's Unicode does not have the character. An escape spelling half of a surrogate pair,
+`\uD800` on its own or `\x{DC00}`, names a character no string holds.
 
 ## Limits on an admissible pattern
 
@@ -101,9 +100,13 @@ A form whose pattern is refused, or is past one of these limits, is not a decode
 language: the `pattern` operation requires its argument to be a pattern this chapter admits
 (`requires` in `catalog/operations.json`), and a case that writes another is rejected.
 
-The three limits are independent, and a pattern can be past more than one: `a{134217728}` is past
-the count and the states. Which limit a reader names then is not specified. Neither is how a
-refusal points into the text: what it quotes, and in what unit it counts a position.
+This chapter says which text is refused and which pattern is past a limit, not what a reader says
+about either. The reasons it gives, for an anchor above and for what is refused, explain why the
+text is outside the language; they are not reasons a reader has to tell apart. The three limits are
+independent, and a pattern can be past more than one: `a{134217728}` is past the count and the
+states. Which limit a reader names then is not specified. Nor is how a reader points into the text
+when it refuses text or names a limit: what it quotes, where it points, and in what unit it counts
+a position.
 
 ## Implementing it
 

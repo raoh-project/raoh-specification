@@ -4,7 +4,7 @@
 // Souther's compiler reads it, so that one pattern means one set of strings in both.
 //
 // The verifier never matches a pattern; a case says what its decoder gives. What it needs is to
-// refuse, where a case is read, text whose meaning the specification does not define and a pattern
+// reject, where a case is read, text whose meaning the specification does not define and a pattern
 // that means a set of strings but is past a limit, since neither is an argument.
 package pattern
 
@@ -51,15 +51,15 @@ func (inTurn) isWritten()   {}
 func (eitherOf) isWritten() {}
 func (repeated) isWritten() {}
 
-// refusal is why text is no admissible pattern, and the construct that stopped the reading. Its
-// reason and construct are this reader's diagnostics, not distinctions spec/pattern.md requires a
-// reader to report.
-type refusal struct {
+// inadmissible is why text is no admissible pattern, refused or past a limit, and the construct
+// that stopped the reading. Its reason and construct are this reader's diagnostics, not
+// distinctions spec/pattern.md requires a reader to report.
+type inadmissible struct {
 	why       string
 	construct string
 }
 
-func (r refusal) Error() string {
+func (r inadmissible) Error() string {
 	return fmt.Sprintf("%s: %q", r.why, r.construct)
 }
 
@@ -71,13 +71,13 @@ type reader struct {
 	// past is the first limit this reader meets in the text, reported only once the whole of it
 	// has been read and found to be a pattern. A pattern can be past more than one limit;
 	// spec/pattern.md gives them no order, and keeping the first is this reader's choice.
-	past *refusal
+	past *inadmissible
 }
 
 // beyond notes a limit met in the text, keeping the first.
 func (r *reader) beyond(why string, from, to int) {
 	if r.past == nil {
-		r.past = &refusal{why, string(r.text[from:min(to, len(r.text))])}
+		r.past = &inadmissible{why, string(r.text[from:min(to, len(r.text))])}
 	}
 }
 
@@ -90,23 +90,23 @@ func Read(text string) (err error) {
 	r := &reader{text: []rune(text)}
 	defer func() {
 		if p := recover(); p != nil {
-			ref, ok := p.(refusal)
+			why, ok := p.(inadmissible)
 			if !ok {
 				panic(p)
 			}
-			err = ref
+			err = why
 		}
 	}()
 	w := r.pattern()
 	if !placed(w) {
-		return refusal{"an anchor whose answer would turn on the string matched", text}
+		return inadmissible{"an anchor whose answer would turn on the string matched", text}
 	}
-	// A limit is about a pattern, so it is the answer only now that the text is known to be one.
+	// A limit is about a pattern, so it is reported only now that the text is known to be one.
 	if r.past != nil {
 		return *r.past
 	}
 	if plus(1, states(w)) > MostStates {
-		return refusal{fmt.Sprintf("more than %d states once its repetitions are written out", MostStates), text}
+		return inadmissible{fmt.Sprintf("more than %d states once its repetitions are written out", MostStates), text}
 	}
 	return nil
 }
@@ -187,7 +187,7 @@ func (r *reader) expect(c rune) {
 func (r *reader) refuse(why string, to int) {
 	to = max(to, r.construct)
 	to = min(to, len(r.text))
-	panic(refusal{why, string(r.text[r.construct:to])})
+	panic(inadmissible{why, string(r.text[r.construct:to])})
 }
 
 // open is a choice being read, in a group or at the top: the arms read so far, and the parts of
@@ -590,7 +590,7 @@ const (
 // a ^ after something that must take a character leaves no string, and one whose answer would
 // turn on the string matched is refused, as is a $ before something that must take a character.
 //
-// It is asked of text read past the depth limit, before the limit is the answer, so it keeps
+// It is asked of text read past the depth limit, before the limit is reported, so it keeps
 // stacks of its own: the tree is laid out flat, what each part may and must take and whether it
 // holds an anchor is worked out from the leaves up, and where each part stands from the root down.
 func placed(w written) bool {
