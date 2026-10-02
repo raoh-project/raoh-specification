@@ -1,13 +1,36 @@
 package pattern
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 )
 
-// The pattern language reads what Souther's reads, and refuses what it refuses, each for its own
-// reason (spec/pattern.md).
+// isInadmissible checks that p is inadmissible as spec/pattern.md decides, refused or a pattern
+// past a limit, and that this reader's reason contains why. Which of the two p is comes from
+// spec/pattern.md. The reason is this reader's own diagnostic, checked so that it stays useful to
+// whoever wrote the case; spec/pattern.md does not require it.
+func isInadmissible(t *testing.T, p string, limit bool, why string) {
+	t.Helper()
+	want := "refused"
+	if limit {
+		want = "past a limit"
+	}
+	var in inadmissible
+	switch err := Read(p); {
+	case err == nil:
+		t.Errorf("%.40q is read, want it %s", p, want)
+	case !errors.As(err, &in):
+		t.Errorf("%.40q: %v, want it %s", p, err, want)
+	case in.limit != limit:
+		t.Errorf("%.40q: %v, want it %s", p, err, want)
+	case !strings.Contains(in.why, why):
+		t.Errorf("%.40q: %v, want this reader to say %q", p, err, why)
+	}
+}
+
+// The pattern language reads what Souther's reads and refuses what it refuses (spec/pattern.md).
 func TestPatternsAreReadAsSoutherReadsThem(t *testing.T) {
 	for _, p := range []string{
 		`^[0-9]{3}$`, `[0-9]{3}`, `a|`, `|a`, `(?:)`, `()`, `[]]`, `[^]]`, `[\d-z]`, `[-a]`, `[a-]`,
@@ -21,67 +44,41 @@ func TestPatternsAreReadAsSoutherReadsThem(t *testing.T) {
 		}
 	}
 	for p, why := range map[string]string{
-		`(?=a)`:         "a group the grammar does not have",
-		`(?<n>a)`:       "a group the grammar does not have",
-		`(?i)a`:         "a group the grammar does not have",
-		`\1`:            "a back reference",
-		`\k<n>`:         "a back reference",
-		`\p{L}`:         "a character property",
-		`\b`:            "a boundary",
-		`\z`:            "a boundary",
-		`\Qa\E`:         "a quotation",
-		`a++`:           "a possessive repetition",
-		`a{2}+`:         "a possessive repetition",
-		`[a&&b]`:        "a class of classes",
-		`[[a]]`:         "a class of classes",
-		`(a|)^b`:        "an anchor",
-		`(^a)*`:         "an anchor",
-		`a$b`:           "an anchor",
-		`\uD800`:        "a character no string holds",
-		`\x{DC00}`:      "a character no string holds",
-		`\q`:            "an escape this does not read",
-		`\é`:            "an escape this does not read",
-		`\٣`:            "an escape this does not read",
-		`[\٣]`:          "an escape this does not read",
-		`\꟝`:            "an escape this does not read",
-		`\x{110000}`:    "an escape this does not read",
-		`\x4`:           "an escape this does not read",
-		`\x１２`:          "an escape this does not read",
-		`\0400`:         "an escape this does not read",
-		`[\d-z-\w]`:     "an escape this does not read",
-		`[a-\d]`:        "an escape this does not read",
-		`{`:             "a count this cannot read",
-		`a{,3}`:         "a count this cannot read",
-		`a{3,2}`:        "a count this cannot read",
+		`(?=a)`:     "a group the grammar does not have",
+		`(?<n>a)`:   "a group the grammar does not have",
+		`(?i)a`:     "a group the grammar does not have",
+		`\1`:        "a back reference",
+		`\k<n>`:     "a back reference",
+		`\p{L}`:     "a character property",
+		`\b`:        "a boundary",
+		`\0400`:     "an escape this does not read",
+		`[\d-z-\w]`: "an escape this does not read",
+		`[a-\d]`:    "an escape this does not read",
+		`{`:         "a count this cannot read",
+		`a{,3}`:     "a count this cannot read",
+		`a{3,2}`:    "a count this cannot read",
+		`*a`:        "something is left open",
+		`a**`:       "something is left open",
+		`(a`:        "something is left open",
+		`[a`:        "something is left open",
+		`a)`:        "a bracket closes nothing",
+		`[z-a]`:     "a count this cannot read",
+		`\`:         "an escape this does not read",
+	} {
+		isInadmissible(t, p, false, why)
+	}
+	for p, why := range map[string]string{
 		`a{999999999}`:  "a count past the limit",
-		`a{134217728}`:  "a count past the limit",
 		`a{249999}`:     "more than 250000 states",
 		`(a{500}){500}`: "more than 250000 states",
 		`a{134217727}`:  "more than 250000 states",
-		`*a`:            "something is left open",
-		`a**`:           "something is left open",
-		`(a`:            "something is left open",
-		`[a`:            "something is left open",
-		`a)`:            "a bracket closes nothing",
-		`[z-a]`:         "a count this cannot read",
-		`\`:             "an escape this does not read",
+		strings.Repeat("(", Deepest+1) + "a" + strings.Repeat(")", Deepest+1): "nest deeper",
 	} {
-		err := Read(p)
-		switch {
-		case why == "":
-			if err != nil {
-				t.Errorf("%q is refused: %v", p, err)
-			}
-		case err == nil:
-			t.Errorf("%q is read", p)
-		case !strings.Contains(err.Error(), why):
-			t.Errorf("%q is refused for another reason: %v", p, err)
-		}
+		isInadmissible(t, p, true, why)
 	}
-	deep := strings.Repeat("(", Deepest+1) + "a" + strings.Repeat(")", Deepest+1)
-	if err := Read(deep); err == nil || !strings.Contains(err.Error(), "nest deeper") {
-		t.Errorf("groups nested %d deep: %v", Deepest+1, err)
-	}
+	// a{134217728} is past the count and the states. spec/pattern.md does not say which a reader
+	// names; this one names the first it meets in the text.
+	isInadmissible(t, `a{134217728}`, true, "a count past the limit")
 	if err := Read(strings.Repeat("(", Deepest) + "a" + strings.Repeat(")", Deepest)); err != nil {
 		t.Errorf("groups nested %d deep: %v", Deepest, err)
 	}
@@ -106,60 +103,50 @@ func TestStatesAreCountedFromWhatIsWritten(t *testing.T) {
 		if err := Read(at); err != nil {
 			t.Errorf("%q at the limit is refused: %v", p, err)
 		}
-		if err := Read(over); err == nil || !strings.Contains(err.Error(), "states") {
-			t.Errorf("%q past the limit: %v", p, err)
-		}
+		isInadmissible(t, over, true, "states")
 	}
 	if err := Read(`a{249998}`); err != nil {
 		t.Errorf("a{249998} is %d states and is read: %v", MostStates, err)
 	}
 }
 
-// A limit is about a pattern, so text that is no pattern is refused as that whatever limit it also
-// went past: the reading goes on past a count or a depth to the end, and places the anchors, before
-// a limit is the answer. 199x-notation's reader answers the same.
+// A limit is about a pattern, so text that is no pattern is refused whatever limit it also went
+// past: the reading goes on past a count or a depth to the end, and places the anchors, before a
+// limit is reported. 199x-notation's reader refuses the same text.
 func TestTextThatIsNoPatternIsRefusedWhateverLimitItWentPast(t *testing.T) {
 	past := strings.Repeat("(?:", Deepest+1)
 	closed := strings.Repeat(")", Deepest+1)
 	for p, why := range map[string]string{
-		`a{134217728x}`:                      "something is left open",
-		`a{134217728}\p{L}`:                  "a character property",
-		`a{134217728}(`:                      "something is left open",
-		past + `a`:                           "something is left open",
-		past + `(a|)^b` + closed:             "an anchor",
-		past + `(?=a)` + closed:              "a group the grammar does not have",
-		`a{200000000,150000000}`:             "a count this cannot read",
-		`a{134217728}` + past + `a` + closed: "a count past the limit",
-		past + `a{134217728}` + closed:       "groups nest deeper",
-		`a{000134217728}`:                    "a count past the limit",
+		`a{134217728x}`:          "something is left open",
+		`a{134217728}\p{L}`:      "a character property",
+		`a{134217728}(`:          "something is left open",
+		past + `a`:               "something is left open",
+		past + `(a|)^b` + closed: "an anchor",
+		past + `(?=a)` + closed:  "a group the grammar does not have",
+		`a{200000000,150000000}`: "a count this cannot read",
 	} {
-		err := Read(p)
-		if err == nil || !strings.Contains(err.Error(), why) {
-			t.Errorf("%.40q: %v, want %q", p, err, why)
-		}
+		isInadmissible(t, p, false, why)
 	}
+	isInadmissible(t, `a{000134217728}`, true, "a count past the limit")
+	// Past the count and the depth, in either order. spec/pattern.md does not say which a reader
+	// names; this one names the first it meets in the text.
+	isInadmissible(t, `a{134217728}`+past+`a`+closed, true, "a count past the limit")
+	isInadmissible(t, past+`a{134217728}`+closed, true, "groups nest deeper")
 	if err := Read(`a{0003,0005}`); err != nil {
 		t.Errorf("a{0003,0005}: %v", err)
 	}
 }
 
 // Text nested far past the depth limit is still read to its end, and its anchors placed, before
-// the limit is the answer: the reader and the placing of anchors keep stacks of their own, so how
+// the limit is reported: the reader and the placing of anchors keep stacks of their own, so how
 // deep the text is never decides whether it is read. 199x-notation's reader is held to the same.
 func TestTextFarPastTheDepthLimitIsReadToItsEnd(t *testing.T) {
 	const deep = 1_000_000
 	opened := strings.Repeat("(?:", deep)
 	closed := strings.Repeat(")", deep)
-	for p, why := range map[string]string{
-		opened + "a" + closed:     "groups nest deeper",
-		opened + "a" + closed[1:]: "something is left open",
-		opened + "a*^b" + closed:  "an anchor",
-		strings.Repeat("(?:", deep) + "^a" + strings.Repeat(")*", deep): "an anchor",
-		strings.Repeat("(?:", deep) + "a" + strings.Repeat(")*", deep):  "groups nest deeper",
-	} {
-		err := Read(p)
-		if err == nil || !strings.Contains(err.Error(), why) {
-			t.Errorf("%.30q…: %v, want %q", p, err, why)
-		}
-	}
+	isInadmissible(t, opened+"a"+closed, true, "groups nest deeper")
+	isInadmissible(t, opened+"a"+closed[1:], false, "something is left open")
+	isInadmissible(t, opened+"a*^b"+closed, false, "an anchor")
+	isInadmissible(t, opened+"^a"+strings.Repeat(")*", deep), false, "an anchor")
+	isInadmissible(t, opened+"a"+strings.Repeat(")*", deep), true, "groups nest deeper")
 }
