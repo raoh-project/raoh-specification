@@ -14,6 +14,7 @@ func TestPatternsAreReadAsSoutherReadsThem(t *testing.T) {
 		`\x{1F600}`, `\x41`, `😀`, `A`, `\0101`, `\.`, `\\`, `\-`, `a{2,}?`, `a{2}`,
 		`a{0,3}`, `a+?`, `(^a|b$)`, `a^b`, `^abc$`, `.`, `\s\S\d\D\w\W`, `\t\n\r\f\a\e`, "a\x00b",
 		`[\x{0}-\x{10FFFF}]`, `[^\x{0}-\x{10FFFF}]`, `😀+`, `(a)(b)`, `}`, `]`,
+		`\😀`, `\Ⅻ`, `\²`, `[\Ⅻ]`,
 	} {
 		if err := Read(p); err != nil {
 			t.Errorf("%q is refused: %v", p, err)
@@ -40,6 +41,9 @@ func TestPatternsAreReadAsSoutherReadsThem(t *testing.T) {
 		`\x{DC00}`:      "a character no string holds",
 		`\q`:            "an escape this does not read",
 		`\é`:            "an escape this does not read",
+		`\٣`:            "an escape this does not read",
+		`[\٣]`:          "an escape this does not read",
+		`\꟝`:            "an escape this does not read",
 		`\x{110000}`:    "an escape this does not read",
 		`\x4`:           "an escape this does not read",
 		`\x１２`:          "an escape this does not read",

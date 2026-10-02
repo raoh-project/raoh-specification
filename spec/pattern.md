@@ -21,8 +21,9 @@ A pattern is built from these, and from nothing else.
   followed by one to three octal digits, up to 377; `\x` followed by two hex digits, or by hex digits
   in braces up to 10FFFF; `\u` followed by four hex digits, where a high surrogate's `\u` followed at
   once by a low one's is the one character the two encode. Hex digits are the ASCII ones, in either
-  case. A backslash before a character that is neither a letter nor a digit stands for that
-  character, so `\.` is a full stop and `\\` a backslash.
+  case. A backslash before a character that is neither a letter (General_Category L) nor a decimal
+  digit (Nd) of Unicode 18.0.0 stands for that character, so `\.` is a full stop, `\\` a backslash
+  and `\Ⅻ` (U+216B, Nl) the numeral twelve.
 - `.` stands for every character but the five line terminators U+000A, U+000D, U+0085, U+2028 and
   U+2029.
 - `\d` stands for U+0030 to U+0039; `\w` for U+0041 to U+005A, U+0061 to U+007A, U+0030 to U+0039
@@ -57,7 +58,10 @@ class or a shorthand means for the rest of the pattern, which the language keeps
 count, `++` or any other count followed by `+`, accepts what a matcher's walk leaves, which the
 language does not describe. `\p` and `\P`, the boundaries `\b`, `\B`, `\A`, `\z`, `\Z`, `\G` and
 `\R`, the quotation `\Q`...`\E`, a class inside a class and `&&`, and a backslash before any letter
-not named above have no spelling in the grammar. An escape spelling half of a surrogate pair,
+or decimal digit not named above, such as `\٣` (U+0663, Nd), have no spelling in the grammar. Which
+characters are letters and decimal digits is fixed by Unicode 18.0.0, whatever version the platform
+an implementation runs on has: `\꟝` (U+A7DD, a letter from Unicode 18.0.0 on) is refused even where
+the platform's Unicode does not have the character. An escape spelling half of a surrogate pair,
 `\uD800` on its own or `\x{DC00}`, names a character no string holds.
 
 ## Limits on an admissible pattern

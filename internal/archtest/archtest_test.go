@@ -217,6 +217,7 @@ func TestSource(t *testing.T) {
 	t.Run("NoAbsenceIsTheEmptyString", func(t *testing.T) { noAbsenceIsTheEmptyString(t, src) })
 	t.Run("MapOrderNeverShows", func(t *testing.T) { mapOrderNeverShows(t, src) })
 	t.Run("ValueTypesAreInstantiated", func(t *testing.T) { valueTypesAreInstantiated(t, src) })
+	t.Run("NoUnicodeOfTheHost", func(t *testing.T) { noUnicodeOfTheHost(t, src) })
 }
 
 // A struct field compared with "" is usually a presence encoded in a value that a real value can
@@ -276,6 +277,22 @@ func valueTypesAreInstantiated(t *testing.T, src source) {
 		}
 	})
 	tally(t, found, substCalls, "calls Subst", "use Instantiate for the type of a value")
+}
+
+// The specification reads Unicode properties of version 18.0.0, and Go's unicode package has those
+// of the Go that builds the verifier. A test of an answer cannot tell the two apart while the
+// versions agree on it, so the source does not import the package at all; what it needs of Unicode
+// it reads from the Unicode Character Database files it carries.
+func noUnicodeOfTheHost(t *testing.T, src source) {
+	for _, dir := range src.dirs {
+		for _, f := range src.files[dir] {
+			for _, spec := range f.Imports {
+				if spec.Path.Value == `"unicode"` {
+					t.Errorf("%s: imports unicode, whose properties are of Go's version of Unicode; read them from a file of the version the specification names", src.fset.Position(spec.Pos()))
+				}
+			}
+		}
+	}
 }
 
 // A test never judges by the clock: how long something takes depends on the machine, so a test
