@@ -1,0 +1,2 @@
+# The checksum internal/pattern checks is of these bytes, as Unicode publishes them.
+internal/pattern/ucd/** -text

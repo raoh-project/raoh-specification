@@ -11,7 +11,6 @@ package pattern
 import (
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -440,7 +439,7 @@ func (r *reader) escaped() (rune, bool) {
 	case 'k', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 		r.refuse("a back reference", r.at)
 	}
-	if unicode.IsLetter(kind) {
+	if isLetterOrDigit(kind) {
 		r.refuse("an escape this does not read", r.at)
 	}
 	return kind, true
@@ -483,7 +482,7 @@ func (r *reader) hex() (rune, bool) {
 		}
 		value = value*16 + d
 		digits++
-		if value > unicode.MaxRune {
+		if value > utf8.MaxRune {
 			return 0, false
 		}
 	}
