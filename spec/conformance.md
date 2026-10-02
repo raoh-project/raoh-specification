@@ -43,7 +43,8 @@ declarations refer to cases by ID.
 ## What the verifier checks
 
 The verifier checks facts that the specification's artifacts and a case's input decide, and
-nothing else. It does not run a decoder.
+nothing else. It does not run a decoder. When the verifier rejects a form or a case, how it
+explains that rejection is not checked unless this specification says otherwise.
 
 It checks, for every case: that the decoder or encoder form type-checks and its arguments meet what
 the form requires; that the expected result is an observation of the result type, including the

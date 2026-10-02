@@ -51,7 +51,7 @@ to say what a surrogate is.
 
 ## What is refused
 
-Everything else is refused, each for a reason of its own. A back reference, `\1` to `\9` and `\k`,
+Everything else is refused. A back reference, `\1` to `\9` and `\k`,
 can denote a set no regular language is. A group beginning `(?` other than `(?:` is not in the
 grammar: a lookaround and a named group have no spelling here, and a flag group would change what a
 class or a shorthand means for the rest of the pattern, which the language keeps fixed. A possessive
@@ -99,6 +99,14 @@ or none; it counts the same number all the same, and takes every pattern within 
 A form whose pattern is refused, or is past one of these limits, is not a decoder of the decoder
 language: the `pattern` operation requires its argument to be a pattern this chapter admits
 (`requires` in `catalog/operations.json`), and a case that writes another is rejected.
+
+This chapter says which text is refused and which pattern is past a limit, not what a reader says
+about either. The reasons it gives, for an anchor above and for what is refused, explain why the
+text is outside the language; they are not reasons a reader has to tell apart. The three limits are
+independent, and a pattern can be past more than one: `a{134217728}` is past the count and the
+states. Which limit a reader names then is not specified. Nor is how a reader points into the text
+when it refuses text or names a limit: what it quotes, where it points, and in what unit it counts
+a position.
 
 ## Implementing it
 
