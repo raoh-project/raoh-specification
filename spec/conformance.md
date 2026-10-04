@@ -6,25 +6,34 @@ what an implementation may state about the result.
 
 ## Versioning
 
-The specification is versioned independently of any implementation, with semantic versioning. The
-version this revision describes is in `specification.json`. Between releases it carries a
-prerelease suffix (`0.8.0-dev`); a release is a tag `vX.Y.Z` on a commit whose
-`specification.json` says `X.Y.Z`, and a tag is never moved.
+The specification is versioned independently of any implementation, with a version of two parts,
+`major.minor`, and no patch part. The version of an implementation says nothing about the
+version of the specification it conforms to, and the other way round: implementations have patch
+releases of their own, the specification does not. The version this revision describes is in
+`specification.json`. Between releases it carries a prerelease suffix (`0.9-dev`); a release is a
+tag `vX.Y` on a commit whose `specification.json` says `X.Y`, and a tag is never moved. Releases
+up to 0.8 were tagged `vX.Y.Z`; `v0.8.0` stays as it is.
 
-The part of the version a change increments depends on which implementations it can turn from
-conforming into not conforming:
+A change to the specification can turn a conforming implementation into a non-conforming one, so
+every change that can do that is a new version. The part of the version it increments depends on
+how it can do that:
 
 | Change | Before 1.0 | From 1.0 |
 |--------|-----------|----------|
-| Wording, examples, or a case that follows from what is already specified | patch | patch |
 | Making one of several behaviours the specification allowed the only one allowed | minor | major |
 | Changing what an existing case expects | minor | major |
+| A case that follows from what is already specified | minor | minor |
 | A new constructor, operation, fixture or issue variant | minor | minor |
 | A new profile that no implementation is required to be checked against | minor | minor |
 
-A case that tests behaviour the specification already requires is a patch even when no case tested
-it before: an implementation that fails it did not conform before either. A case that settles
-behaviour the specification did not require is not a patch, because an implementation that
+Wording and examples that change no case and no requirement do not change the version. A revision
+that has to be told apart from another of the same version is named by its commit, which a
+runner's result records as `revision`, and by the digest of the suite's manifest.
+
+A case that tests behaviour the specification already requires is a new version, because an
+implementation that failed no case before can fail this one. It is a minor one even from 1.0:
+an implementation that fails it did not conform before either. A case that settles behaviour the
+specification did not require is one of the first two rows, because an implementation that
 conformed can stop conforming without changing.
 
 ## Case IDs
@@ -212,5 +221,5 @@ The report gives each profile a status:
 A stale divergence is a failure: the declaration has to be brought up to date.
 
 An implementation states its conformance per profile, with the specification version and the
-counts, for example: Raoh Specification 0.8.0 — core: conformant; encode: partially conformant
+counts, for example: Raoh Specification 0.9 — core: conformant; encode: partially conformant
 (1 unsupported). Only a report produced by `raoh-verify` supports such a statement.
