@@ -37,10 +37,6 @@ version, and a minor one even from 1.0, because the requirement it checks was al
 that settles behaviour the specification did not require changes a requirement, so it is one of the
 first two rows.
 
-Put together, a major version marks an incompatible change of what is required, a minor version a
-change that can alter an implementation's conformance result without changing what is required, and
-a change that cannot alter any result keeps the version.
-
 ## Case IDs
 
 Every case has an ID, `R` and six digits (`R000412`), and a title. The ID means nothing: it
