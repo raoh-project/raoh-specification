@@ -30,11 +30,16 @@ Wording and examples that change no case and no requirement do not change the ve
 that has to be told apart from another of the same version is named by its commit, which a
 runner's result records as `revision`, and by the digest of the suite's manifest.
 
-A case that tests behaviour the specification already requires is a new version, because an
-implementation that failed no case before can fail this one. It is a minor one even from 1.0:
-an implementation that fails it did not conform before either. A case that settles behaviour the
-specification did not require is one of the first two rows, because an implementation that
-conformed can stop conforming without changing.
+A case that tests behaviour the specification already requires does not change that requirement,
+but it can change whether an implementation conforms, since conformance is defined by the cases:
+an implementation that passed every case before can fail the new one. It is therefore a new
+version, and a minor one even from 1.0, because the requirement it checks was already there. A case
+that settles behaviour the specification did not require changes a requirement, so it is one of the
+first two rows.
+
+Put together, a major version marks an incompatible change of what is required, a minor version a
+change that can alter an implementation's conformance result without changing what is required, and
+a change that cannot alter any result keeps the version.
 
 ## Case IDs
 

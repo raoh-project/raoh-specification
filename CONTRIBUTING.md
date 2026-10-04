@@ -36,7 +36,7 @@ outcome changes, change the title of the case that has it rather than adding ano
 
 State in the pull request which row of the versioning table in
 [spec/conformance.md](spec/conformance.md#versioning) the change falls under, or that it changes
-only wording or examples and so no version.
+only wording or examples, without changing a case or a requirement, and so no version.
 
 ## Proposing behaviour an implementation already has
 
