@@ -267,3 +267,25 @@ func TestMatch(t *testing.T) {
 		t.Errorf("two symbols: %v", r)
 	}
 }
+
+// The decimals are closed under writing and reading: every scale a decimal has is written with an
+// exponent an observation holds, and a number past either bound is not read. spec/value-model.md
+// bounds the scale by 2147483647 either way, and spec/observation.md the exponent by an int32.
+func TestDecimalDomainIsClosed(t *testing.T) {
+	for _, text := range []string{"1E+2147483647", "1E-2147483647", "0.1E+2147483647", "-1.50", "1E+3"} {
+		d, err := ParseDecimal(text)
+		if err != nil {
+			t.Errorf("%s: %v", text, err)
+			continue
+		}
+		back, err := ParseDecimal(formatDecimal(d))
+		if err != nil || !Equal(Value{Type: MustParseType("decimal"), Dec: d}, Value{Type: MustParseType("decimal"), Dec: back}) {
+			t.Errorf("%s is written %s, which reads as %v, %v", text, formatDecimal(d), back, err)
+		}
+	}
+	for _, text := range []string{"1E+2147483648", "1E-2147483648", "1E-2147483649", "0.1E+2147483648", "1.5E-2147483647"} {
+		if d, err := ParseDecimal(text); err == nil {
+			t.Errorf("%s is read as %v", text, d)
+		}
+	}
+}

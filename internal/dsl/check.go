@@ -527,7 +527,7 @@ func (s *state) property(n *jsontext.Node) (value.Type, string, error) {
 // then the fixtures, which bind each other's types until none is left to bind, then the values and
 // the message, whose types have to be known by then, and last the conditions the form requires of
 // them. A value argument left out stands for its default, so every value argument has a value in
-// what args gives; a message argument left out gives no message.
+// what args gives; a message argument left out gives the message the catalogue derives.
 func (s *state) args(f *Form, nodes []*jsontext.Node, bound map[string]value.Type) (checkedArgs, error) {
 	ca := checkedArgs{values: map[ArgRef]value.Value{}, flows: map[ArgRef][]Flow{}, fields: map[ArgRef][]field{},
 		keys: map[ArgRef][]string{}, members: map[ArgRef][]string{}, fixtures: map[ArgRef]checkedFixture{}}

@@ -156,7 +156,7 @@ func (s *Spec) UnpinnedOptional() []string {
 func (s *Spec) UnpinnedCandidatePaths() []string {
 	open := map[string]bool{}
 	for _, f := range s.Checker.Registry().Forms() {
-		if c, ok := candidatesOf(f.Flow); ok {
+		for _, c := range candidatesOf(f.Flow) {
 			open[f.Issues[c.Issue.Index()].Key] = true
 		}
 	}
@@ -186,15 +186,15 @@ func (s *Spec) UnpinnedCandidatePaths() []string {
 	return out
 }
 
-// candidatesOf finds the issue that lists candidates in a flow, if it has one.
-func candidatesOf(e dsl.Expr) (dsl.ExprCandidates, bool) {
+// candidatesOf finds the issues that list candidates in a flow.
+func candidatesOf(e dsl.Expr) []dsl.ExprCandidates {
 	switch e := e.(type) {
 	case dsl.ExprCandidates:
-		return e, true
+		return []dsl.ExprCandidates{e}
 	case dsl.ExprCat:
-		return firstCandidates(e.Items)
+		return allCandidates(e.Items)
 	case dsl.ExprChain:
-		return firstCandidates(e.Items)
+		return allCandidates(e.Items)
 	case dsl.ExprEach:
 		return candidatesOf(e.Body)
 	case dsl.ExprAt:
@@ -202,16 +202,15 @@ func candidatesOf(e dsl.Expr) (dsl.ExprCandidates, bool) {
 	case dsl.ExprUnknown:
 		return candidatesOf(e.After)
 	}
-	return dsl.ExprCandidates{}, false
+	return nil
 }
 
-func firstCandidates(items []dsl.Expr) (dsl.ExprCandidates, bool) {
+func allCandidates(items []dsl.Expr) []dsl.ExprCandidates {
+	var out []dsl.ExprCandidates
 	for _, it := range items {
-		if c, ok := candidatesOf(it); ok {
-			return c, true
-		}
+		out = append(out, candidatesOf(it)...)
 	}
-	return dsl.ExprCandidates{}, false
+	return out
 }
 
 // UngivenMessages lists, as facet: issue, every issue a form that takes a message declares that no

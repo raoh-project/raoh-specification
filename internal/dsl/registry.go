@@ -26,7 +26,7 @@ type Arg struct {
 	// Optional marks a trailing value or message argument of an operation that may be left out.
 	Optional bool
 	// Default is what an optional value argument left out stands for; every optional value
-	// argument has one. An optional message argument left out gives no message.
+	// argument has one. An optional message argument left out gives the issue the message the catalogue derives.
 	Default *value.Value
 	// OneOf restricts a string value to the values listed.
 	OneOf []string

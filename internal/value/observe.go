@@ -278,7 +278,7 @@ func ParseDecimal(s string) (Dec, error) {
 		mantissa = mantissa[:i] + mantissa[i+1:]
 	}
 	scale -= exponent
-	if scale < math.MinInt32 || scale > math.MaxInt32 {
+	if scale < -math.MaxInt32 || scale > math.MaxInt32 {
 		return Dec{}, fmt.Errorf("%q has a scale out of range", s)
 	}
 	u, _ := new(big.Int).SetString(mantissa, 10)
