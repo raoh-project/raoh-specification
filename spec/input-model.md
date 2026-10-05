@@ -22,7 +22,7 @@ for every lexeme with a minus sign and the value zero, `-0` as much as `-0.0`, w
 tell every decoder what the decoder needs from it.
 
 The order of an object's members is part of the value only as far as some decoders report issues in
-that order (see [issues.md](issues.md#order)); no decoder's result depends on it.
+that order (see [issues.md](issues.md#where-issues-arise-and-in-what-order)); no decoder's result depends on it.
 
 ## What is not in the input model
 

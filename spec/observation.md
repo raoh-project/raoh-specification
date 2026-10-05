@@ -55,7 +55,7 @@ Temporal values are written as JSON strings in ISO 8601:
 
 | Type | Observation |
 |------|-------------|
-| `date` | the year, `-`, two digits of month, `-`, two digits of day. A year from 0 to 9999 is four digits (`0000`, `2024`); a negative year is `-` and at least four digits (`-0001`); a year above 9999 is `+` and its digits (`+10000`). No other spelling of a year is an observation. |
+| `date` | the year, `-`, two digits of month, `-`, two digits of day. A year from 0 to 9999 is four digits (`0000`, `2024`); a negative year is `-` and its absolute value, with leading zeros up to four digits (`-0001`) and none past them (`-10000`); a year above 9999 is `+` and its digits (`+10000`). No other spelling of a year is an observation. |
 | `time` | `hh:mm`, `hh:mm:ss` or `hh:mm:ss.f` with one to nine digits of fraction |
 | `datetime` | a date, `T`, and a time |
 | `offset_datetime` | a date-time followed by the offset: `Z` for zero, otherwise `+` or `-`, `hh:mm`, and `:ss` only when the seconds are not zero. Hours are at most 18, minutes and seconds at most 59, and the offset at most 18 hours. |

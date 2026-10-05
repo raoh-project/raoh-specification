@@ -61,9 +61,8 @@ whether it is; the recording decides nothing.
 ## Questions the specification has not settled
 
 When a case would require behaviour that looks like an accident of one implementation rather than
-a decision, open an issue instead of, or as well as, the case. Version 0.8.0 describes several such
-behaviours of raoh-java as they are, and the issues tracker lists them. Decide them as the next
-section says.
+a decision, open an issue instead of, or as well as, the case, and decide it as the next section
+says.
 
 ## How a meaning is decided
 

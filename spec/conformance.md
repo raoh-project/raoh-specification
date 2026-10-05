@@ -119,8 +119,8 @@ A runner result (`schema/runner-result.schema.json`) records:
 - `results`: for each case ID the runner ran, the `observed` outcome, written as the case writes its
   expected outcome; or, when the implementation gave none (it threw, or refused to construct the
   decoder the case names), `{"error": "..."}` saying what happened.
-- `catalogs`: for each locale the implementation ships (`en`, `ja`), every message key and its
-  template.
+- `catalogs`: for each locale the implementation ships (`en`, `ja`), every message key, without the
+  `raoh.` a properties file puts before it, and its template.
 
 The manifest digest ties a result to the exact revision it was produced from. It is taken over the
 normative artifact set, the files the specification consists of:
