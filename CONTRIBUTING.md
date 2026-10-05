@@ -44,10 +44,8 @@ Each issue that lists candidates, such as `one_of_failed`, needs a case with the
 root and a candidate's issue below it too: a candidate's path read from the root and read from the
 `oneOf` are the same at the root, so a case there cannot tell them apart.
 Each constructor that declares `required` as an issue of its own needs a case that gives it for a
-null input and one for an absent input, since the two are different inputs. The case has the
-constructor as its decoder for a null, and for an absent input an `object` or `strictObject` with a
-`field` of that constructor and no such member: a flow cannot say that a form such as `nullable`
-takes a null for itself, so a case with the constructor inside a wrapper is not counted.
+null input and one for an absent input, since the two are different inputs; the shape of such a case
+is in [spec/conformance.md](spec/conformance.md).
 
 `check-suite` rejects a case that does not type-check, whose expected outcome is not an observation
 of the decoder's result type, whose issues are not ones the decoder can produce, or whose input is

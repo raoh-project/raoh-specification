@@ -71,8 +71,12 @@ message declares is expected with the message given by some case; that every ent
 `optional_meta` lists, where a form leaves it open, is left out by some case
 ([issues.md](issues.md)); that every issue that lists candidates has a case with it and a
 candidate's issue below the root; and that every constructor that declares `required` as an issue
-of its own gives it in some case for a null input and in some case for an absent one, in a case
-whose input reaches the constructor itself (CONTRIBUTING.md lists what each needs). The catalogues themselves are checked when they are read
+of its own has a case for each of the two inputs it gives it for. In a case for a null input the
+constructor is the decoder of the case. In a case for an absent input the decoder of the case is an
+`object` or `strictObject`, and the constructor is the decoder of a `field` of it whose member the
+input does not have. The verifier counts a case by this shape and does not follow an input through
+the forms around a constructor, so a constructor inside `nullable`, an `optionalField`, a nested
+object or a `oneOf` candidate is not counted. The catalogues themselves are checked when they are read
 ([decoder-language.md](decoder-language.md#meaning), [issues.md](issues.md)).
 
 An implementation's issues are matched against the reading of the case's, by the same reader:
