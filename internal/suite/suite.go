@@ -207,6 +207,9 @@ func parseCase(file, profile string, n *jsontext.Node, chk *dsl.Checker) (*Case,
 	if c.Input, ok = n.Get("input"); !ok {
 		return nil, fmt.Errorf("a decoding case needs an input")
 	}
+	if err := ValidateInput(c.Input); err != nil {
+		return nil, fmt.Errorf("input: %w", err)
+	}
 	okNode, hasOK := n.Get("ok")
 	issues, hasIssues := n.Get("issues")
 	if hasOK == hasIssues {
