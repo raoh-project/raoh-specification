@@ -38,9 +38,10 @@ A pattern is built from these, and from nothing else.
   `-` between two single characters, each a character or an escape that stands for one, makes a
   run; anywhere else it is a character, first, last or next to a shorthand, so `[a-\d]` lists `a`,
   `-` and the digits. A run is over scalar values, so `[\x{D7FF}-\x{E000}]` holds the two
-  characters at its ends and none between. A `[` and `&&` are refused, as a class inside a class
-  and an intersection. Every other character, `. ( ) { } | ? * + $` among them, stands for itself
-  in a class. A class lists at least one character.
+  characters at its ends and none between. A `[` and `&&` are refused wherever they stand in a
+  class, an end of a run included, as a class inside a class and an intersection. Every other
+  character, `. ( ) { } | ? * + $` among them, stands for itself in a class. A class lists at least
+  one character.
 - `AB` is a string of `A` followed by one of `B`; `A|B` is either; `(A)` and `(?:A)` are `A`. Either
   side of `|`, and a group, may be empty.
 - `A?`, `A*`, `A+`, `A{n}`, `A{n,}` and `A{n,m}` are between the two counts of `A`, the second no
