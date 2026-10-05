@@ -18,7 +18,8 @@ A pattern is built from these, and from nothing else.
 - A character that is not one of `\ . [ ( ) { | ? * ^ $ +` stands for itself. A character past the
   basic plane is one character.
 - An escape stands for one character: `\t`, `\n`, `\r`, `\f`, `\a` (U+0007), `\e` (U+001B); `\0`
-  followed by one to three octal digits, up to 377; `\x` followed by two hex digits, or by hex digits
+  followed by one to three octal digits, the longest run there is, up to 377, so `\0123` is U+0053
+  and `\0400` is refused, not read as `\040` and `0`; `\x` followed by two hex digits, or by hex digits
   in braces up to 10FFFF; `\u` followed by four hex digits, where a high surrogate's `\u` followed at
   once by a low one's is the one character the two encode. Hex digits are the ASCII ones, in either
   case. A backslash before a character that is neither a letter (General_Category L) nor a decimal
@@ -30,11 +31,17 @@ A pattern is built from these, and from nothing else.
   and U+005F; `\s` for U+0020 and U+0009 to U+000D. `\D`, `\W` and `\S` stand for every character
   the small one does not. These are ASCII, and `\s` is not the whitespace `trim` and `nonBlank` read.
 - A class `[...]` stands for the characters it lists: characters and escapes, shorthands, and runs
-  `a-z` whose ends are one character each and whose low end is not above its high one. A run is over
-  scalar values, so `[\x{D7FF}-\x{E000}]` holds the two characters at its ends and none between.
-  `[^...]` stands for every character the class does not list, the line terminators included. A `-`
-  first or last in a class stands for itself, and so does a `]` right after `[` or `[^`. A class
-  lists at least one character.
+  `a-z` whose low end is not above its high one. Inside a class only its own syntax is special. A
+  `\` begins an escape. A `^` right after `[` makes the class a complement, `[^...]`, which stands
+  for every character the class does not list, the line terminators included; anywhere else a `^`
+  is a character. A `]` right after `[` or `[^` is a character, and ends the class anywhere else. A
+  `-` between two single characters, each a character or an escape that stands for one, makes a
+  run; anywhere else it is a character, first, last or next to a shorthand, so `[a-\d]` lists `a`,
+  `-` and the digits. A run is over scalar values, so `[\x{D7FF}-\x{E000}]` holds the two
+  characters at its ends and none between. A `[` and `&&` are refused wherever they stand in a
+  class, an end of a run included, as a class inside a class and an intersection. Every other
+  character, `. ( ) { } | ? * + $` among them, stands for itself in a class. A class lists at least
+  one character.
 - `AB` is a string of `A` followed by one of `B`; `A|B` is either; `(A)` and `(?:A)` are `A`. Either
   side of `|`, and a group, may be empty.
 - `A?`, `A*`, `A+`, `A{n}`, `A{n,}` and `A{n,m}` are between the two counts of `A`, the second no
@@ -43,7 +50,10 @@ A pattern is built from these, and from nothing else.
   edge adds nothing: `^[0-9]{3}$` is `[0-9]{3}`. A `^` after something every string of which has a
   character leaves no string. Anywhere its answer would turn on the string matched, it is refused:
   after something that may or may not take a character (`(a|)^b`), in a repetition that is not of
-  exactly one (`(^a)*`), and a `$` before something that must take one (`a$b`).
+  exactly one (`(^a)*`), and a `$` before anything that may take a character, however it is
+  written, whether it must take one or only may (`a$b`, `a$b?`, `$(b|)`). Where an anchor stands
+  is settled by the form of the pattern alone, never by which alternative or repetition takes a
+  character.
 
 Matching is case-sensitive and compares scalar values; nothing is normalized or folded. Every string
 a decoder gives is text of scalar values (see [input-model.md](input-model.md)), so no pattern needs

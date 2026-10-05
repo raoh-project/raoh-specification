@@ -257,32 +257,62 @@ func observeFloat(t Type, n *jsontext.Node) (float64, error) {
 
 var decimalPattern = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
 
-// ParseDecimal reads a decimal written as a JSON number is, keeping its scale: "1.50" has scale 2,
-// "1E+3" has scale -3.
-func ParseDecimal(s string) (Dec, error) {
+// decimalParts reads the number a decimal is written as, a JSON number: its digits without the
+// point, and its scale, the digits after the point less the exponent. Only the scale is bounded, to
+// an int32 (spec/value-model.md); the exponent is not, so 0.1e2147483649 and 1e2147483648 both have
+// the scale -2147483648. ParseDecimal and CheckNumber share this reading.
+func decimalParts(s string) (digits string, scale int32, err error) {
 	if !decimalPattern.MatchString(s) {
-		return Dec{}, fmt.Errorf("%q is not a decimal number", s)
+		return "", 0, fmt.Errorf("%q is not a decimal number", s)
 	}
 	mantissa, exponent := s, int64(0)
 	if i := strings.IndexAny(s, "eE"); i >= 0 {
 		mantissa = s[:i]
-		e, err := strconv.ParseInt(s[i+1:], 10, 32)
-		if err != nil {
-			return Dec{}, fmt.Errorf("%q has an exponent out of range", s)
-		}
-		exponent = e
+		exponent = exponentOf(s[i+1:])
 	}
-	scale := int64(0)
+	wide := int64(0)
 	if i := strings.IndexByte(mantissa, '.'); i >= 0 {
-		scale = int64(len(mantissa) - i - 1)
+		wide = int64(len(mantissa) - i - 1)
 		mantissa = mantissa[:i] + mantissa[i+1:]
 	}
-	scale -= exponent
-	if scale < math.MinInt32 || scale > math.MaxInt32 {
-		return Dec{}, fmt.Errorf("%q has a scale out of range", s)
+	wide -= exponent
+	if wide < math.MinInt32 || wide > math.MaxInt32 {
+		return "", 0, fmt.Errorf("%q has a scale out of range", s)
 	}
-	u, _ := new(big.Int).SetString(mantissa, 10)
-	return Dec{Unscaled: u, Scale: int32(scale)}, nil
+	return mantissa, int32(wide), nil
+}
+
+// exponentOf reads the signed digits after an e. Past 2^40 it stops counting: no scale a number
+// has, whatever its digits after the point, comes back to an int32 from there.
+func exponentOf(text string) int64 {
+	negative := strings.HasPrefix(text, "-")
+	text = strings.TrimLeft(text, "+-")
+	e := int64(0)
+	for _, c := range text {
+		e = min(e*10+int64(c-'0'), 1<<40)
+	}
+	if negative {
+		return -e
+	}
+	return e
+}
+
+// ParseDecimal reads a decimal written as a JSON number is, keeping its scale: "1.50" has scale 2,
+// "1E+3" has scale -3.
+func ParseDecimal(s string) (Dec, error) {
+	digits, scale, err := decimalParts(s)
+	if err != nil {
+		return Dec{}, err
+	}
+	u, _ := new(big.Int).SetString(digits, 10)
+	return Dec{Unscaled: u, Scale: scale}, nil
+}
+
+// CheckNumber says whether a JSON number is a number of the input model (spec/input-model.md): one
+// whose scale is within the range of a decimal's.
+func CheckNumber(lexeme string) error {
+	_, _, err := decimalParts(lexeme)
+	return err
 }
 
 var (

@@ -30,7 +30,8 @@ func isInadmissible(t *testing.T, p string, limit bool, why string) {
 	}
 }
 
-// The pattern language reads what Souther's reads and refuses what it refuses (spec/pattern.md).
+// The pattern language is Souther's (spec/pattern.md), and spec/pattern.md decides what a class, an
+// anchor and an octal escape are where Souther's text leaves two readings.
 func TestPatternsAreReadAsSoutherReadsThem(t *testing.T) {
 	for _, p := range []string{
 		`^[0-9]{3}$`, `[0-9]{3}`, `a|`, `|a`, `(?:)`, `()`, `[]]`, `[^]]`, `[\d-z]`, `[-a]`, `[a-]`,
@@ -38,28 +39,51 @@ func TestPatternsAreReadAsSoutherReadsThem(t *testing.T) {
 		`a{0,3}`, `a+?`, `(^a|b$)`, `a^b`, `^abc$`, `.`, `\s\S\d\D\w\W`, `\t\n\r\f\a\e`, "a\x00b",
 		`[\x{0}-\x{10FFFF}]`, `[^\x{0}-\x{10FFFF}]`, `😀+`, `(a)(b)`, `}`, `]`,
 		`\😀`, `\Ⅻ`, `\²`, `[\Ⅻ]`,
+		// In a class only its own syntax is special: every other character stands for itself, a ^
+		// that is not first, and a - that is not between two characters.
+		`[.]`, `[$]`, `[(]`, `[)]`, `[{]`, `[}]`, `[|]`, `[?]`, `[*]`, `[+]`, `[a^]`, `[a^b]`, `[^^]`, `[\^]`,
+		`[a-\d]`, `[\d-z-\w]`, `[\d-\w]`, `[--a]`, `[+--]`, `[]a]`, `[^]a]`, `[@-\[]`, `[%-&]`, `[a&]`, `[&a]`,
+		// \0 takes the longest run of at most three octal digits, up to 377.
+		`\0377`, `\0123`, `\000`, `\0008`,
+		// A $ with nothing after it that may take a character.
+		`a$$`, `a$|b`, `(a$|c)`, `a$()`, `a$b{0}`,
 	} {
 		if err := Read(p); err != nil {
 			t.Errorf("%q is refused: %v", p, err)
 		}
 	}
 	for p, why := range map[string]string{
-		`(?=a)`:      "a group the grammar does not have",
-		`(?<n>a)`:    "a group the grammar does not have",
-		`(?i)a`:      "a group the grammar does not have",
-		`\1`:         "a back reference",
-		`\k<n>`:      "a back reference",
-		`\p{L}`:      "a character property",
-		`\b`:         "a boundary",
-		`\z`:         "a boundary",
-		`\Qa\E`:      "a quotation",
-		`a++`:        "a possessive repetition",
-		`a{2}+`:      "a possessive repetition",
-		`[a&&b]`:     "a class of classes",
-		`[[a]]`:      "a class of classes",
-		`(a|)^b`:     "an anchor",
-		`(^a)*`:      "an anchor",
-		`a$b`:        "an anchor",
+		`(?=a)`:   "a group the grammar does not have",
+		`(?<n>a)`: "a group the grammar does not have",
+		`(?i)a`:   "a group the grammar does not have",
+		`\1`:      "a back reference",
+		`\k<n>`:   "a back reference",
+		`\p{L}`:   "a character property",
+		`\b`:      "a boundary",
+		`\z`:      "a boundary",
+		`\Qa\E`:   "a quotation",
+		`a++`:     "a possessive repetition",
+		`a{2}+`:   "a possessive repetition",
+		`[a&&b]`:  "a class of classes",
+		`[[a]]`:   "a class of classes",
+		`(a|)^b`:  "an anchor",
+		`(^a)*`:   "an anchor",
+		`a$b`:     "an anchor",
+		`a$b?`:    "an anchor",
+		`a$b*`:    "an anchor",
+		`$b`:      "an anchor",
+		`$(b|)`:   "an anchor",
+		`a$(|b)`:  "an anchor",
+		`(a$)b`:   "an anchor",
+		`(a$|c)b`: "an anchor",
+		`[a--]`:   "a count this cannot read",
+		// A [ or && is refused wherever it stands in a class, an end of a run included.
+		`[@-[]`:      "a class of classes",
+		`[%-&&]`:     "a class of classes",
+		`[^%-[]`:     "a class of classes",
+		`[a-&&]`:     "a class of classes",
+		`[[-a]`:      "a class of classes",
+		`\0777`:      "an escape this does not read",
 		`\uD800`:     "a character no string holds",
 		`\x{DC00}`:   "a character no string holds",
 		`\q`:         "an escape this does not read",
@@ -71,8 +95,6 @@ func TestPatternsAreReadAsSoutherReadsThem(t *testing.T) {
 		`\x4`:        "an escape this does not read",
 		`\x１２`:       "an escape this does not read",
 		`\0400`:      "an escape this does not read",
-		`[\d-z-\w]`:  "an escape this does not read",
-		`[a-\d]`:     "an escape this does not read",
 		`{`:          "a count this cannot read",
 		`a{,3}`:      "a count this cannot read",
 		`a{3,2}`:     "a count this cannot read",

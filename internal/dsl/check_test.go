@@ -566,7 +566,7 @@ func TestTheFlowLanguageHasNoAlt(t *testing.T) {
 }
 
 // An operation's arguments are complete once read: a value argument left out stands for its
-// default, a message argument left out gives no message, and nothing else can be left out.
+// default, a message argument left out gives the derived message, and nothing else can be left out.
 func TestLeftOutArgumentsHaveMeanings(t *testing.T) {
 	c := checker(t)
 	f := c.Registry().Operations["normalize"]["string"].Form

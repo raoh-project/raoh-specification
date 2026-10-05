@@ -407,7 +407,7 @@
         },
         "optional": {
           "type": "boolean",
-          "description": "Only a value or message argument of an operation, or a trailing message argument of a constructor, may be left out: a value argument left out stands for its default, and a message argument left out gives no message."
+          "description": "Only a value or message argument of an operation, or a trailing message argument of a constructor, may be left out: a value argument left out stands for its default, and a message argument left out gives the message the catalogue derives."
         },
         "default": {
           "description": "What an optional argument left out stands for, as an observation of its type."

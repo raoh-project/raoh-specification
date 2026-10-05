@@ -22,12 +22,14 @@ for every lexeme with a minus sign and the value zero, `-0` as much as `-0.0`, w
 tell every decoder what the decoder needs from it.
 
 The order of an object's members is part of the value only as far as some decoders report issues in
-that order (see [issues.md](issues.md#order)); no decoder's result depends on it.
+that order (see [issues.md](issues.md#where-issues-arise-and-in-what-order)); no decoder's result depends on it.
 
 ## What is not in the input model
 
-The input model has no text that is not JSON, no object that repeats a member name, and no string
-holding an unpaired surrogate. How an implementation treats such input is outside this
+The input model has no text that is not JSON, no object that repeats a member name, no string
+holding an unpaired surrogate, and no number whose scale, the digits after its point less its exponent, is not
+an int32 ([value-model.md](value-model.md#scalars)):
+every number denotes a decimal, which a decoder such as `decimal` reads it as. How an implementation treats such input is outside this
 specification, and the suite never gives it.
 
 Values of a host language (a Java `Map`, a PHP array, a Go `map[string]any`) and values a library

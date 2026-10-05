@@ -369,28 +369,23 @@ func (r *reader) class() {
 	for !r.done() && (r.peek() != ']' || first) {
 		first = false
 		r.construct = r.at
-		if r.peek() == '[' {
-			r.take()
-			r.refuse("a class of classes", r.at)
-		}
-		if r.peek() == '&' && r.at+1 < len(r.text) && r.text[r.at+1] == '&' {
-			r.at += 2
-			r.refuse("a class of classes", r.at)
-		}
 		r.classMember()
 	}
 	r.expect(']')
 }
 
-// classMember reads a character, a run of them, or a shorthand. A run is read only where both of
-// its ends are one character.
+// classMember reads a character, a run of them, or a shorthand. A - makes a run only between two
+// characters, one each; anywhere else it stands for itself, so the - of [a-\d] is read as a member
+// of its own, before the shorthand.
 func (r *reader) classMember() {
 	low, one := r.classAtom()
 	if one && r.peek() == '-' && r.at+1 < len(r.text) && r.text[r.at+1] != ']' {
+		dash := r.at
 		r.take()
 		high, one := r.classAtom()
 		if !one {
-			r.refuse("an escape this does not read", r.at)
+			r.at = dash
+			return
 		}
 		if high < low {
 			r.refuse("a count this cannot read", r.at)
@@ -398,8 +393,19 @@ func (r *reader) classMember() {
 	}
 }
 
-// classAtom reads one member of a class: the character it is, if it is one.
+// classAtom reads one member of a class: the character it is, if it is one. Every character of a
+// class is read here, an end of a run included, so a [ and a && are refused wherever they stand.
 func (r *reader) classAtom() (rune, bool) {
+	if r.peek() == '[' {
+		r.construct = r.at
+		r.take()
+		r.refuse("a class of classes", r.at)
+	}
+	if r.peek() == '&' && r.at+1 < len(r.text) && r.text[r.at+1] == '&' {
+		r.construct = r.at
+		r.at += 2
+		r.refuse("a class of classes", r.at)
+	}
 	if r.peek() == '\\' {
 		r.take()
 		return r.escaped()
@@ -590,7 +596,7 @@ const (
 
 // placed reports whether every anchor in w comes to something: an anchor at its end adds nothing,
 // a ^ after something that must take a character leaves no string, and one whose answer would
-// turn on the string matched is refused, as is a $ before something that must take a character.
+// turn on the string matched is refused, as is a $ before something that may take a character.
 //
 // It is asked of text read past the depth limit, before the limit is reported, so it keeps
 // stacks of its own: the tree is laid out flat, what each part may and must take and whether it

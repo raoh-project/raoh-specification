@@ -446,3 +446,28 @@ func TestEveryIssueOfAFormThatTakesAMessageIsGivenOne(t *testing.T) {
 		t.Errorf("the suite leaves issues without a given message: %v", got)
 	}
 }
+
+// A candidate's path is read from the root of the input. A case with the oneOf at the root cannot
+// tell that from a path read from the oneOf, so one_of_failed needs a case with the oneOf below it.
+func TestCandidatePathsNeedACaseBelowTheRoot(t *testing.T) {
+	root := artifactstest.Copy(t, "../..", map[string]string{
+		"suite/core/one_of.json": `[{"id": "R000271", "title": "t", "decoder": ["oneOf", [["int", ["map", "decimal_string"]], ["string", ["minLength", 3]]]], "input": "ab",
+		  "issues": [{"path": "", "code": "one_of_failed", "message_key": "one_of_failed", "meta": {"candidates": [
+		    {"candidate": 0, "issues": [{"code": "type_mismatch", "message": "expected integer", "meta": {"actual": "string", "expected": "integer"}, "path": ""}]},
+		    {"candidate": 1, "issues": [{"code": "too_short", "message": "must be at least 3 characters", "meta": {"actual": 2, "min": 3}, "path": ""}]}]}}]}]`,
+	})
+	s, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.UnpinnedCandidatePaths(); !slices.Equal(got, []string{"one_of_failed"}) {
+		t.Errorf("a suite with the oneOf at the root only: %v, want one_of_failed", got)
+	}
+	s, err = Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.UnpinnedCandidatePaths(); len(got) > 0 {
+		t.Errorf("the suite leaves candidate paths unpinned: %v", got)
+	}
+}

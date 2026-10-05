@@ -18,7 +18,7 @@ or without seconds), this document lists them.
 | `bool` | `true` or `false` |
 | `int32`, `int64` | a JSON number written as an integer, with no fraction, no exponent and no minus sign on zero |
 | `float32`, `float64` | a JSON number, or a tag (below) |
-| `decimal` | a JSON string holding a decimal number written as a JSON number is, with no minus sign on zero; its scale is the number of digits after the point, less the exponent: `"1.50"` has scale 2, `"1E+3"` and `"1e3"` scale -3 |
+| `decimal` | a JSON string holding a decimal number written as a JSON number is, with no minus sign on zero; its scale is the number of digits after the point, less the exponent: `"1.50"` has scale 2, `"1E+3"` and `"1e3"` scale -3; the scale is an int32 ([value-model.md](value-model.md#scalars)), and the exponent is not bounded of itself, so every decimal has an observation; a number whose scale is not an int32 is not a decimal |
 | `string`, `symbol`, `uri` | a JSON string |
 | `uuid` | a JSON string of 32 lower-case hexadecimal digits grouped 8-4-4-4-12 |
 
@@ -55,7 +55,7 @@ Temporal values are written as JSON strings in ISO 8601:
 
 | Type | Observation |
 |------|-------------|
-| `date` | the year, `-`, two digits of month, `-`, two digits of day. A year from 0 to 9999 is four digits (`0000`, `2024`); a negative year is `-` and at least four digits (`-0001`); a year above 9999 is `+` and its digits (`+10000`). No other spelling of a year is an observation. |
+| `date` | the year, `-`, two digits of month, `-`, two digits of day. A year from 0 to 9999 is four digits (`0000`, `2024`); a negative year is `-` and its absolute value, with leading zeros up to four digits (`-0001`) and none past them (`-10000`); a year above 9999 is `+` and its digits (`+10000`). No other spelling of a year is an observation. |
 | `time` | `hh:mm`, `hh:mm:ss` or `hh:mm:ss.f` with one to nine digits of fraction |
 | `datetime` | a date, `T`, and a time |
 | `offset_datetime` | a date-time followed by the offset: `Z` for zero, otherwise `+` or `-`, `hh:mm`, and `:ss` only when the seconds are not zero. Hours are at most 18, minutes and seconds at most 59, and the offset at most 18 hours. |

@@ -78,6 +78,8 @@ A derived message is the English template of the issue's message key, from
 `catalog/messages/en.properties`, with every placeholder `{name}` replaced by the message form
 (below) of the metadata entry `name`. A placeholder with no entry of that name stays as it is
 written. If the catalogue has no template for the message key, the template of the code is used.
+In a properties file a template's key is `raoh.` followed by the message key, `raoh.too_short` for
+`too_short`; a runner result lists the templates by the message key alone.
 
 A given message is one the user of the library supplied, such as the `"bad"` of
 `string().toInt("bad")`, or the message of an issue a fixture creates. A message argument gives the
@@ -109,7 +111,7 @@ A metadata value appears in a message in its message form:
 | `float32`, `float64` | the canonical decimal of the float ([observation.md](observation.md#floats)), written plainly with at least one digit after the point when the exponent of its first digit is from -3 to 6 (`0.5`, `100.0`, `0.001`), and as a mantissa with at least one digit after the point, `E` and that exponent otherwise (`1.0E7`, `1.0E-4`, `4.9E-324`); zeros are `0.0` and `-0.0`, the others `NaN`, `Infinity` and `-Infinity` |
 | `decimal` | the coefficient with the point placed by the scale when the scale is not negative and the adjusted exponent (the exponent of the first digit) is at least -6 (`0.00010`, `10`); otherwise the first digit, then a point and the other digits when there are any, `E`, a sign and the adjusted exponent (`1E+3`, `1.5E-7`) |
 | `string`, `symbol`, `uuid`, `uri` | the text |
-| `date` | the year as its observation writes it ([observation.md](observation.md): four digits from 0000 to 9999, otherwise a sign and its digits), `-`, two digits of month, `-`, two digits of day |
+| `date` | the year as its observation writes it ([observation.md](observation.md): four digits from 0000 to 9999, `-` and the digits for a negative year, `+` and the digits above 9999), `-`, two digits of month, `-`, two digits of day |
 | `time` | `hh:mm`, followed by `:ss` when the seconds or the fraction are not zero, followed by the fraction in three, six or nine digits when it is not zero |
 | `datetime` | the date, `T`, the time |
 | `offset_datetime` | the date-time, then `Z` for a zero offset, otherwise `±hh:mm`, followed by `:ss` when the offset's seconds are not zero |
@@ -178,7 +180,9 @@ The metadata entry that lists the candidates is the one the flow names: its type
 leave it out. `one_of_failed` lists them in `candidates`, and is given only when every candidate
 failed; it lists every candidate exactly once, by index; the order of the list does not matter. Each candidate's issues are parsed with
 that candidate's flow on the same input. As raoh-java writes them, they have a path, a code, a
-message and metadata, and no message key. Their message is the one their place gives, as for any
+message and metadata, and no message key. A candidate's path is a path from the root of the input,
+as the path of any issue is: a `oneOf` at `/a` whose candidate fails at `/a/x` lists `/a/x`, not
+`/x`. Their message is the one their place gives, as for any
 other issue; a case may write it, and then it has to be that message.
 
 ## Issues from fixtures

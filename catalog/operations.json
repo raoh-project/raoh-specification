@@ -31,7 +31,7 @@
       "flow": "own"
     },
     "decimal": {
-      "doc": "Accepts any JSON number, keeping the scale its lexeme gives. Another kind gives type_mismatch with expected \"number\".",
+      "doc": "Accepts any number of the input model, keeping the scale its lexeme gives. Another kind gives type_mismatch with expected \"number\".",
       "result": "decimal",
       "issues": ["required", {"key": "type_mismatch", "meta": {"expected": {"const": "number"}}}],
       "flow": "own"
@@ -64,7 +64,7 @@
       "flow": {"arg": "fields"}
     },
     "strictObject": {
-      "doc": "As object, and in addition gives unknown_field, at the member's path, for every member of an object input that no field names, in the order of the input's members. Every field names its member: a flat field, which reads the whole input, would leave the members it reads unknown.",
+      "doc": "As object, and in addition gives unknown_field, at the member's path, for every member of an object input that no field names, in any order. Every field names its member: a flat field, which reads the whole input, would leave the members it reads unknown.",
       "args": [{"name": "fields", "kind": "fields"}],
       "requires": [{"check": "named_fields", "args": ["fields"]}],
       "result": "product",
@@ -72,7 +72,7 @@
       "flow": {"unknown_members": {"after": {"arg": "fields"}, "known": {"fields": "fields"}, "issue": "unknown_field"}}
     },
     "strict": {
-      "doc": "Decodes with the inner decoder, and when the input is an object gives unknown_field for every member whose name is not among the known names and that the inner decoder has not already reported unknown, in the order of the input's members, after the inner decoder's issues. A member is reported once, by the innermost strict that does not know it, and nested strict forms accept only members every one of them knows. The inner decoder's result is discarded when there is any unknown member.",
+      "doc": "Decodes with the inner decoder, and when the input is an object gives unknown_field for every member whose name is not among the known names and that the inner decoder has not already reported unknown, in any order, after the inner decoder's issues. A member is reported once, by the innermost strict that does not know it, and nested strict forms accept only members every one of them knows. The inner decoder's result is discarded when there is any unknown member.",
       "args": [
         {"name": "inner", "kind": "decoder", "type": "T"},
         {"name": "known", "kind": "value", "type": "list<string>"}
@@ -134,7 +134,7 @@
       "flow": {"chain": [{"arg": "tag"}, {"at": {"member": "field", "flow": "own"}}, {"arg": "variants"}]}
     },
     "oneOf": {
-      "doc": "Tries each candidate in order on the same input and gives the first success. When all fail, gives one_of_failed at the input's path, whose candidates list, for each candidate by index, the issues it gave, each with its path, code, message and meta.",
+      "doc": "Tries each candidate in order on the same input and gives the first success. When all fail, gives one_of_failed at the input's path, whose candidates list, for each candidate by index, the issues it gave, each with its path, from the root of the input and not from the oneOf's own path, its code, message and meta.",
       "args": [{"name": "candidates", "kind": "decoders", "type": "T"}],
       "result": "T",
       "issues": ["one_of_failed"],
@@ -330,7 +330,7 @@
     {"name": "toDecimal", "receivers": ["string"], "result": "decimal",
      "issues": [{"key": "type_mismatch", "omit": ["actual"], "meta": {"expected": {"const": "decimal"}}}],
      "args": [{"name": "message", "kind": "message", "optional": true}],
-     "doc": "Reads a decimal number matching [+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?, keeping the scale it is written with; anything else, and an exponent the scale cannot hold, gives type_mismatch with expected \"decimal\".",
+     "doc": "Reads a decimal number matching [+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?, keeping the scale it is written with; anything else, and a number whose scale (the digits after the point less the exponent) is not an int32 (value-model.md) gives type_mismatch with expected \"decimal\".",
      "flow": "own"},
     {"name": "toBool", "receivers": ["string"], "result": "bool",
      "issues": [{"key": "type_mismatch", "omit": ["actual"], "meta": {"expected": {"const": "boolean"}}}],

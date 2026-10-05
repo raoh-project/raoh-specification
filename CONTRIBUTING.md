@@ -40,12 +40,17 @@ needed by no case: a feature is listed only once a case pins it. One case is the
 needs, not proof that it is fully specified. In the same way, an entry a variant lists in
 `optional_meta` needs a case that leaves it out where a form leaves it open, and each issue a form
 that takes a message declares needs a case that gives that form its message.
+Each issue that lists candidates, such as `one_of_failed`, needs a case with the issue below the
+root and a candidate's issue below it too: a candidate's path read from the root and read from the
+`oneOf` are the same at the root, so a case there cannot tell them apart.
 
 `check-suite` rejects a case that does not type-check, whose expected outcome is not an observation
 of the decoder's result type, whose issues are not ones the decoder can produce, or whose input is
-not valid JSON or repeats a member name. It also rejects two cases with the same form and input,
-up to whitespace and string escapes: they check one thing twice. When only the reason for an
-outcome changes, change the title of the case that has it rather than adding another.
+not in the input model: not valid JSON, an object that repeats a member name, a string holding an
+unpaired surrogate, or a number whose scale is not an int32. It
+also rejects two cases with the same form and input, up to whitespace and string escapes: they check
+one thing twice. When only the reason for an outcome changes, change the title of the case that has
+it rather than adding another.
 
 State in the pull request which row of the versioning table in
 [spec/conformance.md](spec/conformance.md#versioning) the change falls under, or that it changes
@@ -61,9 +66,8 @@ whether it is; the recording decides nothing.
 ## Questions the specification has not settled
 
 When a case would require behaviour that looks like an accident of one implementation rather than
-a decision, open an issue instead of, or as well as, the case. Version 0.8.0 describes several such
-behaviours of raoh-java as they are, and the issues tracker lists them. Decide them as the next
-section says.
+a decision, open an issue instead of, or as well as, the case, and decide it as the next section
+says.
 
 ## How a meaning is decided
 

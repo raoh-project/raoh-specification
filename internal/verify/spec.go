@@ -149,6 +149,70 @@ func (s *Spec) UnpinnedOptional() []string {
 	return out
 }
 
+// UnpinnedCandidatePaths lists the issues that list candidates, such as one_of_failed, for which no
+// case has the issue below the root and a candidate's issue below it too. A candidate's path is
+// read from the root of the input, not from where the issue is, and the two readings give the same
+// path wherever the issue is at the root: a case there cannot tell them apart.
+func (s *Spec) UnpinnedCandidatePaths() []string {
+	open := map[string]bool{}
+	for _, f := range s.Checker.Registry().Forms() {
+		for _, c := range candidatesOf(f.Flow) {
+			open[f.Issues[c.Issue.Index()].Key] = true
+		}
+	}
+	pinned := map[string]bool{}
+	var walk func(issues []suite.TypedIssue)
+	walk = func(issues []suite.TypedIssue) {
+		for _, is := range issues {
+			for _, i := range slices.Sorted(maps.Keys(is.Candidates)) {
+				for _, c := range is.Candidates[i] {
+					if len(is.Slot.Path) > 0 && len(c.Slot.Path) > 0 {
+						pinned[is.Slot.Key] = true
+					}
+				}
+				walk(is.Candidates[i])
+			}
+		}
+	}
+	for _, c := range s.Suite.Cases {
+		walk(c.Issues)
+	}
+	var out []string
+	for _, key := range slices.Sorted(maps.Keys(open)) {
+		if !pinned[key] {
+			out = append(out, key)
+		}
+	}
+	return out
+}
+
+// candidatesOf finds the issues that list candidates in a flow.
+func candidatesOf(e dsl.Expr) []dsl.ExprCandidates {
+	switch e := e.(type) {
+	case dsl.ExprCandidates:
+		return []dsl.ExprCandidates{e}
+	case dsl.ExprCat:
+		return allCandidates(e.Items)
+	case dsl.ExprChain:
+		return allCandidates(e.Items)
+	case dsl.ExprEach:
+		return candidatesOf(e.Body)
+	case dsl.ExprAt:
+		return candidatesOf(e.Body)
+	case dsl.ExprUnknown:
+		return candidatesOf(e.After)
+	}
+	return nil
+}
+
+func allCandidates(items []dsl.Expr) []dsl.ExprCandidates {
+	var out []dsl.ExprCandidates
+	for _, it := range items {
+		out = append(out, candidatesOf(it)...)
+	}
+	return out
+}
+
 // UngivenMessages lists, as facet: issue, every issue a form that takes a message declares that no
 // case expects with the message given. A given message is the message of every issue its form
 // declares, so each needs a case: one per facet would leave toInt's type_mismatch.numeric_range

@@ -17,7 +17,7 @@ type arguments in angle brackets. A single upper-case letter is a type parameter
 | `int64` | integers from -2⁶³ to 2⁶³-1 | equal |
 | `float32` | IEEE 754 binary32 values: the finite ones, +0, -0, +∞, -∞ and NaN | see below |
 | `float64` | IEEE 754 binary64 values, likewise | see below |
-| `decimal` | a coefficient (an integer) and a scale (an integer): coefficient × 10^-scale | coefficient and scale both equal |
+| `decimal` | a coefficient (an integer) and a scale (an int32): coefficient × 10^-scale | coefficient and scale both equal |
 | `string` | sequences of Unicode scalar values | equal |
 | `symbol<"A","B",...>` | one of the listed alternatives; the alternatives are part of the type, so `symbol<"RED","GREEN">` and `symbol<"YES","NO">` are different types, and a symbol type always lists at least one. `enum` gives the symbol type of the names it lists. | equal |
 | `uuid` | 128-bit UUIDs | equal |
@@ -53,7 +53,7 @@ value only where it says so.
 | `time` | a time of day to the nanosecond | equal |
 | `datetime` | a date and a time of day, with no offset | both equal |
 | `offset_datetime` | a date, a time of day and an offset from UTC | all three equal |
-| `instant` | a point on the UTC time-line to the nanosecond | equal |
+| `instant` | a point on the UTC time-line to the nanosecond, from -1000000000-01-01T00:00:00Z to +1000000000-12-31T23:59:59.999999999Z | equal |
 
 Two `offset_datetime` values at different offsets are different values even when they denote the
 same instant. The operations that compare temporal values (`before`, `after`, `between`) compare
