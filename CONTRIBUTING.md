@@ -5,6 +5,19 @@
 `develop` is the integration branch. Work on a `feature/<topic>` branch cut from `develop` and open
 the pull request against `develop`. `main` receives releases only.
 
+## Releasing
+
+Cut a `release/<version>` branch from `develop`, set `version` in `specification.json` to the
+release's `X.Y`, commit it as `release: Raoh Specification X.Y`, and open a pull request against
+`main`. After it is merged, tag the merge commit `vX.Y` and push the tag. The tag triggers
+`.github/workflows/release.yml`, which fails unless the tag is `v` followed by the version in
+`specification.json`, then runs the tests and `check-suite`, builds `raoh-verify` for six
+platforms and publishes a GitHub release. A tag is never moved; see
+[spec/conformance.md](spec/conformance.md#versioning).
+
+Afterwards, set `version` on `develop` to the next prerelease, such as `0.10-dev`, and commit it
+as `chore: start X.Y-dev`.
+
 ## Adding or changing cases
 
 A case lives in a file under `suite/<profile>/`, grouped by the constructor it exercises. Each case
