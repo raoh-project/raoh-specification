@@ -9,10 +9,10 @@ Fixtures are part of the suite, not of Raoh. A Raoh implementation has no fixtur
 each one out of the implementation's own functions and passes it where the case names it.
 
 Each fixture has a kind, which says where it may be used, an input type and, except for `refine`, an
-output type. The kind fixes that shape, and whether the fixture gives an issue: a fixture, and an
-argument of `catalog/operations.json` that takes one, both have it. An argument that takes a
-`refine` or `flatMap` fixture gives issues, and its form places or discards them as it does those of
-a decoder. Types may have parameters: `first` takes a `product<T>` for any `T`. A fixture takes one
+output type. The kind fixes that shape. It also says whether the fixture gives an issue: a `refine`
+or `flatMap` fixture does and the others do not. An argument of `catalog/operations.json` that takes
+a `refine` or `flatMap` fixture gives issues in turn, and its form places or discards them as it
+does those of a decoder. Types may have parameters: `first` takes a `product<T>` for any `T`. A fixture takes one
 value, so its output type and the metadata types of its issue mention only parameters of its input:
 once the input is known, so are they. Where a case uses a generic fixture, its issue's metadata has
 the types its parameters take there.

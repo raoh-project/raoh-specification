@@ -471,3 +471,57 @@ func TestCandidatePathsNeedACaseBelowTheRoot(t *testing.T) {
 		t.Errorf("the suite leaves candidate paths unpinned: %v", got)
 	}
 }
+
+// A constructor that declares required as an issue of its own gives it for null and for an absent
+// input, and each of the two needs a case: a case for one does not show the other. What shows it is
+// a case in which the input reaches the constructor whatever the forms around it do.
+func TestRequiredNeedsACaseForNullAndForAbsent(t *testing.T) {
+	required := func(path string) string {
+		return `{"path": "` + path + `", "code": "required", "message_key": "required", "meta": {}}`
+	}
+	null := `{"id": "R000001", "title": "t", "decoder": ["bool"], "input": null, "issues": [` + required("") + `]}`
+	absent := `{"id": "R000002", "title": "t", "decoder": ["object", [["field", "a", ["bool"]]]], "input": {}, "issues": [` + required("/a") + `]}`
+	// The flow places an issue of bool under nullable, so these fit it, but nullable(bool) takes a
+	// null for itself: they show nothing about bool, and a wrong case must not pin it.
+	wrapped := `{"id": "R000003", "title": "t", "decoder": ["nullable", ["bool"]], "input": null, "issues": [` + required("") + `]}`
+	optional := `{"id": "R000004", "title": "t", "decoder": ["object", [["optionalField", "a", ["bool"]]]], "input": {}, "issues": [` + required("/a") + `]}`
+	given := `{"path": "", "code": "required", "message": "is required", "meta": {}}`
+	inCandidate := `{"id": "R000005", "title": "t", "decoder": ["oneOf", [["bool"], ["bool"]]], "input": null, "issues": [
+	  {"path": "", "code": "one_of_failed", "message_key": "one_of_failed", "meta": {"candidates": [
+	    {"candidate": 0, "issues": [` + given + `]}, {"candidate": 1, "issues": [` + given + `]}]}}]}`
+	for _, tc := range []struct {
+		name  string
+		cases []string
+		want  []string // reported unpinned among the bool entries
+	}{
+		{"nothing", nil, []string{"decoder.bool: null", "decoder.bool: absent"}},
+		{"null only", []string{null}, []string{"decoder.bool: absent"}},
+		{"absent only", []string{absent}, []string{"decoder.bool: null"}},
+		{"both", []string{null, absent}, nil},
+		{"a wrapper", []string{wrapped}, []string{"decoder.bool: null", "decoder.bool: absent"}},
+		{"an optional field", []string{optional}, []string{"decoder.bool: null", "decoder.bool: absent"}},
+		{"a candidate", []string{inCandidate}, []string{"decoder.bool: null", "decoder.bool: absent"}},
+	} {
+		root := artifactstest.Copy(t, "../..", map[string]string{"suite/core/mini.json": "[" + strings.Join(tc.cases, ",") + "]"})
+		s, err := Load(root)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		var got []string
+		for _, u := range s.UnpinnedRequired() {
+			if strings.HasPrefix(u, "decoder.bool: ") {
+				got = append(got, u)
+			}
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%s: bool is unpinned for %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	s, err := Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.UnpinnedRequired(); len(got) > 0 {
+		t.Errorf("the suite leaves required unpinned: %v", got)
+	}
+}

@@ -213,6 +213,59 @@ func allCandidates(items []dsl.Expr) []dsl.ExprCandidates {
 	return out
 }
 
+// UnpinnedRequired lists, as feature: input, the constructors that declare required as an issue of
+// their own and have no case that shows them give it for a null input or for an absent one. The
+// two are different inputs (spec/decoder-language.md).
+//
+// What shows it is the shape of the case, never where the flow places an issue. A flow says which
+// issues can reach a place, and not that a form such as nullable takes a null for itself, so a
+// case that has nullable(bool) give required for null would still fit the flow. A case pins null
+// for a constructor only when it is the decoder of the case, and absent only when it is the
+// decoder of a field of an object that has no such member: then the input reaches it whatever the
+// forms around it do.
+func (s *Spec) UnpinnedRequired() []string {
+	reg := s.Checker.Registry()
+	pinned := map[string]bool{}
+	gives := func(c *suite.Case, constructor string, path []string) bool {
+		return slices.ContainsFunc(c.Issues, func(is suite.TypedIssue) bool {
+			return is.Slot.Site.Key == "required" && is.Slot.Site.Form == "decoder."+constructor && slices.Equal(is.Slot.Path, path)
+		})
+	}
+	for _, c := range s.Suite.Cases {
+		if c.Encoder || c.Form.Kind != jsontext.Array || len(c.Form.Elems) == 0 {
+			continue
+		}
+		head := c.Form.Elems[0].Text
+		if c.Input.Kind == jsontext.Null && gives(c, head, nil) {
+			pinned["decoder."+head+": null"] = true
+		}
+		if (head != "object" && head != "strictObject") || c.Input.Kind != jsontext.Object || len(c.Form.Elems) < 2 {
+			continue
+		}
+		for _, f := range c.Form.Elems[1].Elems {
+			if len(f.Elems) < 3 || f.Elems[0].Text != "field" || f.Elems[2].Kind != jsontext.Array || len(f.Elems[2].Elems) == 0 {
+				continue
+			}
+			name, constructor := f.Elems[1].Text, f.Elems[2].Elems[0].Text
+			if _, there := c.Input.Get(name); !there && gives(c, constructor, []string{name}) {
+				pinned["decoder."+constructor+": absent"] = true
+			}
+		}
+	}
+	var out []string
+	for _, name := range slices.Sorted(maps.Keys(reg.Constructors)) {
+		if !slices.ContainsFunc(reg.Constructors[name].Issues, func(r dsl.IssueRef) bool { return r.Key == "required" }) {
+			continue
+		}
+		for _, input := range []string{"null", "absent"} {
+			if key := "decoder." + name + ": " + input; !pinned[key] {
+				out = append(out, key)
+			}
+		}
+	}
+	return out
+}
+
 // UngivenMessages lists, as facet: issue, every issue a form that takes a message declares that no
 // case expects with the message given. A given message is the message of every issue its form
 // declares, so each needs a case: one per facet would leave toInt's type_mismatch.numeric_range
