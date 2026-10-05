@@ -213,6 +213,46 @@ func allCandidates(items []dsl.Expr) []dsl.ExprCandidates {
 	return out
 }
 
+// UnpinnedRequired lists, as feature: input, the constructors that declare required as an issue of
+// their own and have no case in which they give it for a null input or for an absent one. The two
+// are different inputs (spec/decoder-language.md), and a case that has a wrapper such as nullable
+// around the constructor still pins it: the issue is the constructor's own.
+func (s *Spec) UnpinnedRequired() []string {
+	reg := s.Checker.Registry()
+	var out []string
+	pinned := map[string]bool{}
+	var walk func(issues []suite.TypedIssue)
+	walk = func(issues []suite.TypedIssue) {
+		for _, is := range issues {
+			if is.Slot.Site.Key == "required" {
+				switch {
+				case is.Slot.Input == nil:
+					pinned[is.Slot.Site.Form+": absent"] = true
+				case is.Slot.Input.Kind == jsontext.Null:
+					pinned[is.Slot.Site.Form+": null"] = true
+				}
+			}
+			for _, i := range slices.Sorted(maps.Keys(is.Candidates)) {
+				walk(is.Candidates[i])
+			}
+		}
+	}
+	for _, c := range s.Suite.Cases {
+		walk(c.Issues)
+	}
+	for _, name := range slices.Sorted(maps.Keys(reg.Constructors)) {
+		if !slices.ContainsFunc(reg.Constructors[name].Issues, func(r dsl.IssueRef) bool { return r.Key == "required" }) {
+			continue
+		}
+		for _, input := range []string{"null", "absent"} {
+			if key := "decoder." + name + ": " + input; !pinned[key] {
+				out = append(out, key)
+			}
+		}
+	}
+	return out
+}
+
 // UngivenMessages lists, as facet: issue, every issue a form that takes a message declares that no
 // case expects with the message given. A given message is the message of every issue its form
 // declares, so each needs a case: one per facet would leave toInt's type_mismatch.numeric_range

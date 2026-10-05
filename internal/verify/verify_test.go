@@ -471,3 +471,43 @@ func TestCandidatePathsNeedACaseBelowTheRoot(t *testing.T) {
 		t.Errorf("the suite leaves candidate paths unpinned: %v", got)
 	}
 }
+
+// A constructor that declares required as an issue of its own gives it for null and for an absent
+// input, and each of the two needs a case: a case for one does not show the other.
+func TestRequiredNeedsACaseForNullAndForAbsent(t *testing.T) {
+	required := `{"path": "", "code": "required", "message_key": "required", "meta": {}}`
+	null := `{"id": "R000001", "title": "t", "decoder": ["bool"], "input": null, "issues": [` + required + `]}`
+	absent := `{"id": "R000002", "title": "t", "decoder": ["object", [["field", "a", ["bool"]]]], "input": {},
+	  "issues": [{"path": "/a", "code": "required", "message_key": "required", "meta": {}}]}`
+	for _, tc := range []struct {
+		cases      string
+		has, hasNo string
+	}{
+		{"[" + null + "]", "decoder.bool: absent", "decoder.bool: null"},
+		{"[" + absent + "]", "decoder.bool: null", "decoder.bool: absent"},
+		{"[" + null + "," + absent + "]", "", "decoder.bool: null"},
+	} {
+		root := artifactstest.Copy(t, "../..", map[string]string{"suite/core/mini.json": tc.cases})
+		s, err := Load(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := s.UnpinnedRequired()
+		if tc.has != "" && !slices.Contains(got, tc.has) {
+			t.Errorf("%s: %v, want %s among them", tc.cases, got, tc.has)
+		}
+		if slices.Contains(got, tc.hasNo) {
+			t.Errorf("%s: %v, want no %s", tc.cases, got, tc.hasNo)
+		}
+		if tc.has == "" && slices.Contains(got, "decoder.bool: absent") {
+			t.Errorf("%s: %v, want no decoder.bool: absent", tc.cases, got)
+		}
+	}
+	s, err := Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.UnpinnedRequired(); len(got) > 0 {
+		t.Errorf("the suite leaves required unpinned: %v", got)
+	}
+}

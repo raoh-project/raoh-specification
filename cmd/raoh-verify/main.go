@@ -125,6 +125,9 @@ func unlistedOrUnpinned(s *verify.Spec) string {
 	if unpinned := s.UnpinnedOptional(); len(unpinned) > 0 {
 		return fmt.Sprintf("no case leaves out these optional metadata entries, so optional_meta cannot list them:\n  %s\n", strings.Join(unpinned, "\n  "))
 	}
+	if unpinned := s.UnpinnedRequired(); len(unpinned) > 0 {
+		return fmt.Sprintf("no case has these constructors give required, which each declares as its own issue, for the input:\n  %s\n", strings.Join(unpinned, "\n  "))
+	}
 	if unpinned := s.UnpinnedCandidatePaths(); len(unpinned) > 0 {
 		return fmt.Sprintf("no case lists a candidate's issue below the root, under an issue below it, for these issues, so the reading of a candidate's path is not pinned:\n  %s\n", strings.Join(unpinned, "\n  "))
 	}

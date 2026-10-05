@@ -164,6 +164,12 @@ checked when the catalogue is read, so a catalogue that breaks one is invalid ra
 some case. The cases in `suite/` are the specification of the details. Where a `doc` and a case
 disagree, the specification has a defect; report it.
 
+A constructor that declares `required` as one of its own issues gives `required` when its input is
+null, and when its input is absent, which are two inputs ([input-model.md](input-model.md)). A form
+with no `required` of its own gives it only through a decoder it places, as its `flow` says:
+`nullable` and `oneOf` are not constructors that read the input for themselves, and a `null` that
+`oneOf` meets goes to each of its candidates.
+
 A decoder reads the input model, in which a number is its lexeme ([input-model.md](input-model.md)).
 An adapter that hands a decoder numbers some library has already converted, to a binary64 double
 for instance, gives other results: a `decimal` that has lost the scale or digits it was written
