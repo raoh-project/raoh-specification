@@ -40,6 +40,9 @@ needed by no case: a feature is listed only once a case pins it. One case is the
 needs, not proof that it is fully specified. In the same way, an entry a variant lists in
 `optional_meta` needs a case that leaves it out where a form leaves it open, and each issue a form
 that takes a message declares needs a case that gives that form its message.
+Each issue that lists candidates, such as `one_of_failed`, needs a case with the issue below the
+root and a candidate's issue below it too: a candidate's path read from the root and read from the
+`oneOf` are the same at the root, so a case there cannot tell them apart.
 
 `check-suite` rejects a case that does not type-check, whose expected outcome is not an observation
 of the decoder's result type, whose issues are not ones the decoder can produce, or whose input is

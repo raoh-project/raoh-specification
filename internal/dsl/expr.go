@@ -73,7 +73,7 @@ type ExprAt struct {
 }
 
 // ExprUnknown is After's issues, then one issue for each member of an object input the form does
-// not know and After has not already reported unknown, in the order of the input's members. The
+// not know and After has not already reported unknown, in any order. The
 // known members are the strings of a value argument (KnownArg) or the members a fields argument
 // reads (KnownFields); the other is NoArg.
 type ExprUnknown struct {

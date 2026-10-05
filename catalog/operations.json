@@ -330,7 +330,7 @@
     {"name": "toDecimal", "receivers": ["string"], "result": "decimal",
      "issues": [{"key": "type_mismatch", "omit": ["actual"], "meta": {"expected": {"const": "decimal"}}}],
      "args": [{"name": "message", "kind": "message", "optional": true}],
-     "doc": "Reads a decimal number matching [+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?, keeping the scale it is written with; anything else, and a number whose scale would be outside the range of a decimal's scale (value-model.md), gives type_mismatch with expected \"decimal\".",
+     "doc": "Reads a decimal number matching [+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?, keeping the scale it is written with; anything else, and a number whose exponent, or whose scale (the digits after the point less the exponent), is not an int32, gives type_mismatch with expected \"decimal\".",
      "flow": "own"},
     {"name": "toBool", "receivers": ["string"], "result": "bool",
      "issues": [{"key": "type_mismatch", "omit": ["actual"], "meta": {"expected": {"const": "boolean"}}}],
