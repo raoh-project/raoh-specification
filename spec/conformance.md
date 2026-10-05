@@ -67,9 +67,12 @@ its place gives, derived from the catalogue or given by the form.
 
 It checks the suite as a whole too: that no two cases have the same profile, form and input; that
 every feature the registry lists is needed by some case; that every issue a form that takes a
-message declares is expected with the message given by some case; and that every entry a variant's
+message declares is expected with the message given by some case; that every entry a variant's
 `optional_meta` lists, where a form leaves it open, is left out by some case
-([issues.md](issues.md)). The catalogues themselves are checked when they are read
+([issues.md](issues.md)); that every issue that lists candidates has a case with it and a
+candidate's issue below the root; and that every constructor that declares `required` as an issue
+of its own gives it in some case for a null input and in some case for an absent one, in a case
+whose input reaches the constructor itself (CONTRIBUTING.md lists what each needs). The catalogues themselves are checked when they are read
 ([decoder-language.md](decoder-language.md#meaning), [issues.md](issues.md)).
 
 An implementation's issues are matched against the reading of the case's, by the same reader:

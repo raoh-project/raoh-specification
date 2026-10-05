@@ -166,9 +166,11 @@ disagree, the specification has a defect; report it.
 
 A constructor that declares `required` as one of its own issues gives `required` when its input is
 null, and when its input is absent, which are two inputs ([input-model.md](input-model.md)). A form
-with no `required` of its own gives it only through a decoder it places, as its `flow` says:
-`nullable` and `oneOf` are not constructors that read the input for themselves, and a `null` that
-`oneOf` meets goes to each of its candidates.
+with no `required` of its own can give it only through a decoder it actually runs, as its `doc` and
+its `flow` say together: the `flow` says which issues can come from a decoder it places, and the
+`doc` says when it runs it. `nullable` has no `required` of its own: it succeeds for a null itself
+and passes an absent input, and any other, to its decoder. `oneOf` passes its input to each
+candidate, a null included, and gives `one_of_failed` when every one fails.
 
 A decoder reads the input model, in which a number is its lexeme ([input-model.md](input-model.md)).
 An adapter that hands a decoder numbers some library has already converted, to a binary64 double
