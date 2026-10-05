@@ -27,8 +27,8 @@ that order (see [issues.md](issues.md#where-issues-arise-and-in-what-order)); no
 ## What is not in the input model
 
 The input model has no text that is not JSON, no object that repeats a member name, no string
-holding an unpaired surrogate, and no number whose exponent is not an int32 or whose scale, the digits
-after its point less its exponent, is outside the range of a decimal's ([value-model.md](value-model.md#scalars)):
+holding an unpaired surrogate, and no number whose scale, the digits after its point less its exponent, is not
+an int32 ([value-model.md](value-model.md#scalars)):
 every number denotes a decimal, which a decoder such as `decimal` reads it as. How an implementation treats such input is outside this
 specification, and the suite never gives it.
 

@@ -382,15 +382,18 @@ func (r *reader) class() {
 	r.expect(']')
 }
 
-// classMember reads a character, a run of them, or a shorthand. A run is read only where both of
-// its ends are one character.
+// classMember reads a character, a run of them, or a shorthand. A - makes a run only between two
+// characters, one each; anywhere else it stands for itself, so the - of [a-\d] is read as a member
+// of its own, before the shorthand.
 func (r *reader) classMember() {
 	low, one := r.classAtom()
 	if one && r.peek() == '-' && r.at+1 < len(r.text) && r.text[r.at+1] != ']' {
+		dash := r.at
 		r.take()
 		high, one := r.classAtom()
 		if !one {
-			r.refuse("an escape this does not read", r.at)
+			r.at = dash
+			return
 		}
 		if high < low {
 			r.refuse("a count this cannot read", r.at)

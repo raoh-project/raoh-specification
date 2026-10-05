@@ -377,14 +377,15 @@ func TestEmptyStringsAreValuesNotAbsence(t *testing.T) {
 		"issues": [{"path": "", "code": "type_mismatch", "message_key": "", "meta": {"expected": "integer", "actual": "string"}}]}]`, "message_key must be a non-empty string")
 }
 
-// The input model has no number whose exponent is not an int32 or whose scale is out of range, and
-// the suite never gives one, in any position of an input.
+// The input model has no number whose scale is not an int32, and the suite never gives one, in any
+// position of an input.
 func TestInputsHaveOnlyNumbersOfTheInputModel(t *testing.T) {
-	accepted(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["decimal"], "input": 1e2147483647, "ok": "1E+2147483647"},
-	  {"id": "R000002", "title": "t", "decoder": ["decimal"], "input": 1e-2147483647, "ok": "1E-2147483647"}]`)
+	accepted(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["decimal"], "input": 1e2147483648, "ok": "1E+2147483648"},
+	  {"id": "R000002", "title": "t", "decoder": ["decimal"], "input": 1e-2147483647, "ok": "1E-2147483647"},
+	  {"id": "R000003", "title": "t", "decoder": ["decimal"], "input": 0.1e2147483649, "ok": "1E+2147483648"}]`)
 	for _, input := range []string{
-		`1e2147483648`, `1e-2147483648`, `-1.5e-2147483647`, `0.1e2147483648`,
-		`[1, [2e2147483648]]`, `{"a": {"b": 1e-2147483649}}`,
+		`1e2147483649`, `1e-2147483648`, `-1.5e-2147483647`, `0.1e2147483650`,
+		`[1, [2e2147483649]]`, `{"a": {"b": 1e-2147483649}}`, `1e99999999999999999999`,
 	} {
 		rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": `+input+`,
 		  "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer", "actual": "number"}}]}]`,

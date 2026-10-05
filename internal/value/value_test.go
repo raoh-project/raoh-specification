@@ -1,6 +1,7 @@
 package value
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -269,23 +270,29 @@ func TestMatch(t *testing.T) {
 }
 
 // The decimals are closed under writing and reading: every scale a decimal has is written with an
-// exponent an observation holds, and a number past either bound is not read. spec/value-model.md
-// bounds the scale by 2147483647 either way, and spec/observation.md the exponent by an int32.
+// exponent, which an observation does not bound of itself, and a number whose scale is not an int32
+// is not read. spec/value-model.md bounds the scale and nothing else.
 func TestDecimalDomainIsClosed(t *testing.T) {
-	for _, text := range []string{"1E+2147483647", "1E-2147483647", "0.1E+2147483647", "-1.50", "1E+3"} {
+	for _, text := range []string{"1E+2147483648", "1E-2147483647", "1E+2147483647", "0.1E+2147483649", "-1.50", "1E+3"} {
 		d, err := ParseDecimal(text)
 		if err != nil {
 			t.Errorf("%s: %v", text, err)
 			continue
 		}
-		back, err := ParseDecimal(formatDecimal(d))
+		back, err := ParseDecimal(observed(d))
 		if err != nil || !Equal(Value{Type: MustParseType("decimal"), Dec: d}, Value{Type: MustParseType("decimal"), Dec: back}) {
-			t.Errorf("%s is written %s, which reads as %v, %v", text, formatDecimal(d), back, err)
+			t.Errorf("%s is written %s, which reads as %v, %v", text, observed(d), back, err)
 		}
 	}
-	for _, text := range []string{"1E+2147483648", "1E-2147483648", "1E-2147483649", "0.1E+2147483648", "1.5E-2147483647"} {
+	for _, text := range []string{"1E-2147483648", "1E+2147483649", "0.1E+2147483650", "1.5E-2147483647", "1E+99999999999999999999"} {
 		if d, err := ParseDecimal(text); err == nil {
 			t.Errorf("%s is read as %v", text, d)
 		}
 	}
+}
+
+// observed writes a decimal as an observation does: its coefficient, E and the exponent that gives
+// its scale.
+func observed(d Dec) string {
+	return fmt.Sprintf("%sE%+d", d.Unscaled, -int64(d.Scale))
 }

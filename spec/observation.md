@@ -18,7 +18,7 @@ or without seconds), this document lists them.
 | `bool` | `true` or `false` |
 | `int32`, `int64` | a JSON number written as an integer, with no fraction, no exponent and no minus sign on zero |
 | `float32`, `float64` | a JSON number, or a tag (below) |
-| `decimal` | a JSON string holding a decimal number written as a JSON number is, with no minus sign on zero; its scale is the number of digits after the point, less the exponent: `"1.50"` has scale 2, `"1E+3"` and `"1e3"` scale -3; the exponent is an int32 and the scale is within the range of [value-model.md](value-model.md#scalars), so every decimal has an observation, and a number past either is not a decimal |
+| `decimal` | a JSON string holding a decimal number written as a JSON number is, with no minus sign on zero; its scale is the number of digits after the point, less the exponent: `"1.50"` has scale 2, `"1E+3"` and `"1e3"` scale -3; the scale is an int32 ([value-model.md](value-model.md#scalars)), and the exponent is not bounded of itself, so every decimal has an observation; a number whose scale is not an int32 is not a decimal |
 | `string`, `symbol`, `uri` | a JSON string |
 | `uuid` | a JSON string of 32 lower-case hexadecimal digits grouped 8-4-4-4-12 |
 
