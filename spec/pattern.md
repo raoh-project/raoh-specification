@@ -5,8 +5,9 @@ values. A pattern denotes a set of strings, and the operation accepts a string e
 whole of it is one of them. What a pattern denotes is defined here, not by any regular-expression
 engine: an implementation reads the pattern and matches by this meaning, whatever its host's engine
 would make of the same text. This is the pattern language of Souther
-([specification, string patterns](https://github.com/souther-lang/souther/blob/develop/specification.adoc#string-patterns)),
-so a pattern means the same set of strings in both.
+([specification, string patterns](https://github.com/souther-lang/souther/blob/develop/specification.adoc#string-patterns)).
+Where this chapter decides a point, Souther's text follows it, so that a pattern means the same set
+of strings in both.
 
 A pattern denotes a set of strings and says nothing about how a match is found. A matcher's strategy,
 greedy or reluctant, changes nothing, and a group captures nothing.
