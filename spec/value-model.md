@@ -17,20 +17,30 @@ type arguments in angle brackets. A single upper-case letter is a type parameter
 | `int64` | integers from -2⁶³ to 2⁶³-1 | equal |
 | `float32` | IEEE 754 binary32 values: the finite ones, +0, -0, +∞, -∞ and NaN | see below |
 | `float64` | IEEE 754 binary64 values, likewise | see below |
-| `decimal` | a coefficient (an integer) and a scale (an integer): coefficient × 10^-scale | coefficient and scale both equal |
+| `decimal` | a coefficient (an integer) and a scale (an int32): coefficient × 10^-scale | coefficient and scale both equal |
 | `string` | sequences of Unicode scalar values | equal |
 | `symbol<"A","B",...>` | one of the listed alternatives; the alternatives are part of the type, so `symbol<"RED","GREEN">` and `symbol<"YES","NO">` are different types, and a symbol type always lists at least one. `enum` gives the symbol type of the names it lists. | equal |
 | `uuid` | 128-bit UUIDs | equal |
-| `uri` | URI references | equal as written |
+| `uri` | RFC 3986 URIs | equal as written |
 
-The domain of `uri` is URI references. Version 0.8.0 does not yet say which grammar defines them
-(raoh-project/raoh-specification#9); its observation is a JSON string, and the verifier compares the
-text without checking that it belongs to the domain.
+The domain of `uri` is the `URI` production of RFC 3986 section 3, not `URI-reference`: every value
+has a scheme, and a relative reference is not a `uri`. It is the set the `uri` operation accepts.
+RFC 3986 is read as updated (RFC 7320 and RFC 8820, which do not change the syntax), and without
+the IPv6 zone identifier RFC 6874 added, since RFC 9844 removed it. An observation of a `uri` is a
+JSON string, and the verifier checks that it is in the domain.
 
 Two floats are the same when they are the same IEEE 754 value, with two exceptions to what the
 IEEE 754 comparison says: +0 and -0 are different values, and every NaN is the same value as every
-other NaN. This is how `Double.equals` compares, and how raoh-java 0.8.0 compares values against the
-bounds of `min`, `oneOf` and the like.
+other NaN. A float type therefore has one NaN and two zeros.
+
+The operations that bound or order floats (`min`, `max`, `range`, `positive`, `negative`,
+`nonNegative`, `nonPositive`, and sorting the `allowed` of `oneOf`) use the float order, a total
+order on these values, from least to greatest: -∞, the negative finite values in increasing
+numerical order, -0, +0, the positive finite values in increasing numerical order, +∞, and last
+NaN (-∞ < … < -2 < -1 < -0 < +0 < 1 < 2 < … < +∞ < NaN). So -0 is less than +0, `negative` accepts -0 and
+`nonNegative` rejects it, and every value is comparable with every other, NaN included. The order
+is total because each of these operations needs one answer for every value; it is not IEEE 754's
+comparison, in which -0 equals +0 and NaN is unordered.
 
 A decimal keeps its scale: 1.5 and 1.50 are different decimals. An operation compares decimals by
 value only where it says so.
@@ -43,10 +53,19 @@ value only where it says so.
 | `time` | a time of day to the nanosecond | equal |
 | `datetime` | a date and a time of day, with no offset | both equal |
 | `offset_datetime` | a date, a time of day and an offset from UTC | all three equal |
-| `instant` | a point on the UTC time-line to the nanosecond | equal |
+| `instant` | a point on the UTC time-line to the nanosecond, from -1000000000-01-01T00:00:00Z to +1000000000-12-31T23:59:59.999999999Z | equal |
 
 Two `offset_datetime` values at different offsets are different values even when they denote the
-same instant.
+same instant. The operations that compare temporal values (`before`, `after`, `between`) compare
+offset date-times chronologically, by the instant alone. That comparison is not an order on the
+values, since two different values can compare equal: `09:00Z` and `10:00+01:00` are different
+values and neither is before the other. Sameness and chronology are two relations, as sameness and
+numeric comparison are for decimals of different scales.
+
+The offset is a number of seconds. `Z`, `+00:00` and `-00:00` all give the offset zero. RFC 9557,
+which updates RFC 3339, gives `Z` and `-00:00` one meaning, that the time in UTC is known and the
+local offset is not, and `+00:00` another, that UTC is the preferred reference point; an
+`offset_datetime` does not represent that distinction.
 
 ## Structures
 

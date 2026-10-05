@@ -3,6 +3,7 @@ package verify
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -15,7 +16,9 @@ const miniCore = `[
   {"id": "R000002", "title": "int.min(1) rejects 0", "decoder": ["int", ["min", 1]], "input": 0,
    "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "meta": {"min": 1, "actual": 0}}]},
   {"id": "R000003", "title": "string.cuid() rejects x", "decoder": ["string", ["cuid"]], "input": "x",
-   "issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.cuid", "meta": {}}]}
+   "issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.cuid", "meta": {}}]},
+  {"id": "R000005", "title": "int.min(1, \"low\") rejects 0", "decoder": ["int", ["min", 1, "low"]], "input": 0,
+   "issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "message": "low", "meta": {"min": 1, "actual": 0}}]}
 ]`
 
 const miniEncode = `[
@@ -42,10 +45,11 @@ const (
 	okInt       = `{"ok": 1}`
 	minIssue    = `{"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "message": "must be at least 1", "meta": {"min": 1, "actual": 0}}]}`
 	cuidIssue   = `{"issues": [{"path": "", "code": "invalid_format", "message_key": "invalid_format.cuid", "message": "not a valid CUID", "meta": {}}]}`
+	lowIssue    = `{"issues": [{"path": "", "code": "out_of_range", "message_key": "out_of_range.minimum", "message": "low", "meta": {"min": 1, "actual": 0}}]}`
 	defaultJSON = `{"ok": {"value": "default"}}`
 )
 
-var allFeatures = []string{"decoder.int", "decoder.string", "operation.int32.min", "operation.string.cuid",
+var allFeatures = []string{"decoder.int", "decoder.string", "operation.int32.min", "operation.int32.min.message", "operation.string.cuid",
 	"encoder.object", "encoder.string", "property.propertyWithDefault", "fixture.identity"}
 
 type run struct {
@@ -66,6 +70,7 @@ func (s *Spec) run() *run {
 			"R000002": minIssue,
 			"R000003": cuidIssue,
 			"R000004": defaultJSON,
+			"R000005": lowIssue,
 		},
 		catalogs: map[string]map[string]string{"en": s.Catalog.Messages["en"], "ja": s.Catalog.Messages["ja"]},
 	}
@@ -180,6 +185,37 @@ func TestClassification(t *testing.T) {
 			decl:     declare(v, `, "unsupported_features": {"operation.string.cuid": {"reason": "no CUID library"}}`),
 			statuses: map[string]string{"core": PartiallyConformant, "encode": Conformant},
 			outcomes: map[string]string{"R000003": Unsupported},
+		},
+		{
+			name: "a facet unsupported with its parent",
+			change: func(r *run) {
+				r.bound = without(without(r.bound, "operation.int32.min"), "operation.int32.min.message")
+				delete(r.results, "R000002")
+				delete(r.results, "R000005")
+			},
+			decl:     declare(v, `, "unsupported_features": {"operation.int32.min": {"reason": "r"}}`),
+			statuses: map[string]string{"core": PartiallyConformant},
+			outcomes: map[string]string{"R000002": Unsupported, "R000005": Unsupported},
+		},
+		{
+			name: "a facet unsupported alone",
+			change: func(r *run) {
+				r.bound = without(r.bound, "operation.int32.min.message")
+				delete(r.results, "R000005")
+			},
+			decl:     declare(v, `, "unsupported_features": {"operation.int32.min.message": {"reason": "no message overload"}}`),
+			statuses: map[string]string{"core": PartiallyConformant},
+			outcomes: map[string]string{"R000002": Matched, "R000005": Unsupported},
+		},
+		{
+			name: "a facet bound without its parent",
+			change: func(r *run) {
+				r.bound = without(r.bound, "operation.int32.min")
+				delete(r.results, "R000002")
+				delete(r.results, "R000005")
+			},
+			decl:    declare(v, `, "unsupported_features": {"operation.int32.min": {"reason": "r"}}`),
+			invalid: "binds operation.int32.min.message, and not operation.int32.min, which it is a facet of",
 		},
 		{
 			name: "an undeclared unbound feature",
@@ -319,7 +355,7 @@ func TestReportMatchesItsSchema(t *testing.T) {
 	if err := s.Validate("report", text); err != nil {
 		t.Error(err)
 	}
-	if !rep.Conformant() || rep.Profiles["core"].Matched != 3 || rep.Profiles["messages-en"].Matched != len(s.Catalog.Messages["en"]) {
+	if !rep.Conformant() || rep.Profiles["core"].Matched != 4 || rep.Profiles["messages-en"].Matched != len(s.Catalog.Messages["en"]) {
 		t.Errorf("%+v", rep.Profiles)
 	}
 }
@@ -345,5 +381,147 @@ func TestUncoveredFeatures(t *testing.T) {
 		if slices.Contains(got, f) {
 			t.Errorf("%s is reported uncovered", f)
 		}
+	}
+}
+
+// An optional_meta entry needs a case that leaves it out, as a feature needs a case that uses it.
+func TestOptionalMetaNeedsACaseThatLeavesItOut(t *testing.T) {
+	issues, err := os.ReadFile("../../catalog/issues.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	optional := strings.Replace(string(issues),
+		`"meta": {"allowed": "list<T>", "actual": "T"}`,
+		`"meta": {"allowed": "list<T>", "actual": "T"}, "optional_meta": ["actual"]`, 1)
+	if optional == string(issues) {
+		t.Fatal("not_allowed is not where the test expects it")
+	}
+	withActual := `{"id": "R000001", "title": "t", "decoder": ["string", ["oneOf", ["a"]]], "input": "b",
+	  "issues": [{"path": "", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": ["a"], "actual": "b"}}]}`
+	withoutActual := `{"id": "R000002", "title": "t", "decoder": ["string", ["oneOf", ["a"]]], "input": "c",
+	  "issues": [{"path": "", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": ["a"]}}]}`
+	for _, tc := range []struct {
+		cases string
+		want  []string
+	}{
+		{"[" + withActual + "]", []string{"not_allowed.actual"}},
+		{"[" + withActual + "," + withoutActual + "]", nil},
+	} {
+		root := artifactstest.Copy(t, "../..", map[string]string{
+			"catalog/issues.json":  optional,
+			"suite/core/mini.json": tc.cases,
+		})
+		s, err := Load(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := s.UnpinnedOptional(); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %v, want %v", tc.cases, got, tc.want)
+		}
+	}
+	// The catalogue as it is: every optional entry a form leaves open has a case that leaves it out.
+	if got := miniSpec(t).UnpinnedOptional(); len(got) > 0 {
+		t.Errorf("the catalogue has optional entries that are always there: %v", got)
+	}
+}
+
+// Every issue a form that takes a message declares needs a case that gives it the message.
+func TestEveryIssueOfAFormThatTakesAMessageIsGivenOne(t *testing.T) {
+	got := miniSpec(t).UngivenMessages()
+	if slices.Contains(got, "operation.int32.min.message: out_of_range.minimum") {
+		t.Error("R000005 gives min's issue a message, and it is reported ungiven")
+	}
+	for _, want := range []string{"operation.string.toInt.message: type_mismatch.numeric_range", "decoder.literal.message: invalid_format.literal"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("%s is not reported ungiven", want)
+		}
+	}
+	if got := func() []string {
+		s, err := Load("../..")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s.UngivenMessages()
+	}(); len(got) > 0 {
+		t.Errorf("the suite leaves issues without a given message: %v", got)
+	}
+}
+
+// A candidate's path is read from the root of the input. A case with the oneOf at the root cannot
+// tell that from a path read from the oneOf, so one_of_failed needs a case with the oneOf below it.
+func TestCandidatePathsNeedACaseBelowTheRoot(t *testing.T) {
+	root := artifactstest.Copy(t, "../..", map[string]string{
+		"suite/core/one_of.json": `[{"id": "R000271", "title": "t", "decoder": ["oneOf", [["int", ["map", "decimal_string"]], ["string", ["minLength", 3]]]], "input": "ab",
+		  "issues": [{"path": "", "code": "one_of_failed", "message_key": "one_of_failed", "meta": {"candidates": [
+		    {"candidate": 0, "issues": [{"code": "type_mismatch", "message": "expected integer", "meta": {"actual": "string", "expected": "integer"}, "path": ""}]},
+		    {"candidate": 1, "issues": [{"code": "too_short", "message": "must be at least 3 characters", "meta": {"actual": 2, "min": 3}, "path": ""}]}]}}]}]`,
+	})
+	s, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.UnpinnedCandidatePaths(); !slices.Equal(got, []string{"one_of_failed"}) {
+		t.Errorf("a suite with the oneOf at the root only: %v, want one_of_failed", got)
+	}
+	s, err = Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.UnpinnedCandidatePaths(); len(got) > 0 {
+		t.Errorf("the suite leaves candidate paths unpinned: %v", got)
+	}
+}
+
+// A constructor that declares required as an issue of its own gives it for null and for an absent
+// input, and each of the two needs a case: a case for one does not show the other. What shows it is
+// a case in which the input reaches the constructor whatever the forms around it do.
+func TestRequiredNeedsACaseForNullAndForAbsent(t *testing.T) {
+	required := func(path string) string {
+		return `{"path": "` + path + `", "code": "required", "message_key": "required", "meta": {}}`
+	}
+	null := `{"id": "R000001", "title": "t", "decoder": ["bool"], "input": null, "issues": [` + required("") + `]}`
+	absent := `{"id": "R000002", "title": "t", "decoder": ["object", [["field", "a", ["bool"]]]], "input": {}, "issues": [` + required("/a") + `]}`
+	// The flow places an issue of bool under nullable, so these fit it, but nullable(bool) takes a
+	// null for itself: they show nothing about bool, and a wrong case must not pin it.
+	wrapped := `{"id": "R000003", "title": "t", "decoder": ["nullable", ["bool"]], "input": null, "issues": [` + required("") + `]}`
+	optional := `{"id": "R000004", "title": "t", "decoder": ["object", [["optionalField", "a", ["bool"]]]], "input": {}, "issues": [` + required("/a") + `]}`
+	given := `{"path": "", "code": "required", "message": "is required", "meta": {}}`
+	inCandidate := `{"id": "R000005", "title": "t", "decoder": ["oneOf", [["bool"], ["bool"]]], "input": null, "issues": [
+	  {"path": "", "code": "one_of_failed", "message_key": "one_of_failed", "meta": {"candidates": [
+	    {"candidate": 0, "issues": [` + given + `]}, {"candidate": 1, "issues": [` + given + `]}]}}]}`
+	for _, tc := range []struct {
+		name  string
+		cases []string
+		want  []string // reported unpinned among the bool entries
+	}{
+		{"nothing", nil, []string{"decoder.bool: null", "decoder.bool: absent"}},
+		{"null only", []string{null}, []string{"decoder.bool: absent"}},
+		{"absent only", []string{absent}, []string{"decoder.bool: null"}},
+		{"both", []string{null, absent}, nil},
+		{"a wrapper", []string{wrapped}, []string{"decoder.bool: null", "decoder.bool: absent"}},
+		{"an optional field", []string{optional}, []string{"decoder.bool: null", "decoder.bool: absent"}},
+		{"a candidate", []string{inCandidate}, []string{"decoder.bool: null", "decoder.bool: absent"}},
+	} {
+		root := artifactstest.Copy(t, "../..", map[string]string{"suite/core/mini.json": "[" + strings.Join(tc.cases, ",") + "]"})
+		s, err := Load(root)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		var got []string
+		for _, u := range s.UnpinnedRequired() {
+			if strings.HasPrefix(u, "decoder.bool: ") {
+				got = append(got, u)
+			}
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%s: bool is unpinned for %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	s, err := Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.UnpinnedRequired(); len(got) > 0 {
+		t.Errorf("the suite leaves required unpinned: %v", got)
 	}
 }

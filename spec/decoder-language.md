@@ -9,8 +9,8 @@ can give.
 ## Grammar
 
 A decoder form is a JSON array. Its first element is the name of a constructor, the next elements
-are the constructor's arguments, as many as the constructor has, and every element after them is an
-operation applied to the decoder so far:
+are the constructor's arguments, and every element after them is an operation applied to the
+decoder so far:
 
 ```json
 ["string", ["trim"], ["minLength", 3]]
@@ -19,14 +19,27 @@ operation applied to the decoder so far:
 ```
 
 An operation is a JSON array whose first element is the operation's name and whose other elements are
-its arguments. An operation may have optional trailing arguments; a constructor may not, so that the
-end of a constructor's arguments never depends on what follows.
+its arguments. An operation may have optional trailing arguments. A constructor's only optional
+argument is a trailing message, and the end of its arguments never depends on what follows: after
+its required arguments, a string is that message and an array is the first operation
+(`["literal", "yes", ["string"], "say yes"]` gives a message; `["literal", "yes", ["string"],
+["minLength", 3]]` applies an operation).
 
 Only a value or a message argument can be optional, and leaving one out means one thing: a value
 argument left out stands for its `default`, which every optional value argument declares (`normalize`
 without a form is `normalize` with `"NFC"`), and a message argument left out gives the message the
 catalogue derives. A form's arguments have distinct names, and a form has at most one message
 argument.
+
+Which forms take a message follows from what they do. An operation checks or converts a value, and
+the issues it declares are about that value, so an operation that declares an issue takes an
+optional message, and one that declares none takes no message. A constructor or a field builds
+structure, and its issues (a missing value, a value of the wrong kind, an unknown member, no
+candidate matching) are worded by a message resolver, not by each form, so it takes none; `enum`
+and `literal`, which convert the string their string decoder reads, are the constructors that take
+one. `catalog/operations.json` records each, and the catalogue is rejected when an operation breaks
+the rule, when `enum` or `literal` lacks an optional trailing message, or when another constructor
+or a field takes a message.
 
 Arguments are of these kinds:
 
@@ -37,7 +50,7 @@ Arguments are of these kinds:
 | `variants` | a non-empty JSON object whose members are tags and decoder forms |
 | `fields` | a non-empty JSON array of field forms: `[kind, name, decoder]`, or `["flat", decoder]` |
 | `value` | an [observation](observation.md) of the argument's type |
-| `message` | a JSON string: the message of the issues the operation gives |
+| `message` | a JSON string: the message of the issues the form itself declares |
 | `fixture` | the name of a [fixture](fixtures.md) |
 | `encoder`, `properties` | an encoder form, or a non-empty JSON array of property forms |
 
@@ -81,7 +94,8 @@ A value argument is read as an observation of the type the argument has where it
 is the decimal 0.5 with scale 1; `["int", ["min", 0.5]]` does not type-check.
 
 Some forms put conditions on their arguments, listed as `requires` in `catalog/operations.json`:
-the bounds of `range` and `between` must be in order, the divisor of `multipleOf` must not be
+the lower bound of `range` and `between` must not be greater than the upper, compared as the
+operation compares (chronologically, by instant alone, for offset date-times), the divisor of `multipleOf` must not be
 zero, the elements of `containsAll` must not be empty, the allowed values of `oneOf` must be
 distinct as the value model compares them, the symbols of `enum` must stay distinct when A-Z are
 read as a-z, the pattern of `pattern` must be one of [pattern.md](pattern.md), a `strictObject`
@@ -100,7 +114,8 @@ where an issue would have to write an element that has none: `["list", ["dict", 
 
 The operations that read text by Unicode properties or mappings (`trim`, `nonBlank`,
 `toLowerCase`, `toUpperCase`, `normalize`) use Unicode 18.0.0, whatever version the platform an
-implementation runs on has.
+implementation runs on has, and so does `pattern` in telling which characters a backslash stands
+before ([pattern.md](pattern.md)).
 
 A form's result type follows from its arguments. `catalog/operations.json` writes it as a type,
 which may mention the form's parameters; as `"product"`, the product of the types of the fields its
@@ -124,10 +139,18 @@ a feature with an ID:
 | an encoder | `encoder.<name>` |
 | a property kind | `property.<name>` |
 | a fixture | `fixture.<name>` |
+| giving a form that takes a message its message | the form's ID followed by `.message`, such as `operation.int32.min.message` or `decoder.enum.message` |
+
+A `.message` feature is a facet of the form's feature, its parent: it is not a form of its own, but
+a capability of one, which an implementation may have the form without. The registry says which
+features are facets and of what; the `.message` suffix is how a facet's ID is written, and no two
+features share an ID. A case that gives a form
+its message needs both the form's feature and the facet; a case that does not give it needs the
+form's feature only.
 
 A case needs the features its forms use. An implementation that lacks one declares it unsupported
 (see [conformance.md](conformance.md)), and every case that needs it is then unsupported rather than
-failed.
+failed. A facet whose parent is unsupported is unsupported too, without being declared.
 
 ## Meaning
 
@@ -141,31 +164,16 @@ checked when the catalogue is read, so a catalogue that breaks one is invalid ra
 some case. The cases in `suite/` are the specification of the details. Where a `doc` and a case
 disagree, the specification has a defect; report it.
 
-Several meanings in version 0.8.0 are raoh-java 0.8.0's behaviour written down, where a later
-version may decide otherwise:
+A constructor that declares `required` as one of its own issues gives `required` when its input is
+null, and when its input is absent, which are two inputs ([input-model.md](input-model.md)). A form
+with no `required` of its own gives it only as a component it runs gives it, a decoder or a fixture,
+as its `doc` and its `flow` say together: the `flow` says which issues can come from a component it
+places, and the `doc` says when it runs it. `nullable` has no `required` of its own: it succeeds for
+a null itself and passes an absent input, and any other, to its decoder. `oneOf` passes its input to
+each candidate, a null included, and gives `one_of_failed` when every one fails.
 
-- Offset date-times are ordered by instant and, at the same instant, by local date-time
-  (`OffsetDateTime.compareTo`), so `before`, `after` and `between` tell apart two values that
-  denote the same instant.
-- `float` and `double` read the number `-0` as +0 and `-0.0` as -0.
-- Floats are ordered as `Double.compare` orders them, so `negative` accepts -0 and `nonNegative`
-  rejects it.
-- `strict` inside `strict` reports an unknown member once for each.
-- `iso8601` reads 24:00:00 as the start of the next day, where `time`, `dateTime` and
-  `offsetDateTime` refuse 24:00; `offsetDateTime` reads the offset -00:00 as Z, which RFC 3339
-  gives another meaning.
-- `email` checks a loose ASCII grammar, not RFC 5321's.
-- `unique` lists the duplicates in the order in which each first occurs again.
-
-The numbers a decoder reads differ from what raoh-java 0.8.0 gives with Jackson's default
-configuration, because raoh-json reads a number with a fraction or an exponent as a binary64 double
-first, while the input model keeps the lexeme. `decimal` keeps the scale the lexeme is written with,
-so `0.0001` gives scale 4 where raoh-json gives 0.00010, keeps every digit where raoh-json keeps
-17, and reads `1e400` where raoh-json gives type_mismatch. `float` rounds the lexeme to the nearest
-float32 once, where raoh-json rounds it to a double and that to a float32, so
-`1.000000059604644775390625000000001` gives 1.0000001 and not 1.0. raoh-json documents that its
-result depends on how the JSON library parsed the number, which makes this adapter behaviour.
-Enabling Jackson's `USE_BIG_DECIMAL_FOR_FLOATS` gives these meanings, and makes `float` and `double`
-read `-0.0` as +0 instead.
-
-Each is an open issue in this repository.
+A decoder reads the input model, in which a number is its lexeme ([input-model.md](input-model.md)).
+An adapter that hands a decoder numbers some library has already converted, to a binary64 double
+for instance, gives other results: a `decimal` that has lost the scale or digits it was written
+with, a `float` rounded twice, a -0 read as +0. Those results are the adapter's, not this
+language's, and an implementation that offers such an adapter says so.

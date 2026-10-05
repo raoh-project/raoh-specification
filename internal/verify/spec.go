@@ -4,8 +4,10 @@ package verify
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/raoh-project/raoh-specification/internal/artifacts"
@@ -30,6 +32,8 @@ type Spec struct {
 	Checker  *dsl.Checker
 	Suite    *suite.Suite
 	Features map[string]bool
+	// FacetOf maps each facet to the feature it is a facet of.
+	FacetOf map[string]string
 }
 
 // InvalidError reports input that makes a comparison untrustworthy. raoh-verify exits with status
@@ -81,6 +85,10 @@ func Load(root string) (*Spec, error) {
 	for _, f := range reg.Features() {
 		s.Features[f] = true
 	}
+	s.FacetOf = map[string]string{}
+	for _, f := range reg.Facets() {
+		s.FacetOf[f.ID] = f.Parent
+	}
 	if s.Suite, err = suite.Load(root, s.Checker, s.Schemas); err != nil {
 		return nil, err
 	}
@@ -93,6 +101,204 @@ func Load(root string) (*Spec, error) {
 // Validate checks a document against one of the specification's schemas.
 func (s *Spec) Validate(schema string, text []byte) error {
 	return s.Schemas.Validate(schema, text)
+}
+
+// UnpinnedOptional lists the optional metadata entries no case leaves out, as issue.entry. An
+// entry in optional_meta says that an issue may or may not have it where a form leaves it open; a
+// case that leaves it out is the evidence that it may, as a case that needs a feature is the
+// evidence for a feature. Without one, the entry is always there, and optional_meta only lets a
+// case drop it unnoticed.
+func (s *Spec) UnpinnedOptional() []string {
+	open := map[string]bool{}
+	for _, f := range s.Checker.Registry().Forms() {
+		for _, ref := range f.Issues {
+			v, ok := s.Catalog.Variants[ref.Key]
+			if !ok {
+				continue
+			}
+			for _, o := range v.Optional {
+				if !ref.Gives(o) && !slices.Contains(ref.Omit, o) {
+					open[ref.Key+"."+o] = true
+				}
+			}
+		}
+	}
+	left := map[string]bool{}
+	var walk func(issues []suite.TypedIssue)
+	walk = func(issues []suite.TypedIssue) {
+		for _, is := range issues {
+			for _, o := range is.Slot.Optional {
+				if _, ok := is.Meta[o]; !ok {
+					left[is.Slot.Key+"."+o] = true
+				}
+			}
+			for _, i := range slices.Sorted(maps.Keys(is.Candidates)) {
+				walk(is.Candidates[i])
+			}
+		}
+	}
+	for _, c := range s.Suite.Cases {
+		walk(c.Issues)
+	}
+	var out []string
+	for _, entry := range slices.Sorted(maps.Keys(open)) {
+		if !left[entry] {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+// UnpinnedCandidatePaths lists the issues that list candidates, such as one_of_failed, for which no
+// case has the issue below the root and a candidate's issue below it too. A candidate's path is
+// read from the root of the input, not from where the issue is, and the two readings give the same
+// path wherever the issue is at the root: a case there cannot tell them apart.
+func (s *Spec) UnpinnedCandidatePaths() []string {
+	open := map[string]bool{}
+	for _, f := range s.Checker.Registry().Forms() {
+		for _, c := range candidatesOf(f.Flow) {
+			open[f.Issues[c.Issue.Index()].Key] = true
+		}
+	}
+	pinned := map[string]bool{}
+	var walk func(issues []suite.TypedIssue)
+	walk = func(issues []suite.TypedIssue) {
+		for _, is := range issues {
+			for _, i := range slices.Sorted(maps.Keys(is.Candidates)) {
+				for _, c := range is.Candidates[i] {
+					if len(is.Slot.Path) > 0 && len(c.Slot.Path) > 0 {
+						pinned[is.Slot.Key] = true
+					}
+				}
+				walk(is.Candidates[i])
+			}
+		}
+	}
+	for _, c := range s.Suite.Cases {
+		walk(c.Issues)
+	}
+	var out []string
+	for _, key := range slices.Sorted(maps.Keys(open)) {
+		if !pinned[key] {
+			out = append(out, key)
+		}
+	}
+	return out
+}
+
+// candidatesOf finds the issues that list candidates in a flow.
+func candidatesOf(e dsl.Expr) []dsl.ExprCandidates {
+	switch e := e.(type) {
+	case dsl.ExprCandidates:
+		return []dsl.ExprCandidates{e}
+	case dsl.ExprCat:
+		return allCandidates(e.Items)
+	case dsl.ExprChain:
+		return allCandidates(e.Items)
+	case dsl.ExprEach:
+		return candidatesOf(e.Body)
+	case dsl.ExprAt:
+		return candidatesOf(e.Body)
+	case dsl.ExprUnknown:
+		return candidatesOf(e.After)
+	}
+	return nil
+}
+
+func allCandidates(items []dsl.Expr) []dsl.ExprCandidates {
+	var out []dsl.ExprCandidates
+	for _, it := range items {
+		out = append(out, candidatesOf(it)...)
+	}
+	return out
+}
+
+// UnpinnedRequired lists, as feature: input, the constructors that declare required as an issue of
+// their own and have no case that shows them give it for a null input or for an absent one. The
+// two are different inputs (spec/decoder-language.md).
+//
+// What shows it is the shape of the case, never where the flow places an issue. A flow says which
+// issues can reach a place, and not that a form such as nullable takes a null for itself, so a
+// case that has nullable(bool) give required for null would still fit the flow. A case pins null
+// for a constructor only when it is the decoder of the case, and absent only when it is the
+// decoder of a field of an object that has no such member: then the input reaches it whatever the
+// forms around it do.
+func (s *Spec) UnpinnedRequired() []string {
+	reg := s.Checker.Registry()
+	pinned := map[string]bool{}
+	gives := func(c *suite.Case, constructor string, path []string) bool {
+		return slices.ContainsFunc(c.Issues, func(is suite.TypedIssue) bool {
+			return is.Slot.Site.Key == "required" && is.Slot.Site.Form == "decoder."+constructor && slices.Equal(is.Slot.Path, path)
+		})
+	}
+	for _, c := range s.Suite.Cases {
+		if c.Encoder || c.Form.Kind != jsontext.Array || len(c.Form.Elems) == 0 {
+			continue
+		}
+		head := c.Form.Elems[0].Text
+		if c.Input.Kind == jsontext.Null && gives(c, head, nil) {
+			pinned["decoder."+head+": null"] = true
+		}
+		if (head != "object" && head != "strictObject") || c.Input.Kind != jsontext.Object || len(c.Form.Elems) < 2 {
+			continue
+		}
+		for _, f := range c.Form.Elems[1].Elems {
+			if len(f.Elems) < 3 || f.Elems[0].Text != "field" || f.Elems[2].Kind != jsontext.Array || len(f.Elems[2].Elems) == 0 {
+				continue
+			}
+			name, constructor := f.Elems[1].Text, f.Elems[2].Elems[0].Text
+			if _, there := c.Input.Get(name); !there && gives(c, constructor, []string{name}) {
+				pinned["decoder."+constructor+": absent"] = true
+			}
+		}
+	}
+	var out []string
+	for _, name := range slices.Sorted(maps.Keys(reg.Constructors)) {
+		if !slices.ContainsFunc(reg.Constructors[name].Issues, func(r dsl.IssueRef) bool { return r.Key == "required" }) {
+			continue
+		}
+		for _, input := range []string{"null", "absent"} {
+			if key := "decoder." + name + ": " + input; !pinned[key] {
+				out = append(out, key)
+			}
+		}
+	}
+	return out
+}
+
+// UngivenMessages lists, as facet: issue, every issue a form that takes a message declares that no
+// case expects with the message given. A given message is the message of every issue its form
+// declares, so each needs a case: one per facet would leave toInt's type_mismatch.numeric_range
+// unchecked.
+func (s *Spec) UngivenMessages() []string {
+	want := map[string]bool{}
+	for _, facet := range s.Checker.Registry().Facets() {
+		for _, ref := range facet.Form.Issues {
+			want[facet.ID+": "+ref.Key] = true
+		}
+	}
+	given := map[string]bool{}
+	var walk func(issues []suite.TypedIssue)
+	walk = func(issues []suite.TypedIssue) {
+		for _, is := range issues {
+			if is.Slot.MessageArg {
+				given[dsl.MessageFacetID(is.Slot.Form)+": "+is.Slot.Key] = true
+			}
+			for _, i := range slices.Sorted(maps.Keys(is.Candidates)) {
+				walk(is.Candidates[i])
+			}
+		}
+	}
+	for _, c := range s.Suite.Cases {
+		walk(c.Issues)
+	}
+	var out []string
+	for _, w := range slices.Sorted(maps.Keys(want)) {
+		if !given[w] {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // Uncovered lists the features no case needs. A feature is in the registry only if a case pins

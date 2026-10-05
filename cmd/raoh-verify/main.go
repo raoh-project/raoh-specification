@@ -50,8 +50,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
-		if uncovered := s.Uncovered(); len(uncovered) > 0 {
-			fmt.Fprintf(stderr, "no case needs these features, so the registry cannot list them:\n  %s\n", strings.Join(uncovered, "\n  "))
+		if problem := unlistedOrUnpinned(s); problem != "" {
+			fmt.Fprint(stderr, problem)
 			return 1
 		}
 		fmt.Fprintf(stdout, "specification %s: %d cases, %d features, manifest %s\n", s.Version, len(s.Suite.Cases), len(s.Features), s.Digest)
@@ -113,6 +113,27 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 2
 }
 
+// unlistedOrUnpinned says what the suite leaves unpinned that the catalogues list or take, or is
+// empty when it leaves nothing. check-suite fails on it, and so does a run of verify.
+func unlistedOrUnpinned(s *verify.Spec) string {
+	if uncovered := s.Uncovered(); len(uncovered) > 0 {
+		return fmt.Sprintf("no case needs these features, so the registry cannot list them:\n  %s\n", strings.Join(uncovered, "\n  "))
+	}
+	if ungiven := s.UngivenMessages(); len(ungiven) > 0 {
+		return fmt.Sprintf("no case gives these issues the message its form takes:\n  %s\n", strings.Join(ungiven, "\n  "))
+	}
+	if unpinned := s.UnpinnedOptional(); len(unpinned) > 0 {
+		return fmt.Sprintf("no case leaves out these optional metadata entries, so optional_meta cannot list them:\n  %s\n", strings.Join(unpinned, "\n  "))
+	}
+	if unpinned := s.UnpinnedRequired(); len(unpinned) > 0 {
+		return fmt.Sprintf("no case has these constructors give required, which each declares as its own issue, for the input:\n  %s\n", strings.Join(unpinned, "\n  "))
+	}
+	if unpinned := s.UnpinnedCandidatePaths(); len(unpinned) > 0 {
+		return fmt.Sprintf("no case lists a candidate's issue below the root, under an issue below it, for these issues, so the reading of a candidate's path is not pinned:\n  %s\n", strings.Join(unpinned, "\n  "))
+	}
+	return ""
+}
+
 func oneRoot(args []string, stderr io.Writer) (string, bool) {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, "expected the root of raoh-specification")
@@ -138,6 +159,10 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 	s, err := verify.Load(*specRoot)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	if problem := unlistedOrUnpinned(s); problem != "" {
+		fmt.Fprint(stderr, problem)
 		return 2
 	}
 	result, err := os.ReadFile(*resultPath)

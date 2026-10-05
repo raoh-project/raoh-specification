@@ -78,6 +78,7 @@ func issue(t *testing.T, checked *Checked, key string) *Site {
 		case *At:
 			walk(f.Body)
 		case *Unordered:
+			walk(f.After)
 			walk(f.Site)
 		case *Candidates:
 			walk(f.Site)
@@ -100,6 +101,32 @@ func gives(t *testing.T, c *Checker, form, input string, issues ...string) bool 
 		return fmt.Sprintf("%p", slot.Group), issues[i] == want
 	}
 	return len(ParseIssues(d.Flow, jsontext.MustParse(input), nil, len(issues), fit)) > 0
+}
+
+// An unknown_members leaves out only the members its after has reported with an issue of its own
+// variant from an unknown_members: neither another variant at the member's path nor the same
+// variant outside a group counts.
+func TestUnknownMembersLeaveOutOnlyTheirOwnVariant(t *testing.T) {
+	site := func(key string) *Site { return &Site{Key: key} }
+	input := jsontext.MustParse(`{"m": 1}`)
+	parses := func(f Flow, issues ...string) bool {
+		fit := func(i int, slot Slot) (string, bool) {
+			return fmt.Sprintf("%p", slot.Group), issues[i] == JoinPath(slot.Path)+" "+slot.Key
+		}
+		return len(ParseIssues(f, input, nil, len(issues), fit)) > 0
+	}
+	sameVariant := &Unordered{ID: 2, After: &Unordered{ID: 1, After: Success, Site: site("u")}, Site: site("u")}
+	if !parses(sameVariant, "/m u") || parses(sameVariant, "/m u", "/m u") {
+		t.Error("an unknown member reported by after is reported again")
+	}
+	otherVariant := &Unordered{ID: 2, After: &Unordered{ID: 1, After: Success, Site: site("v")}, Site: site("u")}
+	if !parses(otherVariant, "/m v", "/m u") {
+		t.Error("an issue of another variant from an unknown_members kept u from being reported")
+	}
+	notAGroup := &Unordered{ID: 1, After: &At{Name: "m", Body: site("u")}, Site: site("u")}
+	if !parses(notAGroup, "/m u", "/m u") {
+		t.Error("an issue of the same variant outside an unknown_members kept u from being reported")
+	}
 }
 
 func TestResultTypes(t *testing.T) {
@@ -144,7 +171,7 @@ func TestFormsThatDoNotTypeCheck(t *testing.T) {
 	rejected(t, c, `["string", ["minLenght", 3]]`, "unknown operation")
 	rejected(t, c, `["int", ["minLength", 3]]`, "does not apply to int32")
 	rejected(t, c, `["list"]`, "takes 1 argument")
-	rejected(t, c, `["string", ["minLength"]]`, "takes 1 to 1")
+	rejected(t, c, `["string", ["minLength"]]`, "takes 1 to 2")
 	rejected(t, c, `["oneOf", [["int"], ["string"]]]`, "expected a decoder of int32")
 	rejected(t, c, `["int", ["map", "area"]]`, "takes product<int32,int32>, not int32")
 	rejected(t, c, `["int", ["map", "no_such_fixture"]]`, "unknown fixture")
@@ -217,7 +244,7 @@ func TestFlowsFollowTheDeclaredExpressions(t *testing.T) {
 		`["string", ["minLength", 3], ["email"]]`: "chain(chain(alt(alt(), required, type_mismatch), alt(alt(), too_short)), alt(alt(), invalid_format.email))",
 		`["list", ["int"]]`:                       "chain(alt(alt(), required, type_mismatch), each_elements(alt(alt(), required, type_mismatch, type_mismatch.numeric_range)))",
 		`["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a", "x"]], ["a", "y"]]`: "" +
-			"cat(cat(cat(at(a, chain(alt(alt(), type_mismatch), alt(alt(), required, type_mismatch, type_mismatch.numeric_range)))), unknown#1(except a,x: unknown_field)), unknown#2(except a,y: unknown_field))",
+			"unknown#2(after unknown#1(after cat(at(a, chain(alt(alt(), type_mismatch), alt(alt(), required, type_mismatch, type_mismatch.numeric_range)))); except a,x: unknown_field); except a,y: unknown_field)",
 		`["recover", ["int"], 1]`: "alt()",
 	} {
 		if got := Describe(decoder(t, c, form).Flow); got != want {
@@ -305,7 +332,33 @@ func TestEncoders(t *testing.T) {
 	}
 }
 
-// A form raoh-java refuses to construct is not a decoder.
+// A constructor's trailing message is the string after its required arguments; an array there is
+// an operation. Giving it needs the constructor's message facet.
+func TestAConstructorTakesATrailingMessage(t *testing.T) {
+	c := checker(t)
+	withMessage := decoder(t, c, `["literal", "yes", ["string"], "say yes"]`)
+	if !slices.Contains(withMessage.Features, "decoder.literal.message") {
+		t.Errorf("features %v", withMessage.Features)
+	}
+	if got := issue(t, withMessage, "invalid_format.literal"); got.Message == nil || *got.Message != "say yes" || !got.MessageArg {
+		t.Errorf("the message is not the one given: %+v", got)
+	}
+	withOperation := decoder(t, c, `["literal", "yes", ["string"], ["minLength", 3]]`)
+	if slices.Contains(withOperation.Features, "decoder.literal.message") || !slices.Contains(withOperation.Features, "operation.string.minLength") {
+		t.Errorf("features %v", withOperation.Features)
+	}
+	both := decoder(t, c, `["literal", "yes", ["string"], "say yes", ["minLength", 3, "too short"]]`)
+	if !slices.Contains(both.Features, "decoder.literal.message") || !slices.Contains(both.Features, "operation.string.minLength.message") {
+		t.Errorf("features %v", both.Features)
+	}
+	// The message is the literal's own issue's, not the inner string decoder's.
+	if got := issue(t, withMessage, "type_mismatch"); got.Message != nil {
+		t.Errorf("the inner decoder's issue took the message: %+v", got)
+	}
+	rejected(t, c, `["literal", "yes", ["string"], "a", "b"]`, "")
+}
+
+// A form an implementation refuses to construct is not a decoder.
 func TestArgumentsMeetWhatTheFormRequires(t *testing.T) {
 	c := checker(t)
 	rejected(t, c, `["int", ["range", 5, 1]]`, "must not be after")
@@ -314,6 +367,11 @@ func TestArgumentsMeetWhatTheFormRequires(t *testing.T) {
 	decoder(t, c, `["double", ["range", {"float": "-0"}, 0]]`)
 	rejected(t, c, `["decimal", ["range", "10", "9.99"]]`, "must not be after")
 	rejected(t, c, `["string", ["date"], ["between", "2024-12-31", "2024-01-01"]]`, "must not be after")
+	// Offset date-time bounds are ordered by instant: the same instant at two offsets is in order
+	// either way round, and bounds whose instants are reversed are not.
+	decoder(t, c, `["string", ["offsetDateTime"], ["between", "2024-01-01T10:00+01:00", "2024-01-01T09:00Z"]]`)
+	decoder(t, c, `["string", ["offsetDateTime"], ["between", "2024-01-01T09:00Z", "2024-01-01T10:00+01:00"]]`)
+	rejected(t, c, `["string", ["offsetDateTime"], ["between", "2024-01-01T10:00+01:00", "2024-01-01T08:59Z"]]`, "must not be after")
 	rejected(t, c, `["int", ["multipleOf", 0]]`, "must not be zero")
 	rejected(t, c, `["decimal", ["multipleOf", "0.00"]]`, "must not be zero")
 	rejected(t, c, `["list", ["int"], ["containsAll", []]]`, "must not be empty")
@@ -447,8 +505,8 @@ func TestReferencesResolveWhenLoaded(t *testing.T) {
 			op["issues"].([]any)[0].(map[string]any)["meta"] = map[string]any{"min": map[string]any{"arg": "mni"}}
 		}, "reads mni"},
 		"a flow naming no argument": {func(doc map[string]any) {
-			doc["constructors"].(map[string]any)["strict"].(map[string]any)["flow"] = map[string]any{"cat": []any{
-				map[string]any{"arg": "inner"}, map[string]any{"unknown_members": map[string]any{"known": map[string]any{"arg": "knwon"}, "issue": "unknown_field"}}}}
+			doc["constructors"].(map[string]any)["strict"].(map[string]any)["flow"] = map[string]any{"unknown_members": map[string]any{
+				"after": map[string]any{"arg": "inner"}, "known": map[string]any{"arg": "knwon"}, "issue": "unknown_field"}}
 		}, "knwon"},
 		"a decoder argument the flow leaves out": {func(doc map[string]any) {
 			doc["constructors"].(map[string]any)["nullable"].(map[string]any)["flow"] = "none"
@@ -508,7 +566,7 @@ func TestTheFlowLanguageHasNoAlt(t *testing.T) {
 }
 
 // An operation's arguments are complete once read: a value argument left out stands for its
-// default, a message argument left out gives no message, and nothing else can be left out.
+// default, a message argument left out gives the derived message, and nothing else can be left out.
 func TestLeftOutArgumentsHaveMeanings(t *testing.T) {
 	c := checker(t)
 	f := c.Registry().Operations["normalize"]["string"].Form
@@ -695,7 +753,7 @@ func TestFixturesSolveTogether(t *testing.T) {
 // metadata as well as a result.
 func TestInstantiatedTypesAreWellFormed(t *testing.T) {
 	c := checkerWithOps(t, []doc{{"name": "probe", "doc": "x", "receivers": []any{"*"}, "result": "R",
-		"issues": []any{doc{"key": "probe", "T": "nullable<R>"}}, "flow": "own"}}, nil,
+		"args": []any{doc{"name": "message", "kind": "message", "optional": true}}, "issues": []any{doc{"key": "probe", "T": "nullable<R>"}}, "flow": "own"}}, nil,
 		doc{"probe": doc{"code": "probe", "params": []any{"T"}, "meta": doc{"x": "optional<T>"}}})
 	rejected(t, c, `["string", ["probe"]]`, "optional<nullable<string>> cannot tell its own null")
 }
@@ -711,7 +769,7 @@ func TestMessagesWriteOnlyWhatHasAMessageForm(t *testing.T) {
 
 	ops := readDoc(t, "../../catalog/operations.json")
 	ops["operations"] = append(ops["operations"].([]any), doc{"name": "probe", "doc": "x", "receivers": []any{"string"}, "result": "R",
-		"issues": []any{doc{"key": "probe", "T": "map<R>"}}, "flow": "own"})
+		"args": []any{doc{"name": "message", "kind": "message", "optional": true}}, "issues": []any{doc{"key": "probe", "T": "map<R>"}}, "flow": "own"})
 	fx, _ := os.ReadFile("../../catalog/fixtures.json")
 	reg, err := Parse(encode(t, ops), fx)
 	if err != nil {

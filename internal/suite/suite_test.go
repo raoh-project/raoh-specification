@@ -74,6 +74,7 @@ func TestExpectedOutcomesAreTyped(t *testing.T) {
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": 1, "ok": "1"}]`, "expected number")
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["float"], "input": 16777217, "ok": 16777217}]`, "rounds to")
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": 1, "ok": 1, "issues": []}]`, "either ok or issues")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["string", ["uri"]], "input": "a/b", "ok": "a/b"}]`, "not a URI as RFC 3986")
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": "x",
 		"issues": [{"path": "", "code": "too_short", "message_key": "too_short", "meta": {"min": 1, "actual": 0}}]}]`, "gives no too_short")
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int", ["min", 1]], "input": 0,
@@ -84,6 +85,56 @@ func TestExpectedOutcomesAreTyped(t *testing.T) {
 		"issues": [{"path": "", "code": "must_be_even", "message_key": "must_be_even", "meta": {"actual": 3}}]}]`, "has to write")
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": "x",
 		"issues": [{"path": "x", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer"}}]}]`, "JSON Pointer")
+}
+
+// Where an entry is present is decided per site: the value oneOf always gives actual, discriminate
+// never does, and a string conversion's type_mismatch never does, though other type mismatches
+// always do.
+func TestEntriesArePresentAsTheSiteSays(t *testing.T) {
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["string", ["oneOf", ["a"]]], "input": "b",
+		"issues": [{"path": "", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": ["a"]}}]}]`, "needs metadata actual")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["discriminate", "k", {"a": ["int"]}], "input": {"k": "b"},
+		"issues": [{"path": "/k", "code": "not_allowed", "message_key": "not_allowed", "meta": {"allowed": ["a"], "actual": "b"}}]}]`, "no metadata actual")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["string", ["toInt"]], "input": "x",
+		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer", "actual": "string"}}]}]`, "no metadata actual")
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": "x",
+		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer", "actual": "text"}}]}]`, "not one of the alternatives")
+}
+
+// Nested strict forms report an unknown member once, by the innermost that does not know it.
+func TestNestedStrictReportsAMemberOnce(t *testing.T) {
+	unknown := `{"path": "/b", "code": "unknown_field", "message_key": "unknown_field", "meta": {"field": "b"}}`
+	nested := `["strict", ["strict", ["object", [["field", "a", ["int"]]]], ["a"]], ["a"]]`
+	accepted(t, "core", `[{"id": "R000001", "title": "t", "decoder": `+nested+`, "input": {"a": 1, "b": 2}, "issues": [`+unknown+`]}]`)
+	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": `+nested+`, "input": {"a": 1, "b": 2}, "issues": [`+unknown+`, `+unknown+`]}]`, "does not give them")
+}
+
+// A form and an input decide an outcome, so two cases may not share them, whatever the whitespace
+// or string escapes; a number written another way is another input.
+func TestTwoCasesDoNotShareAFormAndAnInput(t *testing.T) {
+	cases := func(a, b string) string {
+		return `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": ` + a + `, "ok": 1},
+		         {"id": "R000002", "title": "t", "decoder": [ "int" ], "input": ` + b + `, "ok": 1}]`
+	}
+	root := artifactstest.Copy(t, "../..", map[string]string{"suite/core/t.json": cases("1", "1")})
+	if _, err := Load(root, checker(t), schemasFor(t)); err == nil || !strings.Contains(err.Error(), "R000002 has the form and input of R000001") {
+		t.Errorf("two cases with one form and input: %v", err)
+	}
+	root = artifactstest.Copy(t, "../..", map[string]string{"suite/core/t.json": cases("1", "1.0")})
+	if _, err := Load(root, checker(t), schemasFor(t)); err != nil && strings.Contains(err.Error(), "form and input") {
+		t.Errorf("1 and 1.0 are different inputs: %v", err)
+	}
+}
+
+// A message given to literal is the message of literal's own issue only: its string decoder's
+// type_mismatch keeps the derived message, and a case that gives it literal's is rejected.
+func TestAGivenMessageStaysWithItsForm(t *testing.T) {
+	inner := func(message string) string {
+		return `[{"id": "R000001", "title": "t", "decoder": ["literal", "v1", ["string"], "custom"], "input": 1,
+			"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch"` + message + `, "meta": {"actual": "number", "expected": "string"}}]}]`
+	}
+	accepted(t, "core", inner(""))
+	rejected(t, "core", inner(`, "message": "custom"`), "")
 }
 
 func TestMessagesAreDerivedOrGiven(t *testing.T) {
@@ -324,4 +375,29 @@ func TestEmptyStringsAreValuesNotAbsence(t *testing.T) {
 		"issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer"}}]}]`, `message ""`)
 	rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": "x",
 		"issues": [{"path": "", "code": "type_mismatch", "message_key": "", "meta": {"expected": "integer", "actual": "string"}}]}]`, "message_key must be a non-empty string")
+}
+
+// The input model has no number whose scale is not an int32, and the suite never gives one, in any
+// position of an input.
+func TestInputsHaveOnlyNumbersOfTheInputModel(t *testing.T) {
+	accepted(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["decimal"], "input": 1e2147483648, "ok": "1E+2147483648"},
+	  {"id": "R000002", "title": "t", "decoder": ["decimal"], "input": 1e-2147483647, "ok": "1E-2147483647"},
+	  {"id": "R000003", "title": "t", "decoder": ["decimal"], "input": 0.1e2147483649, "ok": "1E+2147483648"}]`)
+	for _, input := range []string{
+		`1e2147483649`, `1e-2147483648`, `-1.5e-2147483647`, `0.1e2147483650`,
+		`[1, [2e2147483649]]`, `{"a": {"b": 1e-2147483649}}`, `1e99999999999999999999`,
+	} {
+		rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": `+input+`,
+		  "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer", "actual": "number"}}]}]`,
+			"not a number of the input model")
+	}
+}
+
+// The rest of what spec/input-model.md says the input model does not have is refused the same way:
+// an object that repeats a member name, and a string holding an unpaired surrogate.
+func TestInputsHaveNoRepeatedNamesOrLoneSurrogates(t *testing.T) {
+	for _, input := range []string{`{"a": 1, "a": 2}`, `"\ud800"`, `["x", {"b": "\udc00"}]`} {
+		rejected(t, "core", `[{"id": "R000001", "title": "t", "decoder": ["int"], "input": `+input+`,
+		  "issues": [{"path": "", "code": "type_mismatch", "message_key": "type_mismatch", "meta": {"expected": "integer", "actual": "number"}}]}]`, "")
+	}
 }

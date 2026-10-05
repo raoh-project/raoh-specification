@@ -26,7 +26,7 @@ type Arg struct {
 	// Optional marks a trailing value or message argument of an operation that may be left out.
 	Optional bool
 	// Default is what an optional value argument left out stands for; every optional value
-	// argument has one. An optional message argument left out gives no message.
+	// argument has one. An optional message argument left out gives the issue the message the catalogue derives.
 	Default *value.Value
 	// OneOf restricts a string value to the values listed.
 	OneOf []string
@@ -45,6 +45,12 @@ type IssueRef struct {
 	// Meta says where the values of metadata entries come from; an entry it does not list is
 	// known only when a decoder runs.
 	Meta map[string]MetaSource
+}
+
+// Gives reports whether the reference gives the entry a source, so that the entry is always there.
+func (r IssueRef) Gives(name string) bool {
+	_, ok := r.Meta[name]
+	return ok
 }
 
 // MetaSource says where the value of a metadata entry comes from, when the form alone decides it.
@@ -116,8 +122,8 @@ type Form struct {
 	Issues []IssueRef
 	// Flow is how the form gives its issues.
 	Flow Expr
-	// Requires are the conditions its arguments have to meet for the form to exist at all, as
-	// raoh-java refuses to construct the decoder otherwise.
+	// Requires are the conditions its arguments have to meet for the form to exist at all: an
+	// implementation refuses to construct the decoder otherwise.
 	Requires []Require
 }
 
@@ -250,6 +256,27 @@ type Registry struct {
 	Fixtures   map[string]*Fixture
 }
 
+// Forms returns every form that can give issues: the constructors, the fields and each distinct
+// form of an operation's overloads.
+func (r *Registry) Forms() []*Form {
+	var out []*Form
+	for _, name := range slices.Sorted(maps.Keys(r.Constructors)) {
+		out = append(out, r.Constructors[name])
+	}
+	for _, name := range slices.Sorted(maps.Keys(r.Fields)) {
+		out = append(out, r.Fields[name])
+	}
+	for _, name := range slices.Sorted(maps.Keys(r.Operations)) {
+		overloads := r.Operations[name]
+		for _, key := range slices.Sorted(maps.Keys(overloads)) {
+			if f := overloads[key].Form; !slices.Contains(out, f) {
+				out = append(out, f)
+			}
+		}
+	}
+	return out
+}
+
 // Load reads the registry under root, each file checked against its schema first.
 func Load(root string, sch *schemas.Set) (*Registry, error) {
 	ops, err := os.ReadFile(filepath.Join(root, "catalog", "operations.json"))
@@ -352,6 +379,13 @@ func Parse(operations, fixtures []byte) (*Registry, error) {
 			return nil, fmt.Errorf("fixtures.json: %s: %w", m.Name, err)
 		}
 		r.Fixtures[m.Name] = f
+	}
+	// A feature ID names one thing: a facet's written ID cannot also be a form's.
+	ids := r.Features()
+	for i := 1; i < len(ids); i++ {
+		if ids[i] == ids[i-1] {
+			return nil, fmt.Errorf("operations.json: two features have the ID %s", ids[i])
+		}
 	}
 	return r, nil
 }
@@ -561,6 +595,25 @@ func parseForm(section, name string, n *jsontext.Node) (*Form, error) {
 	}
 	if err := f.parseIssues(n); err != nil {
 		return nil, err
+	}
+	// An operation checks or converts a value, and the issues it declares are about that value, so
+	// it takes a given message exactly when it declares an issue (spec/issues.md); it is optional,
+	// and the operation's message facet is giving it. A field is structure, and takes none.
+	switch hasMessage := f.Message != NoArg; {
+	case section == "operation" && len(f.Issues) > 0 && !hasMessage:
+		return nil, fmt.Errorf("it declares issues, and an operation that does takes an optional message")
+	case section == "operation" && len(f.Issues) == 0 && hasMessage:
+		return nil, fmt.Errorf("it takes a message, and declares no issue for it to be the message of")
+	case section == "operation" && hasMessage && !f.Args[f.Message.Index()].Optional:
+		return nil, fmt.Errorf("its message is required, and an operation's message is optional")
+	case section == "field" && hasMessage:
+		return nil, fmt.Errorf("a field takes no message: it is structure, whose messages a resolver gives")
+	case section == "constructor" && convertsAString(name) && !hasMessage:
+		return nil, fmt.Errorf("it converts a string, and takes an optional trailing message")
+	case section == "constructor" && convertsAString(name) && !f.Args[f.Message.Index()].Optional:
+		return nil, fmt.Errorf("its message is required, and a constructor's message is optional")
+	case section == "constructor" && !convertsAString(name) && hasMessage:
+		return nil, fmt.Errorf("a constructor that builds structure takes no message; only enum and literal, which convert a string, do")
 	}
 	if fl, ok := n.Get("flow"); ok {
 		if f.Flow, err = resolveFlow(f, fl); err != nil {
@@ -854,8 +907,11 @@ func parseArg(section string, n *jsontext.Node) (Arg, error) {
 		}
 		a.Optional = o.Bool
 	}
-	if a.Optional && section != "operation" {
-		return a, fmt.Errorf("argument %s is optional, and only an operation has optional arguments", a.Name)
+	// A constructor's arguments are read by position before its operations, which are arrays; a
+	// trailing message, a string, cannot be mistaken for one, and no other optional argument is
+	// allowed there.
+	if a.Optional && section != "operation" && !(section == "constructor" && a.Kind == "message") {
+		return a, fmt.Errorf("argument %s is optional, and only an operation has optional arguments, or a constructor a trailing message", a.Name)
 	}
 	if a.Optional && !kind.Omittable {
 		return a, fmt.Errorf("argument %s is a %s argument, which cannot be left out", a.Name, a.Kind)
@@ -1098,7 +1154,47 @@ func fixtureParams(what string, t, input value.Type) error {
 	return nil
 }
 
-// Features returns every feature ID the registry defines, sorted.
+// convertsAString names the constructors whose own issue is about a value, the string their string
+// decoder reads, and that take a message for it (spec/decoder-language.md): enum and literal. Every
+// other constructor builds structure.
+func convertsAString(constructor string) bool {
+	return constructor == "enum" || constructor == "literal"
+}
+
+// MessageFacetID writes the ID of the message facet of a form's feature: operation.int32.min.message
+// is giving min on an int32 a message. The suffix is how a facet is written, not how one is
+// recognized: Facets says which IDs are facets and of what, and Parse refuses a facet ID that is
+// also another feature's.
+func MessageFacetID(feature string) string { return feature + ".message" }
+
+// Facet is a feature that is a capability of a form rather than a form: giving Form its message.
+// Parent is the form's feature.
+type Facet struct {
+	ID, Parent string
+	Form       *Form
+}
+
+// Facets returns the message facet of every form that takes a message, by ID order of the parent.
+func (r *Registry) Facets() []Facet {
+	var out []Facet
+	for _, name := range slices.Sorted(maps.Keys(r.Constructors)) {
+		if f := r.Constructors[name]; f.Message != NoArg {
+			out = append(out, Facet{ID: MessageFacetID("decoder." + name), Parent: "decoder." + name, Form: f})
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(r.Operations)) {
+		overloads := r.Operations[name]
+		for _, key := range slices.Sorted(maps.Keys(overloads)) {
+			if f := overloads[key].Form; f.Message != NoArg {
+				parent := operationFeature(key, name)
+				out = append(out, Facet{ID: MessageFacetID(parent), Parent: parent, Form: f})
+			}
+		}
+	}
+	return out
+}
+
+// Features returns every feature ID the registry defines, sorted: each form's, and each facet.
 func (r *Registry) Features() []string {
 	var ids []string
 	for _, name := range slices.Sorted(maps.Keys(r.Constructors)) {
@@ -1112,6 +1208,9 @@ func (r *Registry) Features() []string {
 		for _, key := range slices.Sorted(maps.Keys(overloads)) {
 			ids = append(ids, operationFeature(key, name))
 		}
+	}
+	for _, f := range r.Facets() {
+		ids = append(ids, f.ID)
 	}
 	for _, name := range slices.Sorted(maps.Keys(r.Encoders)) {
 		ids = append(ids, "encoder."+name)

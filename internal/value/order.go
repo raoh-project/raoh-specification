@@ -56,10 +56,11 @@ func cmpInt[T int | int64](a, b T) int {
 }
 
 // Compare orders two values of the same type as the operations that bound values order them
-// (min, max, range, before, after, between, ...): integers and decimals by value; floats as
-// Double.compare does, with -0 before +0 and NaN after everything; temporal values by their
-// fields, and offset date-times as OffsetDateTime.compareTo does, by instant and then by local
-// date-time. Other types have no order.
+// (min, max, range, before, after, between, ...): integers and decimals by value; floats in the
+// float order of spec/value-model.md, with -0 before +0 and NaN after everything; temporal values
+// by their fields, and offset date-times chronologically, by the instant alone. Two offset
+// date-times at the same instant compare equal although they are different values (Equal tells
+// them apart), as two decimals of different scales do. Other types have no order.
 func Compare(a, b Value) (int, error) {
 	if !a.Type.Same(b.Type) {
 		return 0, fmt.Errorf("cannot compare a %s with a %s", a.Type, b.Type)
@@ -83,15 +84,12 @@ func Compare(a, b Value) (int, error) {
 		if c := cmpInt(ia, ib); c != 0 {
 			return c, nil
 		}
-		if c := cmpInt(a.Time.Nano, b.Time.Nano); c != 0 {
-			return c, nil
-		}
-		return compareFields(a.Time, b.Time), nil
+		return cmpInt(a.Time.Nano, b.Time.Nano), nil
 	}
 	return 0, fmt.Errorf("a %s has no order", a.Type)
 }
 
-// compareFloat orders as Double.compare: NaN is greatest, and -0 is less than +0.
+// compareFloat orders floats in the float order: NaN is greatest, and -0 is less than +0.
 func compareFloat(a, b float64) int {
 	switch {
 	case math.IsNaN(a) && math.IsNaN(b):

@@ -6,26 +6,36 @@ what an implementation may state about the result.
 
 ## Versioning
 
-The specification is versioned independently of any implementation, with semantic versioning. The
-version this revision describes is in `specification.json`. Between releases it carries a
-prerelease suffix (`0.8.0-dev`); a release is a tag `vX.Y.Z` on a commit whose
-`specification.json` says `X.Y.Z`, and a tag is never moved.
+The specification is versioned independently of any implementation, with a version of two parts,
+`major.minor`, and no patch part. The version of an implementation says nothing about the
+version of the specification it conforms to, and the other way round: implementations have patch
+releases of their own, the specification does not. The version this revision describes is in
+`specification.json`. Between releases it carries a prerelease suffix (`0.9-dev`); a release is a
+tag `vX.Y` on a commit whose `specification.json` says `X.Y`, and a tag is never moved. Releases
+up to 0.8 were tagged `vX.Y.Z`; `v0.8.0` stays as it is.
 
-The part of the version a change increments depends on which implementations it can turn from
-conforming into not conforming:
+A change to the specification can turn a conforming implementation into a non-conforming one, so
+every change that can do that is a new version. The part of the version it increments depends on
+how it can do that:
 
 | Change | Before 1.0 | From 1.0 |
 |--------|-----------|----------|
-| Wording, examples, or a case that follows from what is already specified | patch | patch |
 | Making one of several behaviours the specification allowed the only one allowed | minor | major |
 | Changing what an existing case expects | minor | major |
+| A case that follows from what is already specified | minor | minor |
 | A new constructor, operation, fixture or issue variant | minor | minor |
 | A new profile that no implementation is required to be checked against | minor | minor |
 
-A case that tests behaviour the specification already requires is a patch even when no case tested
-it before: an implementation that fails it did not conform before either. A case that settles
-behaviour the specification did not require is not a patch, because an implementation that
-conformed can stop conforming without changing.
+Wording and examples that change no case and no requirement do not change the version. A revision
+that has to be told apart from another of the same version is named by its commit, which a
+runner's result records as `revision`, and by the digest of the suite's manifest.
+
+A case that tests behaviour the specification already requires does not change that requirement,
+but it can change whether an implementation conforms, since conformance is defined by the cases:
+an implementation that passed every case before can fail the new one. It is therefore a new
+version, and a minor one even from 1.0, because the requirement it checks was already there. A case
+that settles behaviour the specification did not require changes a requirement, so it is one of the
+first two rows.
 
 ## Case IDs
 
@@ -43,14 +53,31 @@ declarations refer to cases by ID.
 ## What the verifier checks
 
 The verifier checks facts that the specification's artifacts and a case's input decide, and
-nothing else. It does not run a decoder.
+nothing else. It does not run a decoder. When the verifier rejects a form or a case, how it
+explains that rejection is not checked unless this specification says otherwise.
 
 It checks, for every case: that the decoder or encoder form type-checks and its arguments meet what
 the form requires; that the expected result is an observation of the result type, including the
-alternatives of a symbol type; that the expected issues fit the decoder's issue flow for the input,
+alternatives of a symbol type, the canonical decimal of a float
+([observation.md](observation.md#floats)) and the domain of `uri` ([value-model.md](value-model.md));
+that the expected issues fit the decoder's issue flow for the input,
 in its order and groups; that each issue's metadata has the types its place gives, and the values
 the form decides (from constants, arguments and member names); and that each message is the one
 its place gives, derived from the catalogue or given by the form.
+
+It checks the suite as a whole too: that no two cases have the same profile, form and input; that
+every feature the registry lists is needed by some case; that every issue a form that takes a
+message declares is expected with the message given by some case; that every entry a variant's
+`optional_meta` lists, where a form leaves it open, is left out by some case
+([issues.md](issues.md)); that every issue that lists candidates has a case with it and a
+candidate's issue below the root; and that every constructor that declares `required` as an issue
+of its own has a case for each of the two inputs it gives it for. In a case for a null input the
+constructor is the decoder of the case. In a case for an absent input the decoder of the case is an
+`object` or `strictObject`, and the constructor is the decoder of a `field` of it whose member the
+input does not have. The verifier counts a case by this shape and does not follow an input through
+the forms around a constructor, so a constructor inside `nullable`, an `optionalField`, a nested
+object or a `oneOf` candidate is not counted. The catalogues themselves are checked when they are read
+([decoder-language.md](decoder-language.md#meaning), [issues.md](issues.md)).
 
 An implementation's issues are matched against the reading of the case's, by the same reader:
 each is read at the place of the expected issue it is matched with, so an issue whose metadata is
@@ -61,7 +88,8 @@ recomputed: the value a decoder gives, the `actual` a failed bound reports, the 
 `unique` or `containsAll` finds, the value a fixture computes. Whether a decoder's checks hold of
 its result (that `min(1)` gives nothing below 1, that `oneOf` gives one of its values) is decoder
 semantics, which implementations are checked for by running them on the cases; the verifier does
-not compute it. Nor does it check that the text of a `uri` belongs to the URI domain.
+not compute it. Membership of a domain is not decoder semantics: an expected `uri` that is not an
+RFC 3986 URI is not an observation of `uri`, and the case is rejected.
 
 ## Profiles
 
@@ -98,8 +126,8 @@ A runner result (`schema/runner-result.schema.json`) records:
 - `results`: for each case ID the runner ran, the `observed` outcome, written as the case writes its
   expected outcome; or, when the implementation gave none (it threw, or refused to construct the
   decoder the case names), `{"error": "..."}` saying what happened.
-- `catalogs`: for each locale the implementation ships (`en`, `ja`), every message key and its
-  template.
+- `catalogs`: for each locale the implementation ships (`en`, `ja`), every message key, without the
+  `raoh.` a properties file puts before it, and its template.
 
 The manifest digest ties a result to the exact revision it was produced from. It is taken over the
 normative artifact set, the files the specification consists of:
@@ -166,14 +194,16 @@ other. The run is invalid, and the verifier exits with status 2 without writing 
 - a divergence declares an outcome that is not an observation of the case's result type, or the
   outcome the case expects;
 - the runner result has an outcome for a case that needs a feature the runner does not bind;
-- a feature the runner binds is declared unsupported.
+- a feature the runner binds is declared unsupported;
+- the runner binds a facet (`operation.int32.min.message`) without the feature it is a facet of
+  (`operation.int32.min`).
 
 ### Outcomes
 
 Each case of a profile the declaration lists is classified in this order:
 
 1. If a feature the case needs is not bound: `unsupported` when every such feature is declared
-   unsupported, `failed` otherwise.
+   unsupported, itself or, for a facet, through its parent; `failed` otherwise.
 2. If the runner result has no outcome for the case, or has an error for it: `failed`. An error is
    a defect, and no divergence excuses it.
 3. If the outcome is the one the case expects: `matched`, unless the case is declared divergent, in
@@ -199,5 +229,5 @@ The report gives each profile a status:
 A stale divergence is a failure: the declaration has to be brought up to date.
 
 An implementation states its conformance per profile, with the specification version and the
-counts, for example: Raoh Specification 0.8.0 — core: conformant; encode: partially conformant
+counts, for example: Raoh Specification 0.9 — core: conformant; encode: partially conformant
 (1 unsupported). Only a report produced by `raoh-verify` supports such a statement.
